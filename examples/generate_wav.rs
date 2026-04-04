@@ -1,7 +1,8 @@
 //! Example demonstrating how to generate a Robot 36 SSTV WAV file from an image.
 
 use hound::{SampleFormat, WavSpec, WavWriter};
-use sstv::encode::{ImageData, encode_robot36, samples_to_i16};
+use sstv::encode::{encode_robot36, samples_to_i16};
+use sstv::image::ImageData;
 use std::error::Error;
 
 pub fn generate_wav() -> Result<(), Box<dyn Error>> {
