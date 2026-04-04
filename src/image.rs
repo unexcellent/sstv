@@ -6,35 +6,39 @@ use crate::Result;
 
 #[derive(Debug, Clone, Copy)]
 pub struct RgbPixel {
-    pub r: u8,
-    pub g: u8,
-    pub b: u8,
+    pub red: u8,
+    pub green: u8,
+    pub blue: u8,
 }
 
 impl RgbPixel {
-    pub fn new(r: u8, g: u8, b: u8) -> Self {
-        Self { r, g, b }
+    pub fn new(red: u8, green: u8, blue: u8) -> Self {
+        Self { red, green, blue }
     }
 
     pub fn to_yuv(self) -> YuvPixel {
-        let y = (30 * self.r as u32 + 59 * self.g as u32 + 11 * self.b as u32) / 100;
-        let y = y.min(255) as u8;
+        let luma = (30 * self.red as u32 + 59 * self.green as u32 + 11 * self.blue as u32) / 100;
+        let luma = luma.min(255) as u8;
 
-        let r_diff = self.r as i32 - y as i32;
-        let cr = ((10 * r_diff + 7 * 255) / 14).clamp(0, 255) as u8;
+        let red_difference = self.red as i32 - luma as i32;
+        let chroma_red = ((10 * red_difference + 7 * 255) / 14).clamp(0, 255) as u8;
 
-        let b_diff = self.b as i32 - y as i32;
-        let cb = ((100 * b_diff + 89 * 255) / 178).clamp(0, 255) as u8;
+        let blue_difference = self.blue as i32 - luma as i32;
+        let chroma_blue = ((100 * blue_difference + 89 * 255) / 178).clamp(0, 255) as u8;
 
-        YuvPixel { y, cr, cb }
+        YuvPixel {
+            luma,
+            chroma_red,
+            chroma_blue,
+        }
     }
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct YuvPixel {
-    pub y: u8,
-    pub cr: u8,
-    pub cb: u8,
+    pub luma: u8,
+    pub chroma_red: u8,
+    pub chroma_blue: u8,
 }
 
 pub struct LineData {

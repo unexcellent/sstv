@@ -163,16 +163,16 @@ fn encode_robot36_line_pair(even_line: &LineData, odd_line: &LineData) -> Vec<To
     let v_values: Vec<u8> = even_yuv
         .iter()
         .zip(odd_yuv.iter())
-        .map(|(e, o)| ((e.cr as u16 + o.cr as u16) / 2) as u8)
+        .map(|(e, o)| ((e.chroma_red as u16 + o.chroma_red as u16) / 2) as u8)
         .collect();
     let u_values: Vec<u8> = even_yuv
         .iter()
         .zip(odd_yuv.iter())
-        .map(|(e, o)| ((e.cb as u16 + o.cb as u16) / 2) as u8)
+        .map(|(e, o)| ((e.chroma_blue as u16 + o.chroma_blue as u16) / 2) as u8)
         .collect();
 
-    let y_first: Vec<u8> = even_yuv.iter().map(|p| p.y).collect();
-    let y_second: Vec<u8> = odd_yuv.iter().map(|p| p.y).collect();
+    let y_first: Vec<u8> = even_yuv.iter().map(|p| p.luma).collect();
+    let y_second: Vec<u8> = odd_yuv.iter().map(|p| p.luma).collect();
 
     let mut tones = Vec::new();
 
