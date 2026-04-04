@@ -9,7 +9,7 @@ use crate::constants::{AUDIO_AMPLITUDE, SINE_TABLE_LEN};
 use std::f64::consts::PI;
 
 /// FM Synthesizer using phase accumulator approach
-/// 
+///
 /// This generates audio samples for SSTV transmission using the same
 /// algorithm as QSSTV for maximum compatibility.
 ///
@@ -32,7 +32,7 @@ impl Synthesizer {
     /// * `sample_rate` - Audio sample rate in Hz (e.g., 44100, 48000)
     pub fn new(sample_rate: u32) -> Self {
         let mut sine_table = [0.0; SINE_TABLE_LEN];
-        
+
         // Generate sine lookup table
         // Derived from qsstv/src/dsp/synthes.cpp:44-47
         // sineTable[i] = (sin(((double)i * M_PI * 2.) / SINTABLEN) * 8000.)
@@ -68,10 +68,10 @@ impl Synthesizer {
     pub fn next_sample(&mut self, freq: f64) -> f64 {
         // Calculate phase increment for this frequency
         let phase_increment = (freq / self.sample_rate) * SINE_TABLE_LEN as f64;
-        
+
         // Advance phase with wraparound
         self.phase = (self.phase + phase_increment) % SINE_TABLE_LEN as f64;
-        
+
         // Get sample from lookup table with interpolation
         let index = (self.phase + 0.5) as usize % SINE_TABLE_LEN;
         self.sine_table[index]
@@ -113,7 +113,7 @@ impl Synthesizer {
     pub fn generate_sweep(&mut self, duration: f64, start_freq: f64, end_freq: f64) -> Vec<f64> {
         let num_samples = (duration * self.sample_rate) as usize;
         let delta_freq = (end_freq - start_freq) / num_samples as f64;
-        
+
         let mut samples = Vec::with_capacity(num_samples);
         for i in 0..num_samples {
             let freq = start_freq + delta_freq * i as f64;
@@ -190,7 +190,7 @@ mod tests {
     fn test_sample_amplitude() {
         let mut synth = Synthesizer::new(48000);
         let samples = synth.generate_tone(0.01, 1000.0, false);
-        
+
         // All samples should be within amplitude bounds
         for sample in samples {
             assert!(sample.abs() <= AUDIO_AMPLITUDE + 1.0);
@@ -201,7 +201,7 @@ mod tests {
     fn test_silence() {
         let mut synth = Synthesizer::new(48000);
         let samples = synth.generate_silence(0.1);
-        
+
         for sample in samples {
             assert_eq!(sample, 0.0);
         }

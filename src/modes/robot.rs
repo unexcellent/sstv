@@ -10,13 +10,16 @@
 //!
 //! Reference: qsstv/src/sstv/modes/moderobot1.cpp and moderobot2.cpp
 
-use crate::constants::{pixel_to_freq, FREQ_BLACK, FREQ_SEPARATOR, FREQ_SYNC, FREQ_EVEN_MARKER};
+use crate::constants::{FREQ_BLACK, FREQ_EVEN_MARKER, FREQ_SEPARATOR, FREQ_SYNC, pixel_to_freq};
 use crate::modes::{ColorSpace, LineData, SSTVMode, YuvPixel};
 use crate::synthesizer::Tone;
 
 /// Generate pixel tones for a color channel (YUV values use same frequency mapping)
 fn generate_pixel_tones(values: &[u8], pixel_duration: f64) -> Vec<Tone> {
-    values.iter().map(|&v| Tone::new(pixel_to_freq(v), pixel_duration)).collect()
+    values
+        .iter()
+        .map(|&v| Tone::new(pixel_to_freq(v), pixel_duration))
+        .collect()
 }
 
 // =============================================================================
@@ -60,7 +63,12 @@ impl Robot36 {
         // 240 half-lines (each line pair has 2 halves)
         let half_lines = 240.0;
         let line_length = self.image_time() / half_lines;
-        (line_length - self.front_porch() - self.back_porch() - self.blank_duration() - self.sync_duration()) / 3.0
+        (line_length
+            - self.front_porch()
+            - self.back_porch()
+            - self.blank_duration()
+            - self.sync_duration())
+            / 3.0
     }
 }
 
@@ -132,10 +140,15 @@ impl SSTVMode for Robot36 {
     fn encode_line(&self, line_data: &LineData, line_num: u32) -> Vec<Tone> {
         // Robot 36 needs pair encoding - this single line version
         // is used when we only have one line of data
-        self.encode_single_line(line_data, line_num % 2 == 0)
+        self.encode_single_line(line_data, line_num.is_multiple_of(2))
     }
 
-    fn encode_line_pair(&self, even_line: &LineData, odd_line: &LineData, _line_num: u32) -> Vec<Tone> {
+    fn encode_line_pair(
+        &self,
+        even_line: &LineData,
+        odd_line: &LineData,
+        _line_num: u32,
+    ) -> Vec<Tone> {
         let visible = self.visible_line_length();
         let blank = self.blank_duration();
         let fp = self.front_porch();
@@ -156,10 +169,14 @@ impl SSTVMode for Robot36 {
 
         // Average UV between the two lines (R-Y and B-Y chrominance)
         // V = Cr = R-Y, U = Cb = B-Y
-        let v_values: Vec<u8> = even_yuv.iter().zip(odd_yuv.iter())
+        let v_values: Vec<u8> = even_yuv
+            .iter()
+            .zip(odd_yuv.iter())
             .map(|(e, o)| ((e.cr as u16 + o.cr as u16) / 2) as u8)
             .collect();
-        let u_values: Vec<u8> = even_yuv.iter().zip(odd_yuv.iter())
+        let u_values: Vec<u8> = even_yuv
+            .iter()
+            .zip(odd_yuv.iter())
             .map(|(e, o)| ((e.cb as u16 + o.cb as u16) / 2) as u8)
             .collect();
 
@@ -167,8 +184,8 @@ impl SSTVMode for Robot36 {
         // CRITICAL: QSSTV's decoder expects EVEN line Y first, ODD line Y second
         // See rxSetupLine: case 1 (first Y) -> yArrayPtr -> ye
         //                  case 8 (second Y) -> greenArrayPtr -> yo
-        let y_first: Vec<u8> = even_yuv.iter().map(|p| p.y).collect();  // Even line Y (sent first)
-        let y_second: Vec<u8> = odd_yuv.iter().map(|p| p.y).collect();  // Odd line Y (sent second)
+        let y_first: Vec<u8> = even_yuv.iter().map(|p| p.y).collect(); // Even line Y (sent first)
+        let y_second: Vec<u8> = odd_yuv.iter().map(|p| p.y).collect(); // Odd line Y (sent second)
 
         // === First half: Y-even + V (R-Y) ===
         // Position 0: Y from EVEN line (2× pixel duration)
@@ -250,7 +267,11 @@ impl Robot36 {
         tones.extend(generate_pixel_tones(&y_values, y_pixel_duration));
 
         // Gap
-        let marker_freq = if is_even { FREQ_EVEN_MARKER } else { FREQ_BLACK };
+        let marker_freq = if is_even {
+            FREQ_EVEN_MARKER
+        } else {
+            FREQ_BLACK
+        };
         tones.push(Tone::new(marker_freq, (2.0 * blank) / 3.0));
         tones.push(Tone::new(FREQ_SEPARATOR, blank / 3.0));
 
@@ -308,7 +329,12 @@ impl Robot72 {
     /// visibleLineLength = (lineLength - fp - bp - 2*blank - syncDuration) / 4
     fn calc_visible_line_length(&self) -> f64 {
         let line_length = self.image_time() / self.data_lines() as f64;
-        (line_length - self.front_porch() - self.back_porch() - 2.0 * self.blank_duration() - self.sync_duration()) / 4.0
+        (line_length
+            - self.front_porch()
+            - self.back_porch()
+            - 2.0 * self.blank_duration()
+            - self.sync_duration())
+            / 4.0
     }
 }
 
@@ -457,8 +483,11 @@ mod tests {
     #[test]
     fn test_robot36_line_pair_encoding() {
         let r36 = Robot36;
-        let even_pixels: Vec<RgbPixel> = (0..320).map(|i| RgbPixel::new(i as u8, 128, 64)).collect();
-        let odd_pixels: Vec<RgbPixel> = (0..320).map(|i| RgbPixel::new(255 - i as u8, 64, 128)).collect();
+        let even_pixels: Vec<RgbPixel> =
+            (0..320).map(|i| RgbPixel::new(i as u8, 128, 64)).collect();
+        let odd_pixels: Vec<RgbPixel> = (0..320)
+            .map(|i| RgbPixel::new(255 - i as u8, 64, 128))
+            .collect();
         let even_line = LineData::new(even_pixels);
         let odd_line = LineData::new(odd_pixels);
         let tones = r36.encode_line_pair(&even_line, &odd_line, 0);

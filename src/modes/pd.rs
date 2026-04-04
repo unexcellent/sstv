@@ -16,25 +16,22 @@
 //!   8: Sync @ 1200 Hz
 //!   9: Back porch @ 1500 Hz
 
-use crate::constants::{pixel_to_freq, FREQ_BLACK, FREQ_SYNC};
+use crate::constants::{FREQ_BLACK, FREQ_SYNC, pixel_to_freq};
 use crate::modes::{ColorSpace, LineData, SSTVMode, YuvPixel};
 use crate::synthesizer::Tone;
 
 /// Generate pixel tones for a color channel
 fn generate_pixel_tones(values: &[u8], pixel_duration: f64) -> Vec<Tone> {
-    values.iter().map(|&v| Tone::new(pixel_to_freq(v), pixel_duration)).collect()
+    values
+        .iter()
+        .map(|&v| Tone::new(pixel_to_freq(v), pixel_duration))
+        .collect()
 }
 
 /// Calculate visible line length for PD modes
 /// Derived from qsstv/src/sstv/modes/modepd.cpp:44-47
 /// visibleLineLength = (lineLength - fp - bp - syncDuration) / 4
-fn pd_visible_line_length(
-    image_time: f64,
-    data_lines: u32,
-    fp: f64,
-    bp: f64,
-    sync: f64,
-) -> f64 {
+fn pd_visible_line_length(image_time: f64, data_lines: u32, fp: f64, bp: f64, sync: f64) -> f64 {
     let line_length = image_time / data_lines as f64;
     (line_length - fp - bp - sync) / 4.0
 }
@@ -61,12 +58,16 @@ fn encode_pd_line_pair(
     // Extract channels
     let y_odd: Vec<u8> = odd_yuv.iter().map(|p| p.y).collect();
     let y_even: Vec<u8> = even_yuv.iter().map(|p| p.y).collect();
-    
+
     // Average UV between the two lines
-    let v_values: Vec<u8> = even_yuv.iter().zip(odd_yuv.iter())
+    let v_values: Vec<u8> = even_yuv
+        .iter()
+        .zip(odd_yuv.iter())
         .map(|(e, o)| ((e.cr as u16 + o.cr as u16) / 2) as u8)
         .collect();
-    let u_values: Vec<u8> = even_yuv.iter().zip(odd_yuv.iter())
+    let u_values: Vec<u8> = even_yuv
+        .iter()
+        .zip(odd_yuv.iter())
         .map(|(e, o)| ((e.cb as u16 + o.cb as u16) / 2) as u8)
         .collect();
 
@@ -197,7 +198,12 @@ impl SSTVMode for Pd120 {
         self.encode_line_pair(line_data, line_data, 0)
     }
 
-    fn encode_line_pair(&self, even_line: &LineData, odd_line: &LineData, _line_num: u32) -> Vec<Tone> {
+    fn encode_line_pair(
+        &self,
+        even_line: &LineData,
+        odd_line: &LineData,
+        _line_num: u32,
+    ) -> Vec<Tone> {
         encode_pd_line_pair(
             even_line,
             odd_line,
@@ -291,7 +297,12 @@ impl SSTVMode for Pd180 {
         self.encode_line_pair(line_data, line_data, 0)
     }
 
-    fn encode_line_pair(&self, even_line: &LineData, odd_line: &LineData, _line_num: u32) -> Vec<Tone> {
+    fn encode_line_pair(
+        &self,
+        even_line: &LineData,
+        odd_line: &LineData,
+        _line_num: u32,
+    ) -> Vec<Tone> {
         encode_pd_line_pair(
             even_line,
             odd_line,
@@ -387,7 +398,12 @@ impl SSTVMode for Pd290 {
         self.encode_line_pair(line_data, line_data, 0)
     }
 
-    fn encode_line_pair(&self, even_line: &LineData, odd_line: &LineData, _line_num: u32) -> Vec<Tone> {
+    fn encode_line_pair(
+        &self,
+        even_line: &LineData,
+        odd_line: &LineData,
+        _line_num: u32,
+    ) -> Vec<Tone> {
         encode_pd_line_pair(
             even_line,
             odd_line,
@@ -434,8 +450,12 @@ mod tests {
     #[test]
     fn test_pd120_line_pair_encoding() {
         let pd = Pd120;
-        let even_pixels: Vec<RgbPixel> = (0..640).map(|i| RgbPixel::new((i % 256) as u8, 128, 64)).collect();
-        let odd_pixels: Vec<RgbPixel> = (0..640).map(|i| RgbPixel::new((255 - i % 256) as u8, 64, 128)).collect();
+        let even_pixels: Vec<RgbPixel> = (0..640)
+            .map(|i| RgbPixel::new((i % 256) as u8, 128, 64))
+            .collect();
+        let odd_pixels: Vec<RgbPixel> = (0..640)
+            .map(|i| RgbPixel::new((255 - i % 256) as u8, 64, 128))
+            .collect();
         let even_line = LineData::new(even_pixels);
         let odd_line = LineData::new(odd_pixels);
         let tones = pd.encode_line_pair(&even_line, &odd_line, 0);

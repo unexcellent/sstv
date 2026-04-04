@@ -6,7 +6,9 @@ use thiserror::Error;
 #[derive(Error, Debug)]
 pub enum SstvError {
     /// Image dimensions don't match the mode requirements
-    #[error("Image dimensions {actual_width}x{actual_height} don't match mode requirements {expected_width}x{expected_height}")]
+    #[error(
+        "Image dimensions {actual_width}x{actual_height} don't match mode requirements {expected_width}x{expected_height}"
+    )]
     DimensionMismatch {
         expected_width: u32,
         expected_height: u32,

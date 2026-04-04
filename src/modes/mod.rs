@@ -5,11 +5,11 @@
 //!
 //! Reference: qsstv/src/sstv/sstvparam.h and mode implementation files
 
-pub mod martin;
-pub mod scottie;
-pub mod robot;
-pub mod pd;
 pub mod bw;
+pub mod martin;
+pub mod pd;
+pub mod robot;
+pub mod scottie;
 
 use crate::synthesizer::Tone;
 
@@ -45,15 +45,15 @@ impl RgbPixel {
     pub fn to_yuv(&self) -> YuvPixel {
         let y = (30 * self.r as u32 + 59 * self.g as u32 + 11 * self.b as u32) / 100;
         let y = y.min(255) as u8;
-        
+
         // Cr (R-Y) component - derived from modebase.cpp:545-546
         let r_diff = self.r as i32 - y as i32;
         let cr = ((10 * r_diff + 7 * 255) / 14).clamp(0, 255) as u8;
-        
+
         // Cb (B-Y) component - derived from modebase.cpp:546
         let b_diff = self.b as i32 - y as i32;
         let cb = ((100 * b_diff + 89 * 255) / 178).clamp(0, 255) as u8;
-        
+
         YuvPixel { y, cr, cb }
     }
 }
@@ -61,9 +61,9 @@ impl RgbPixel {
 /// YUV pixel data (used by Robot and PD modes)
 #[derive(Debug, Clone, Copy)]
 pub struct YuvPixel {
-    pub y: u8,   // Luminance
-    pub cr: u8,  // Red chrominance (R-Y)
-    pub cb: u8,  // Blue chrominance (B-Y)
+    pub y: u8,  // Luminance
+    pub cr: u8, // Red chrominance (R-Y)
+    pub cb: u8, // Blue chrominance (B-Y)
 }
 
 /// Line data for encoding
@@ -171,7 +171,12 @@ pub trait SSTVMode: Send + Sync {
 
     /// Encode a pair of lines (for modes with 2-line interleaving like PD)
     /// Default implementation just encodes lines individually
-    fn encode_line_pair(&self, even_line: &LineData, odd_line: &LineData, line_num: u32) -> Vec<Tone> {
+    fn encode_line_pair(
+        &self,
+        even_line: &LineData,
+        odd_line: &LineData,
+        line_num: u32,
+    ) -> Vec<Tone> {
         let mut tones = self.encode_line(even_line, line_num);
         tones.extend(self.encode_line(odd_line, line_num + 1));
         tones

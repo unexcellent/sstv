@@ -13,7 +13,7 @@
 //!   7. Sync @ 1200 Hz
 //!   8. Back porch @ 1500 Hz
 
-use crate::constants::{pixel_to_freq, FREQ_BLACK, FREQ_SYNC};
+use crate::constants::{FREQ_BLACK, FREQ_SYNC, pixel_to_freq};
 use crate::modes::{ColorSpace, LineData, SSTVMode};
 use crate::synthesizer::Tone;
 
@@ -34,7 +34,10 @@ fn martin_visible_line_length(
 
 /// Generate pixel tones for a color channel
 fn generate_pixel_tones(pixels: &[u8], pixel_duration: f64) -> Vec<Tone> {
-    pixels.iter().map(|&p| Tone::new(pixel_to_freq(p), pixel_duration)).collect()
+    pixels
+        .iter()
+        .map(|&p| Tone::new(pixel_to_freq(p), pixel_duration))
+        .collect()
 }
 
 /// Encode a line in Martin format (GBR order)
@@ -295,7 +298,7 @@ mod tests {
         let pixels: Vec<RgbPixel> = (0..320).map(|i| RgbPixel::new(i as u8, 128, 64)).collect();
         let line_data = LineData::new(pixels);
         let tones = m1.encode_line(&line_data, 0);
-        
+
         // Should have: 320 green + blank + 320 blue + blank + 320 red + fp + sync + bp
         // = 960 pixels + 5 control tones = 965 tones
         assert_eq!(tones.len(), 965);

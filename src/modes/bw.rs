@@ -117,15 +117,13 @@ impl SSTVMode for Bw8 {
     /// Case 3: sync (1200 Hz)
     fn encode_line(&self, line_data: &LineData, _line_num: u32) -> Vec<Tone> {
         let mut tones = Vec::new();
-        
+
         let visible = self.visible_line_length();
         let num_pixels = self.resolution().0;
         let pixel_duration = visible / num_pixels as f64;
 
         // Convert RGB pixels to grayscale
-        let grayscale: Vec<u8> = line_data.pixels.iter()
-            .map(|p| rgb_to_grayscale(p))
-            .collect();
+        let grayscale: Vec<u8> = line_data.pixels.iter().map(rgb_to_grayscale).collect();
 
         // Case 0: Back porch (1500 Hz)
         tones.push(Tone::new(FREQ_BLACK, self.back_porch()));
@@ -214,15 +212,13 @@ impl SSTVMode for Bw12 {
     /// Encode a single B/W scan line (same structure as BW8)
     fn encode_line(&self, line_data: &LineData, _line_num: u32) -> Vec<Tone> {
         let mut tones = Vec::new();
-        
+
         let visible = self.visible_line_length();
         let num_pixels = self.resolution().0;
         let pixel_duration = visible / num_pixels as f64;
 
         // Convert RGB pixels to grayscale
-        let grayscale: Vec<u8> = line_data.pixels.iter()
-            .map(|p| rgb_to_grayscale(p))
-            .collect();
+        let grayscale: Vec<u8> = line_data.pixels.iter().map(rgb_to_grayscale).collect();
 
         // Case 0: Back porch (1500 Hz)
         tones.push(Tone::new(FREQ_BLACK, self.back_porch()));
@@ -257,11 +253,13 @@ mod tests {
         assert_eq!(mode.resolution(), (160, 120));
         assert_eq!(mode.data_lines(), 120);
         assert_eq!(mode.color_space(), ColorSpace::Grayscale);
-        
+
         // Verify timing adds up correctly
         let line_duration = mode.line_duration();
-        let expected = mode.back_porch() + mode.visible_line_length() 
-            + mode.front_porch() + mode.sync_duration();
+        let expected = mode.back_porch()
+            + mode.visible_line_length()
+            + mode.front_porch()
+            + mode.sync_duration();
         assert!((line_duration - expected).abs() < 0.0001);
     }
 
@@ -295,24 +293,24 @@ mod tests {
     #[test]
     fn test_bw8_line_encoding() {
         let mode = Bw8;
-        
+
         // Create a test line with 160 gray pixels
         let pixels: Vec<RgbPixel> = (0..160)
             .map(|i| RgbPixel::new(i as u8, i as u8, i as u8))
             .collect();
         let line_data = LineData::new(pixels);
-        
+
         let tones = mode.encode_line(&line_data, 0);
-        
+
         // Should have: 1 bp + 160 pixels + 1 fp + 1 sync = 163 tones
         assert_eq!(tones.len(), 163);
-        
+
         // First tone is back porch (1500 Hz)
         assert!((tones[0].freq - FREQ_BLACK).abs() < 0.01);
-        
+
         // Last tone is sync (1200 Hz)
         assert!((tones[162].freq - FREQ_SYNC).abs() < 0.01);
-        
+
         // Second to last is front porch (1500 Hz)
         assert!((tones[161].freq - FREQ_BLACK).abs() < 0.01);
     }
@@ -321,14 +319,14 @@ mod tests {
     fn test_grayscale_frequency_mapping() {
         let pixels = vec![0, 127, 255];
         let tones = generate_grayscale_tones(&pixels, 0.001);
-        
+
         // Black (0) should map to 1500 Hz
         assert!((tones[0].freq - FREQ_BLACK).abs() < 0.01);
-        
+
         // Mid gray (127) should map to ~1900 Hz
         let mid_freq = (FREQ_BLACK + FREQ_WHITE) / 2.0;
         assert!((tones[1].freq - mid_freq).abs() < 10.0);
-        
+
         // White (255) should map to 2300 Hz
         assert!((tones[2].freq - FREQ_WHITE).abs() < 0.01);
     }
