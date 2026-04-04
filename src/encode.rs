@@ -4,11 +4,12 @@
 //! SSTV audio samples.
 
 use alloc::format;
-use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 use core::f64::consts::PI;
-use core::fmt;
+
+use crate::Error;
+use crate::Result;
 
 const FREQ_SYNC: f64 = 1200.0;
 const FREQ_BLACK: f64 = 1500.0;
@@ -35,39 +36,6 @@ const ROBOT36_BLANK_DUR: f64 = 0.0054;
 fn pixel_to_freq(pixel: u8) -> f64 {
     FREQ_BLACK + (pixel as f64 * (FREQ_WHITE - FREQ_BLACK) / 255.0)
 }
-
-#[derive(Debug)]
-pub enum SstvError {
-    DimensionMismatch {
-        expected_width: u32,
-        expected_height: u32,
-        actual_width: u32,
-        actual_height: u32,
-    },
-    EncodingError(String),
-}
-
-impl fmt::Display for SstvError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::DimensionMismatch {
-                expected_width,
-                expected_height,
-                actual_width,
-                actual_height,
-            } => write!(
-                f,
-                "Image dimensions {}x{} don't match mode requirements {}x{}",
-                actual_width, actual_height, expected_width, expected_height
-            ),
-            Self::EncodingError(msg) => write!(f, "Encoding error: {}", msg),
-        }
-    }
-}
-
-impl core::error::Error for SstvError {}
-
-pub type Result<T> = core::result::Result<T, SstvError>;
 
 #[derive(Debug, Clone, Copy)]
 pub struct RgbPixel {
@@ -129,7 +97,7 @@ impl ImageData {
 
     pub fn from_rgb_bytes(width: u32, height: u32, bytes: &[u8]) -> Result<Self> {
         if bytes.len() != (width * height * 3) as usize {
-            return Err(SstvError::EncodingError(format!(
+            return Err(Error::EncodingError(format!(
                 "Expected {} bytes, got {}",
                 width * height * 3,
                 bytes.len()
@@ -308,7 +276,7 @@ fn encode_robot36_line_pair(even_line: &LineData, odd_line: &LineData) -> Vec<To
 /// Encodes `ImageData` into an array of float audio samples representing a Robot36 transmission.
 pub fn encode_robot36(image: &ImageData, sample_rate: u32) -> Result<Vec<f64>> {
     if image.width != ROBOT36_WIDTH || image.height != ROBOT36_HEIGHT {
-        return Err(SstvError::DimensionMismatch {
+        return Err(Error::DimensionMismatch {
             expected_width: ROBOT36_WIDTH,
             expected_height: ROBOT36_HEIGHT,
             actual_width: image.width,
