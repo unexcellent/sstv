@@ -3,12 +3,12 @@
 //! Includes all necessary components for encoding an RGB image into Robot 36
 //! SSTV audio samples.
 
-use std::f64::consts::PI;
-use thiserror::Error;
-
-// =============================================================================
-// Constants
-// =============================================================================
+use alloc::format;
+use alloc::string::String;
+use alloc::vec;
+use alloc::vec::Vec;
+use core::f64::consts::PI;
+use core::fmt;
 
 const FREQ_SYNC: f64 = 1200.0;
 const FREQ_BLACK: f64 = 1500.0;
@@ -36,30 +36,38 @@ fn pixel_to_freq(pixel: u8) -> f64 {
     FREQ_BLACK + (pixel as f64 * (FREQ_WHITE - FREQ_BLACK) / 255.0)
 }
 
-// =============================================================================
-// Error Handling
-// =============================================================================
-
-#[derive(Error, Debug)]
+#[derive(Debug)]
 pub enum SstvError {
-    #[error(
-        "Image dimensions {actual_width}x{actual_height} don't match mode requirements {expected_width}x{expected_height}"
-    )]
     DimensionMismatch {
         expected_width: u32,
         expected_height: u32,
         actual_width: u32,
         actual_height: u32,
     },
-    #[error("Encoding error: {0}")]
     EncodingError(String),
 }
 
-pub type Result<T> = std::result::Result<T, SstvError>;
+impl fmt::Display for SstvError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::DimensionMismatch {
+                expected_width,
+                expected_height,
+                actual_width,
+                actual_height,
+            } => write!(
+                f,
+                "Image dimensions {}x{} don't match mode requirements {}x{}",
+                actual_width, actual_height, expected_width, expected_height
+            ),
+            Self::EncodingError(msg) => write!(f, "Encoding error: {}", msg),
+        }
+    }
+}
 
-// =============================================================================
-// Data Structures
-// =============================================================================
+impl core::error::Error for SstvError {}
+
+pub type Result<T> = core::result::Result<T, SstvError>;
 
 #[derive(Debug, Clone, Copy)]
 pub struct RgbPixel {
@@ -143,10 +151,6 @@ impl ImageData {
     }
 }
 
-// =============================================================================
-// DSP / Synthesizer
-// =============================================================================
-
 #[derive(Debug, Clone, Copy)]
 struct Tone {
     freq: f64,
@@ -170,7 +174,7 @@ impl Synthesizer {
     fn new(sample_rate: u32) -> Self {
         let mut sine_table = [0.0; SINE_TABLE_LEN];
         for (i, v) in sine_table.iter_mut().enumerate() {
-            *v = (i as f64 * PI * 2.0 / SINE_TABLE_LEN as f64).sin() * AUDIO_AMPLITUDE;
+            *v = libm::sin(i as f64 * PI * 2.0 / SINE_TABLE_LEN as f64) * AUDIO_AMPLITUDE;
         }
 
         Self {
@@ -215,10 +219,6 @@ fn tones_to_samples(synth: &mut Synthesizer, tones: &[Tone]) -> Vec<f64> {
     }
     samples
 }
-
-// =============================================================================
-// Encoding Logic
-// =============================================================================
 
 fn generate_complete_vis(vis_code: u8) -> Vec<Tone> {
     let mut tones = vec![
@@ -288,7 +288,6 @@ fn encode_robot36_line_pair(even_line: &LineData, odd_line: &LineData) -> Vec<To
 
     let mut tones = Vec::new();
 
-    // First half: Y-even + V (R-Y)
     tones.extend(generate_pixel_tones(&y_first, y_pixel_duration));
     tones.push(Tone::new(FREQ_BLACK, (2.0 * ROBOT36_BLANK_DUR) / 3.0));
     tones.push(Tone::new(FREQ_SEPARATOR, ROBOT36_BLANK_DUR / 3.0));
@@ -296,7 +295,6 @@ fn encode_robot36_line_pair(even_line: &LineData, odd_line: &LineData) -> Vec<To
     tones.push(Tone::new(FREQ_SYNC, ROBOT36_SYNC_DUR));
     tones.push(Tone::new(FREQ_BLACK, ROBOT36_BP_DUR));
 
-    // Second half: Y-odd + U (B-Y)
     tones.extend(generate_pixel_tones(&y_second, y_pixel_duration));
     tones.push(Tone::new(FREQ_EVEN_MARKER, (2.0 * ROBOT36_BLANK_DUR) / 3.0));
     tones.push(Tone::new(FREQ_SEPARATOR, ROBOT36_BLANK_DUR / 3.0));
@@ -343,10 +341,6 @@ pub fn samples_to_i16(samples: &[f64]) -> Vec<i16> {
         .map(|&s| s.clamp(-32768.0, 32767.0) as i16)
         .collect()
 }
-
-// =============================================================================
-// Tests
-// =============================================================================
 
 #[cfg(test)]
 mod tests {
