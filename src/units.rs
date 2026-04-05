@@ -1,3 +1,4 @@
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Frequency {
     hertz: u16,
 }
@@ -17,6 +18,7 @@ macro_rules! Hz {
     };
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Duration {
     milliseconds: u16,
 }
