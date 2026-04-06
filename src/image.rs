@@ -39,7 +39,7 @@ impl YuvPixel {
     pub fn chroma_red(self) -> u8 {
         self.chroma_red
     }
-    pub fn blue(self) -> u8 {
+    pub fn chroma_blue(self) -> u8 {
         self.chroma_blue
     }
 }
