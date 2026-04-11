@@ -1,6 +1,6 @@
 use crate::synthesizer::Tone;
 use crate::units::{Duration, Frequency};
-use crate::{Hz, ms};
+use crate::{ms, us, Hz};
 
 pub trait Mode {
     const SYNC: Frequency = Hz!(1200);
@@ -18,7 +18,7 @@ pub trait Mode {
     const IMAGE_HEIGHT: u16;
     const SYNC_DURATION: Duration = ms!(9);
     const BACK_PORCH_DURATION: Duration = ms!(3);
-    const BLANK_DURATION: Duration = ms!(54);
+    const BLANK_DURATION: Duration = us!(5400);
 
     fn header_sequence(&self) -> [Tone; 21] {
         let tuning = self.tuning_sequence();

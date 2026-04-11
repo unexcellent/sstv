@@ -2,7 +2,7 @@ use crate::{
     image::{RgbPixel, YuvPixel},
     modes::mode::Mode,
     synthesizer::Tone,
-    units::{Duration, Frequency},
+    units::Frequency,
     us,
 };
 use core::array;
@@ -18,6 +18,8 @@ impl Mode for Robot36 {
 enum EncoderState {
     Header { position: u8 },
     EvenLineLuma(usize),
+    EvenLineLumaToChroma,
+    EvenLineChroma(usize),
 }
 
 pub struct Robot36Encoder<I> {
@@ -76,9 +78,20 @@ where
                 Some(tone)
             }
             EncoderState::EvenLineLuma(position) => match self.current_row.get(position) {
-                Some(pixel) => Some(Self::pixel_luma_tone(pixel)),
-                None => None,
+                Some(pixel) => {
+                    self.state = EncoderState::EvenLineLuma(position + 1);
+                    Some(Self::pixel_luma_tone(pixel))
+                }
+                None => {
+                    self.state = EncoderState::EvenLineLumaToChroma;
+                    Some(Tone(Robot36::BLACK, Robot36::BLANK_DURATION * 2 / 3))
+                }
             },
+            EncoderState::EvenLineLumaToChroma => {
+                self.state = EncoderState::EvenLineChroma(0);
+                Some(Tone(Robot36::SEPARATOR, Robot36::BLANK_DURATION / 3))
+            }
+            EncoderState::EvenLineChroma(position) => None,
         }
     }
 }
