@@ -17,9 +17,11 @@ impl Mode for Robot36 {
 
 enum EncoderState {
     Header { position: u8 },
-    EvenLineLuma(usize),
-    EvenLineLumaToChroma,
-    EvenLineChroma(usize),
+    EvenLuma(usize),
+    EvenLumaToChroma,
+    EvenChroma(usize),
+    EvenToOdd,
+    OddLuma(usize),
     Done,
 }
 
@@ -93,37 +95,45 @@ impl<'a> Iterator for Robot36Encoder<'a> {
                         position: position + 1,
                     }
                 } else {
-                    EncoderState::EvenLineLuma(0)
+                    EncoderState::EvenLuma(0)
                 };
 
                 Some(tone)
             }
-            EncoderState::EvenLineLuma(position) => match self.current_row.get(position) {
+            EncoderState::EvenLuma(position) => match self.current_row.get(position) {
                 Some(pixel) => {
-                    self.state = EncoderState::EvenLineLuma(position + 1);
+                    self.state = EncoderState::EvenLuma(position + 1);
                     Some(Self::pixel_luma_tone(pixel))
                 }
                 None => {
-                    self.state = EncoderState::EvenLineLumaToChroma;
+                    self.state = EncoderState::EvenLumaToChroma;
                     Some(Tone(Robot36::BLACK, Robot36::BLANK_DURATION * 2 / 3))
                 }
             },
-            EncoderState::EvenLineLumaToChroma => {
-                self.state = EncoderState::EvenLineChroma(0);
+            EncoderState::EvenLumaToChroma => {
+                self.state = EncoderState::EvenChroma(0);
                 Some(Tone(Robot36::SEPARATOR, Robot36::BLANK_DURATION / 3))
             }
-            EncoderState::EvenLineChroma(position) => {
+            EncoderState::EvenChroma(position) => {
                 match (self.current_row.get(position), self.next_row.get(position)) {
                     (Some(current_row_pixel), Some(next_row_pixel)) => {
-                        self.state = EncoderState::EvenLineChroma(position + 1);
+                        self.state = EncoderState::EvenChroma(position + 1);
                         Some(Self::pixel_chroma_red_tone(
                             current_row_pixel,
                             next_row_pixel,
                         ))
                     }
-                    _ => None,
+                    _ => {
+                        self.state = EncoderState::EvenToOdd;
+                        Some(Tone(Robot36::SYNC, Robot36::SYNC_DURATION))
+                    }
                 }
             }
+            EncoderState::EvenToOdd => {
+                self.state = EncoderState::OddLuma(0);
+                Some(Tone(Robot36::BLACK, Robot36::BACK_PORCH_DURATION))
+            }
+            EncoderState::OddLuma(_) => None,
             EncoderState::Done => None,
         }
     }
