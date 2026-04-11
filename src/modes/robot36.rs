@@ -70,6 +70,14 @@ impl<'a> Robot36Encoder<'a> {
             + (pixel.luma() as u32 * (Robot36::WHITE.hz() - Robot36::BLACK.hz()) / 255);
         Tone(Frequency::from_hz(frequency), us!(276))
     }
+
+    fn pixel_chroma_red_tone(current_row_pixel: &YuvPixel, next_row_pixel: &YuvPixel) -> Tone {
+        let average_chroma: u32 =
+            (current_row_pixel.chroma_red() as u32 + next_row_pixel.chroma_red() as u32) / 2;
+        let frequency: u32 = Robot36::BLACK.hz()
+            + (average_chroma * (Robot36::WHITE.hz() - Robot36::BLACK.hz()) / 255);
+        Tone(Frequency::from_hz(frequency), us!(138))
+    }
 }
 
 impl<'a> Iterator for Robot36Encoder<'a> {
@@ -104,7 +112,18 @@ impl<'a> Iterator for Robot36Encoder<'a> {
                 self.state = EncoderState::EvenLineChroma(0);
                 Some(Tone(Robot36::SEPARATOR, Robot36::BLANK_DURATION / 3))
             }
-            EncoderState::EvenLineChroma(position) => None,
+            EncoderState::EvenLineChroma(position) => {
+                match (self.current_row.get(position), self.next_row.get(position)) {
+                    (Some(current_row_pixel), Some(next_row_pixel)) => {
+                        self.state = EncoderState::EvenLineChroma(position + 1);
+                        Some(Self::pixel_chroma_red_tone(
+                            current_row_pixel,
+                            next_row_pixel,
+                        ))
+                    }
+                    _ => None,
+                }
+            }
             EncoderState::Done => None,
         }
     }
