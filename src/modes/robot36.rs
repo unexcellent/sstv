@@ -20,32 +20,48 @@ enum EncoderState {
     EvenLineLuma(usize),
     EvenLineLumaToChroma,
     EvenLineChroma(usize),
+    Done,
 }
 
-pub struct Robot36Encoder<I> {
-    pixel_iter: I,
+pub struct Robot36Encoder<'a> {
     state: EncoderState,
+    image: &'a [[RgbPixel; 320]; 240],
+    row_index: usize,
     current_row: [YuvPixel; 320],
+    next_row: [YuvPixel; 320],
 }
 
-impl<I> Robot36Encoder<I>
-where
-    I: Iterator<Item = RgbPixel>,
-{
-    pub fn new(mut pixel_iter: I) -> Self {
-        let first_rgb_row: [RgbPixel; 320] = array::from_fn(|_| {
-            pixel_iter
-                .next()
-                .expect("Iterator exhausted before yielding 640 pixels")
-        });
-
+impl<'a> Robot36Encoder<'a> {
+    pub fn new(image: &'a [[RgbPixel; 320]; 240]) -> Self {
         Self {
-            pixel_iter,
             state: EncoderState::Header { position: 0 },
-            current_row: Self::rgb_row_to_yuv(first_rgb_row),
+            image,
+            row_index: 0,
+            current_row: Self::rgb_row_to_yuv(&image[0]),
+            next_row: Self::rgb_row_to_yuv(&image[1]),
         }
     }
-    fn rgb_row_to_yuv(rgb_row: [RgbPixel; 320]) -> [YuvPixel; 320] {
+
+    fn fetch_next_rows(&mut self) {
+        match self.image.get(self.row_index) {
+            Some(row) => {
+                self.current_row = Self::rgb_row_to_yuv(row);
+            }
+            None => {
+                self.state = EncoderState::Done;
+            }
+        }
+        match self.image.get(self.row_index + 1) {
+            Some(row) => {
+                self.next_row = Self::rgb_row_to_yuv(row);
+            }
+            None => {
+                self.state = EncoderState::Done;
+            }
+        }
+    }
+
+    fn rgb_row_to_yuv(rgb_row: &[RgbPixel; 320]) -> [YuvPixel; 320] {
         array::from_fn(|i| YuvPixel::from(rgb_row[i]))
     }
 
@@ -56,10 +72,7 @@ where
     }
 }
 
-impl<I> Iterator for Robot36Encoder<I>
-where
-    I: Iterator<Item = RgbPixel>,
-{
+impl<'a> Iterator for Robot36Encoder<'a> {
     type Item = Tone;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -92,6 +105,7 @@ where
                 Some(Tone(Robot36::SEPARATOR, Robot36::BLANK_DURATION / 3))
             }
             EncoderState::EvenLineChroma(position) => None,
+            EncoderState::Done => None,
         }
     }
 }
@@ -192,17 +206,17 @@ mod tests {
         let height = 240;
 
         let mut encode_pixels = Vec::with_capacity(width * height);
-        let mut image_pixels = Vec::with_capacity(width * height);
+        let pixel = RgbPixel::new(100, 150, 200);
+        let image_pixels = [[pixel; 320]; 240];
 
         for _ in 0..(width * height) {
             encode_pixels.push(EncodeRgbPixel::new(100, 150, 200));
-            image_pixels.push(RgbPixel::new(100, 150, 200));
         }
 
         let image_data = ImageData::new(width as u32, height as u32, encode_pixels);
         let expected_encode_tones = generate_robot36_tones(&image_data).unwrap();
 
-        let mut encoder = Robot36Encoder::new(image_pixels.into_iter());
+        let mut encoder = Robot36Encoder::new(&image_pixels);
 
         for (i, exp_tone) in expected_encode_tones.into_iter().enumerate() {
             let actual = encoder
