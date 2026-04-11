@@ -22,6 +22,9 @@ enum EncoderState {
     EvenChroma(usize),
     EvenToOdd,
     OddLuma(usize),
+    OddLumaToChroma,
+    OddChroma(usize),
+    OddToEven,
     Done,
 }
 
@@ -45,6 +48,7 @@ impl<'a> Robot36Encoder<'a> {
     }
 
     fn fetch_next_rows(&mut self) {
+        self.row_index += 2;
         match self.image.get(self.row_index) {
             Some(row) => {
                 self.current_row = Self::rgb_row_to_yuv(row);
@@ -76,6 +80,14 @@ impl<'a> Robot36Encoder<'a> {
     fn pixel_chroma_red_tone(current_row_pixel: &YuvPixel, next_row_pixel: &YuvPixel) -> Tone {
         let average_chroma: u32 =
             (current_row_pixel.chroma_red() as u32 + next_row_pixel.chroma_red() as u32) / 2;
+        let frequency: u32 = Robot36::BLACK.hz()
+            + (average_chroma * (Robot36::WHITE.hz() - Robot36::BLACK.hz()) / 255);
+        Tone(Frequency::from_hz(frequency), us!(138))
+    }
+
+    fn pixel_chroma_blue_tone(current_row_pixel: &YuvPixel, next_row_pixel: &YuvPixel) -> Tone {
+        let average_chroma: u32 =
+            (current_row_pixel.chroma_blue() as u32 + next_row_pixel.chroma_blue() as u32) / 2;
         let frequency: u32 = Robot36::BLACK.hz()
             + (average_chroma * (Robot36::WHITE.hz() - Robot36::BLACK.hz()) / 255);
         Tone(Frequency::from_hz(frequency), us!(138))
@@ -133,7 +145,40 @@ impl<'a> Iterator for Robot36Encoder<'a> {
                 self.state = EncoderState::OddLuma(0);
                 Some(Tone(Robot36::BLACK, Robot36::BACK_PORCH_DURATION))
             }
-            EncoderState::OddLuma(_) => None,
+            EncoderState::OddLuma(position) => match self.next_row.get(position) {
+                Some(pixel) => {
+                    self.state = EncoderState::OddLuma(position + 1);
+                    Some(Self::pixel_luma_tone(pixel))
+                }
+                None => {
+                    self.state = EncoderState::OddLumaToChroma;
+                    Some(Tone(Robot36::WHITE, Robot36::BLANK_DURATION * 2 / 3))
+                }
+            },
+            EncoderState::OddLumaToChroma => {
+                self.state = EncoderState::OddChroma(0);
+                Some(Tone(Robot36::SEPARATOR, Robot36::BLANK_DURATION / 3))
+            }
+            EncoderState::OddChroma(position) => {
+                match (self.current_row.get(position), self.next_row.get(position)) {
+                    (Some(current_row_pixel), Some(next_row_pixel)) => {
+                        self.state = EncoderState::OddChroma(position + 1);
+                        Some(Self::pixel_chroma_blue_tone(
+                            current_row_pixel,
+                            next_row_pixel,
+                        ))
+                    }
+                    _ => {
+                        self.state = EncoderState::OddToEven;
+                        Some(Tone(Robot36::SYNC, Robot36::SYNC_DURATION))
+                    }
+                }
+            }
+            EncoderState::OddToEven => {
+                self.state = EncoderState::EvenLuma(0);
+                self.fetch_next_rows();
+                Some(Tone(Robot36::BLACK, Robot36::BACK_PORCH_DURATION))
+            }
             EncoderState::Done => None,
         }
     }
@@ -177,7 +222,7 @@ mod tests {
     use crate::modes::robot36::Robot36;
     use crate::synthesizer::Tone;
     use crate::units::{Duration, Frequency};
-    use crate::{ms, Hz};
+    use crate::{Hz, ms};
     use alloc::vec::Vec;
 
     #[test]
@@ -229,7 +274,7 @@ mod tests {
 
     #[test]
     fn test_compare_encoder_tones_with_encode_rs() {
-        use crate::encode::{generate_robot36_tones, ImageData, RgbPixel as EncodeRgbPixel};
+        use crate::encode::{ImageData, RgbPixel as EncodeRgbPixel, generate_robot36_tones};
 
         let width = 320;
         let height = 240;

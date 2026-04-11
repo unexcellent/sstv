@@ -1,6 +1,6 @@
 use crate::synthesizer::Tone;
 use crate::units::{Duration, Frequency};
-use crate::{ms, us, Hz};
+use crate::{Hz, ms, us};
 
 pub trait Mode {
     const SYNC: Frequency = Hz!(1200);
