@@ -1,9 +1,9 @@
 use crate::{
     image::{RgbPixel, YuvPixel},
     modes::mode::Mode,
-    ms,
     synthesizer::Tone,
     units::{Duration, Frequency},
+    us,
 };
 use core::array;
 
@@ -50,7 +50,7 @@ where
     fn pixel_luma_tone(pixel: &YuvPixel) -> Tone {
         let frequency: u32 = Robot36::BLACK.hz()
             + (pixel.luma() as u32 * (Robot36::WHITE.hz() - Robot36::BLACK.hz()) / 255);
-        Tone(Frequency::from_hz(frequency), Duration::from_micros(276))
+        Tone(Frequency::from_hz(frequency), us!(276))
     }
 }
 
@@ -201,7 +201,7 @@ mod tests {
 
             let expected_synth_tone = Tone(
                 Frequency::from_hz(exp_hz as u32),
-                Duration::from_micros(exp_micros),
+                Duration::from_us(exp_micros),
             );
 
             assert_eq!(

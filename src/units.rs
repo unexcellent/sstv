@@ -23,7 +23,7 @@ pub struct Duration {
     microseconds: u32,
 }
 impl Duration {
-    pub const fn from_micros(microseconds: u32) -> Self {
+    pub const fn from_us(microseconds: u32) -> Self {
         Self { microseconds }
     }
     pub const fn from_ms(milliseconds: u32) -> Self {
@@ -44,8 +44,8 @@ macro_rules! ms {
 }
 
 #[macro_export]
-macro_rules! micros {
+macro_rules! us {
     ($value:expr) => {
-        $crate::units::Duration::from_micros($value)
+        $crate::units::Duration::from_us($value)
     };
 }
