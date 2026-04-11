@@ -1,4 +1,9 @@
-use crate::{image::RgbPixel, modes::mode::Mode, synthesizer::Tone};
+use crate::{
+    image::{RgbPixel, YuvPixel},
+    modes::mode::Mode,
+    synthesizer::Tone,
+};
+use core::array;
 
 pub struct Robot36;
 
@@ -16,13 +21,23 @@ enum EncoderState {
 pub struct Robot36Encoder<I> {
     pixel_iter: I,
     state: EncoderState,
+    next_row: MergedRows,
 }
 
-impl<I> Robot36Encoder<I> {
-    pub fn new(pixel_iter: I) -> Self {
+impl<I> Robot36Encoder<I>
+where
+    I: Iterator<Item = RgbPixel>,
+{
+    pub fn new(mut pixel_iter: I) -> Self {
+        let two_rows: [RgbPixel; 640] = array::from_fn(|_| {
+            pixel_iter
+                .next()
+                .expect("Iterator exhausted before yielding 640 pixels")
+        });
         Self {
             pixel_iter,
             state: EncoderState::Header { position: 0 },
+            next_row: MergedRows::new(&two_rows),
         }
     }
 }
@@ -49,6 +64,24 @@ where
             }
             EncoderState::Image { .. } => None,
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct MergedRows([YuvPixel; 320]);
+impl MergedRows {
+    pub fn new(two_rows: &[RgbPixel; 640]) -> Self {
+        let yuv_rows: [YuvPixel; 640] = array::from_fn(|i| YuvPixel::from(two_rows[i]));
+        let merged_rows: [YuvPixel; 320] = array::from_fn(|i| {
+            let first_row_pixel = yuv_rows[i];
+            let second_row_pixel = yuv_rows[i + 320];
+            YuvPixel::new(
+                first_row_pixel.luma(),
+                second_row_pixel.chroma_red(),
+                second_row_pixel.chroma_blue(),
+            )
+        });
+        Self(merged_rows)
     }
 }
 
@@ -106,6 +139,20 @@ mod tests {
                 Tone(Hz!(1200), ms!(30)),
             ]
         )
+    }
+
+    #[test]
+    fn test_row_merging() {
+        let rgb_pixels: [RgbPixel; 640] = array::from_fn(|i| {
+            if i < 320 {
+                RgbPixel::new(0, 0, 255)
+            } else {
+                RgbPixel::new(255, 0, 0)
+            }
+        });
+        let merged_yuv: [YuvPixel; 320] = array::from_fn(|_| YuvPixel::new(28, 255, 84));
+
+        assert_eq!(MergedRows::new(&rgb_pixels), MergedRows(merged_yuv))
     }
 
     #[test]
