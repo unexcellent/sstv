@@ -1,12 +1,12 @@
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Frequency {
-    hertz: u16,
+    hertz: u32,
 }
 impl Frequency {
-    pub const fn from_hz(hertz: u16) -> Self {
+    pub const fn from_hz(hertz: u32) -> Self {
         Self { hertz }
     }
-    pub const fn hz(self) -> u16 {
+    pub const fn hz(self) -> u32 {
         self.hertz
     }
 }

@@ -17,13 +17,13 @@ impl Mode for Robot36 {
 
 enum EncoderState {
     Header { position: u8 },
-    Image { row: u16, col: u16 },
+    EvenLineLuma(usize),
 }
 
 pub struct Robot36Encoder<I> {
     pixel_iter: I,
     state: EncoderState,
-    next_row: MergedRows,
+    current_row: [YuvPixel; 320],
 }
 
 impl<I> Robot36Encoder<I>
@@ -31,35 +31,26 @@ where
     I: Iterator<Item = RgbPixel>,
 {
     pub fn new(mut pixel_iter: I) -> Self {
-        let two_rows: [RgbPixel; 640] = array::from_fn(|_| {
+        let first_rgb_row: [RgbPixel; 320] = array::from_fn(|_| {
             pixel_iter
                 .next()
                 .expect("Iterator exhausted before yielding 640 pixels")
         });
+
         Self {
             pixel_iter,
             state: EncoderState::Header { position: 0 },
-            next_row: MergedRows::new(&two_rows),
+            current_row: Self::rgb_row_to_yuv(first_rgb_row),
         }
     }
-
-    fn pixel_to_tones(pixel: YuvPixel) -> [Tone; 3] {
-        let y_dur = Duration::from_micros(276);
-        let uv_dur = Duration::from_micros(44112);
-
-        [
-            Self::subpixel_to_tone(pixel.luma(), y_dur),
-            Self::subpixel_to_tone(pixel.chroma_blue(), uv_dur),
-            Self::subpixel_to_tone(pixel.chroma_red(), uv_dur),
-        ]
+    fn rgb_row_to_yuv(rgb_row: [RgbPixel; 320]) -> [YuvPixel; 320] {
+        array::from_fn(|i| YuvPixel::from(rgb_row[i]))
     }
 
-    fn subpixel_to_tone(subpixel_value: u8, duration: Duration) -> Tone {
-        let black = Robot36::BLACK.hz() as u32;
-        let white = Robot36::WHITE.hz() as u32;
-        let freq = black + (subpixel_value as u32 * (white - black) / 255);
-
-        Tone(Frequency::from_hz(freq as u16), duration)
+    fn pixel_luma_tone(pixel: &YuvPixel) -> Tone {
+        let frequency: u32 = Robot36::BLACK.hz()
+            + (pixel.luma() as u32 * (Robot36::WHITE.hz() - Robot36::BLACK.hz()) / 255);
+        Tone(Frequency::from_hz(frequency), Duration::from_micros(276))
     }
 }
 
@@ -79,22 +70,14 @@ where
                         position: position + 1,
                     }
                 } else {
-                    EncoderState::Image { row: 0, col: 0 }
+                    EncoderState::EvenLineLuma(0)
                 };
 
                 Some(tone)
             }
-            EncoderState::Image { .. } => match self.next_row.next() {
-                Some(pixel) => Some(Self::pixel_to_tones(pixel)[0]),
-                None => {
-                    let two_rows: [RgbPixel; 640] = array::from_fn(|_| {
-                        self.pixel_iter
-                            .next()
-                            .expect("Iterator exhausted before yielding 640 pixels")
-                    });
-                    self.next_row = MergedRows::new(&two_rows);
-                    None
-                }
+            EncoderState::EvenLineLuma(position) => match self.current_row.get(position) {
+                Some(pixel) => Some(Self::pixel_luma_tone(pixel)),
+                None => None,
             },
         }
     }
@@ -189,20 +172,6 @@ mod tests {
     }
 
     #[test]
-    fn test_row_merging() {
-        let rgb_pixels: [RgbPixel; 640] = array::from_fn(|i| {
-            if i < 320 {
-                RgbPixel::new(0, 0, 255)
-            } else {
-                RgbPixel::new(255, 0, 0)
-            }
-        });
-        let merged_yuv: [YuvPixel; 320] = array::from_fn(|_| YuvPixel::new(28, 255, 84));
-
-        assert_eq!(MergedRows::new(&rgb_pixels), MergedRows(merged_yuv, 0))
-    }
-
-    #[test]
     fn test_compare_encoder_tones_with_encode_rs() {
         use crate::encode::{generate_robot36_tones, ImageData, RgbPixel as EncodeRgbPixel};
 
@@ -231,7 +200,7 @@ mod tests {
             let exp_micros = (exp_tone.duration * 1_000_000.0).round() as u32;
 
             let expected_synth_tone = Tone(
-                Frequency::from_hz(exp_hz),
+                Frequency::from_hz(exp_hz as u32),
                 Duration::from_micros(exp_micros),
             );
 
