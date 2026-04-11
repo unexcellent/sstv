@@ -14,26 +14,38 @@ impl Frequency {
 #[macro_export]
 macro_rules! Hz {
     ($value:expr) => {
-        Frequency::from_hz($value)
+        $crate::units::Frequency::from_hz($value)
     };
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Duration {
-    milliseconds: u16,
+    microseconds: u32,
 }
 impl Duration {
-    pub const fn from_ms(milliseconds: u16) -> Self {
-        Self { milliseconds }
+    pub const fn from_micros(microseconds: u32) -> Self {
+        Self { microseconds }
     }
-    pub const fn ms(self) -> u16 {
-        self.milliseconds
+    pub const fn from_ms(milliseconds: u32) -> Self {
+        Self {
+            microseconds: milliseconds * 1000,
+        }
+    }
+    pub const fn micros(self) -> u32 {
+        self.microseconds
     }
 }
 
 #[macro_export]
 macro_rules! ms {
     ($value:expr) => {
-        Duration::from_ms($value)
+        $crate::units::Duration::from_ms($value)
+    };
+}
+
+#[macro_export]
+macro_rules! micros {
+    ($value:expr) => {
+        $crate::units::Duration::from_micros($value)
     };
 }
