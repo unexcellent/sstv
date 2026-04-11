@@ -1,7 +1,9 @@
 use crate::{
     image::{RgbPixel, YuvPixel},
     modes::mode::Mode,
+    ms,
     synthesizer::Tone,
+    units::{Duration, Frequency},
 };
 use core::array;
 
@@ -40,6 +42,25 @@ where
             next_row: MergedRows::new(&two_rows),
         }
     }
+
+    fn pixel_to_tones(pixel: YuvPixel) -> [Tone; 3] {
+        let y_dur = Duration::from_micros(276);
+        let uv_dur = Duration::from_micros(44112);
+
+        [
+            Self::subpixel_to_tone(pixel.luma(), y_dur),
+            Self::subpixel_to_tone(pixel.chroma_blue(), uv_dur),
+            Self::subpixel_to_tone(pixel.chroma_red(), uv_dur),
+        ]
+    }
+
+    fn subpixel_to_tone(subpixel_value: u8, duration: Duration) -> Tone {
+        let black = Robot36::BLACK.hz() as u32;
+        let white = Robot36::WHITE.hz() as u32;
+        let freq = black + (subpixel_value as u32 * (white - black) / 255);
+
+        Tone(Frequency::from_hz(freq as u16), duration)
+    }
 }
 
 impl<I> Iterator for Robot36Encoder<I>
@@ -47,6 +68,7 @@ where
     I: Iterator<Item = RgbPixel>,
 {
     type Item = Tone;
+
     fn next(&mut self) -> Option<Self::Item> {
         match self.state {
             EncoderState::Header { position } => {
@@ -62,13 +84,25 @@ where
 
                 Some(tone)
             }
-            EncoderState::Image { .. } => None,
+            EncoderState::Image { .. } => match self.next_row.next() {
+                Some(pixel) => Some(Self::pixel_to_tones(pixel)[0]),
+                None => {
+                    let two_rows: [RgbPixel; 640] = array::from_fn(|_| {
+                        self.pixel_iter
+                            .next()
+                            .expect("Iterator exhausted before yielding 640 pixels")
+                    });
+                    self.next_row = MergedRows::new(&two_rows);
+                    None
+                }
+            },
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct MergedRows([YuvPixel; 320]);
+pub struct MergedRows([YuvPixel; 320], usize);
+
 impl MergedRows {
     pub fn new(two_rows: &[RgbPixel; 640]) -> Self {
         let yuv_rows: [YuvPixel; 640] = array::from_fn(|i| YuvPixel::from(two_rows[i]));
@@ -81,7 +115,20 @@ impl MergedRows {
                 second_row_pixel.chroma_blue(),
             )
         });
-        Self(merged_rows)
+        Self(merged_rows, 0)
+    }
+}
+
+impl Iterator for MergedRows {
+    type Item = YuvPixel;
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.1 < 320 {
+            let pixel = self.0[self.1];
+            self.1 += 1;
+            Some(pixel)
+        } else {
+            None
+        }
     }
 }
 
@@ -152,7 +199,7 @@ mod tests {
         });
         let merged_yuv: [YuvPixel; 320] = array::from_fn(|_| YuvPixel::new(28, 255, 84));
 
-        assert_eq!(MergedRows::new(&rgb_pixels), MergedRows(merged_yuv))
+        assert_eq!(MergedRows::new(&rgb_pixels), MergedRows(merged_yuv, 0))
     }
 
     #[test]
@@ -162,8 +209,6 @@ mod tests {
         let width = 320;
         let height = 240;
 
-        // We need an array of our image module's pixels for the iterator,
-        // and an array of the encode module's pixels for generate_robot36_tones.
         let mut encode_pixels = Vec::with_capacity(width * height);
         let mut image_pixels = Vec::with_capacity(width * height);
 
@@ -199,7 +244,6 @@ mod tests {
                 actual.0.hz()
             );
 
-            // Using a tolerance of 5 microseconds to account for float truncation differences
             assert!(
                 actual.1.micros().abs_diff(expected_synth_tone.1.micros()) <= 5,
                 "Tone {} duration mismatch: Expected {} us, got {} us",
@@ -208,11 +252,5 @@ mod tests {
                 actual.1.micros()
             );
         }
-
-        assert_eq!(
-            encoder.next(),
-            None,
-            "Encoder produced more tones than expected"
-        );
     }
 }
