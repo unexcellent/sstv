@@ -124,13 +124,13 @@ fn pixel_to_freq(pixel: u8) -> f64 {
 }
 
 #[derive(Debug, Clone, Copy)]
-struct Tone {
-    freq: f64,
-    duration: f64,
+pub struct Tone {
+    pub freq: f64,
+    pub duration: f64,
 }
 
 impl Tone {
-    fn new(freq: f64, duration: f64) -> Self {
+    pub fn new(freq: f64, duration: f64) -> Self {
         Self { freq, duration }
     }
 }
@@ -277,8 +277,8 @@ fn encode_robot36_line_pair(even_line: &LineData, odd_line: &LineData) -> Vec<To
     tones
 }
 
-/// Encodes `ImageData` into an array of float audio samples representing a Robot36 transmission.
-pub fn encode_robot36(image: &ImageData, sample_rate: u32) -> Result<Vec<f64>> {
+/// Generates the raw sequence of tones for a Robot36 transmission.
+pub fn generate_robot36_tones(image: &ImageData) -> Result<Vec<Tone>> {
     if image.width != ROBOT36_WIDTH || image.height != ROBOT36_HEIGHT {
         return Err(Error::DimensionMismatch {
             expected_width: ROBOT36_WIDTH,
@@ -288,11 +288,10 @@ pub fn encode_robot36(image: &ImageData, sample_rate: u32) -> Result<Vec<f64>> {
         });
     }
 
-    let mut synthesizer = Synthesizer::new(sample_rate);
-    let mut samples = Vec::new();
+    let mut tones = Vec::new();
 
     let vis_tones = generate_complete_vis(ROBOT36_VIS);
-    samples.extend(tones_to_samples(&mut synthesizer, &vis_tones));
+    tones.extend(vis_tones);
 
     let num_pairs = ROBOT36_HEIGHT / 2;
     for pair_num in 0..num_pairs {
@@ -300,10 +299,17 @@ pub fn encode_robot36(image: &ImageData, sample_rate: u32) -> Result<Vec<f64>> {
         let odd_line = image.get_line(pair_num * 2 + 1);
 
         let pair_tones = encode_robot36_line_pair(&even_line, &odd_line);
-        samples.extend(tones_to_samples(&mut synthesizer, &pair_tones));
+        tones.extend(pair_tones);
     }
 
-    Ok(samples)
+    Ok(tones)
+}
+
+/// Encodes `ImageData` into an array of float audio samples representing a Robot36 transmission.
+pub fn encode_robot36(image: &ImageData, sample_rate: u32) -> Result<Vec<f64>> {
+    let tones = generate_robot36_tones(image)?;
+    let mut synthesizer = Synthesizer::new(sample_rate);
+    Ok(tones_to_samples(&mut synthesizer, &tones))
 }
 
 /// Converts normalized f64 audio samples to 16-bit PCM integer samples.
