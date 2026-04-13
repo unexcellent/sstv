@@ -56,22 +56,32 @@ macro_rules! Hz {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Duration {
-    microseconds: u32,
+    nanoseconds: u64,
 }
 
 impl Duration {
-    pub const fn from_us(microseconds: u32) -> Self {
-        Self { microseconds }
+    pub const fn from_ns(nanoseconds: u64) -> Self {
+        Self { nanoseconds }
     }
 
-    pub const fn from_ms(milliseconds: u32) -> Self {
+    pub const fn from_us(microseconds: u64) -> Self {
         Self {
-            microseconds: milliseconds * 1000,
+            nanoseconds: microseconds * 1000,
         }
     }
 
+    pub const fn from_ms(milliseconds: u64) -> Self {
+        Self {
+            nanoseconds: milliseconds * 1_000_000,
+        }
+    }
+
+    pub const fn nanos(self) -> u64 {
+        self.nanoseconds
+    }
+
     pub const fn micros(self) -> u32 {
-        self.microseconds
+        (self.nanoseconds / 1000) as u32
     }
 }
 
@@ -79,7 +89,7 @@ impl Add for Duration {
     type Output = Self;
 
     fn add(self, rhs: Self) -> Self {
-        Self::from_us(self.micros() + rhs.micros())
+        Self::from_ns(self.nanos() + rhs.nanos())
     }
 }
 
@@ -87,7 +97,7 @@ impl Sub for Duration {
     type Output = Self;
 
     fn sub(self, rhs: Self) -> Self {
-        Self::from_us(self.micros() - rhs.micros())
+        Self::from_ns(self.nanos() - rhs.nanos())
     }
 }
 
@@ -95,7 +105,7 @@ impl Mul<u32> for Duration {
     type Output = Self;
 
     fn mul(self, rhs: u32) -> Self {
-        Self::from_us(self.micros() * rhs)
+        Self::from_ns(self.nanos() * (rhs as u64))
     }
 }
 
@@ -103,8 +113,15 @@ impl Div<u32> for Duration {
     type Output = Self;
 
     fn div(self, rhs: u32) -> Self {
-        Self::from_us(self.micros() / rhs)
+        Self::from_ns(self.nanos() / (rhs as u64))
     }
+}
+
+#[macro_export]
+macro_rules! ns {
+    ($value:expr) => {
+        $crate::units::Duration::from_ns($value)
+    };
 }
 
 #[macro_export]

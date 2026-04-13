@@ -39,6 +39,8 @@ where
     current_row: [YuvPixel; 320],
     next_row: [YuvPixel; 320],
     remaining_line_time: Duration,
+    luma_time: Duration,
+    chroma_time: Duration,
 }
 
 impl<I> Robot36Encoder<I>
@@ -51,12 +53,20 @@ where
         let next_row = Self::fill_row(&mut pixel_iter)
             .unwrap_or([YuvPixel::from(RgbPixel::new(0, 0, 0)); 320]);
 
+        let fixed_remaining =
+            Robot36::BLANK_DURATION + Robot36::SYNC_DURATION + Robot36::BACK_PORCH_DURATION;
+        let total_pixel_time = Robot36::LINE_DURATION - fixed_remaining;
+        let chroma_time = total_pixel_time / 3;
+        let luma_time = total_pixel_time - chroma_time;
+
         Self {
             state: EncoderState::Header(0),
             pixel_iter,
             current_row,
             next_row,
             remaining_line_time: Robot36::LINE_DURATION,
+            luma_time,
+            chroma_time,
         }
     }
 
@@ -112,14 +122,9 @@ where
             EncoderState::EvenLuma(position) => match self.current_row.get(position) {
                 Some(pixel) => {
                     self.state = EncoderState::EvenLuma(position + 1);
-                    let fixed_remaining = Robot36::BLANK_DURATION
-                        + Robot36::SYNC_DURATION
-                        + Robot36::BACK_PORCH_DURATION;
-                    let total_pixel_time = Robot36::LINE_DURATION - fixed_remaining;
-                    let chroma_time = total_pixel_time / 3;
-                    let remaining_luma_time =
-                        self.remaining_line_time - fixed_remaining - chroma_time;
-                    let duration = remaining_luma_time / (320 - position as u32);
+                    let pos = position as u32;
+                    let duration =
+                        (self.luma_time * (pos + 1) / 320) - (self.luma_time * pos / 320);
                     self.emit_tone(pixel.luma_tone(Robot36::BLACK, Robot36::WHITE, duration))
                 }
                 None => {
@@ -135,9 +140,9 @@ where
                 match (self.current_row.get(position), self.next_row.get(position)) {
                     (Some(current_row_pixel), Some(next_row_pixel)) => {
                         self.state = EncoderState::EvenChroma(position + 1);
-                        let fixed_remaining = Robot36::SYNC_DURATION + Robot36::BACK_PORCH_DURATION;
-                        let remaining_chroma_time = self.remaining_line_time - fixed_remaining;
-                        let duration = remaining_chroma_time / (320 - position as u32);
+                        let pos = position as u32;
+                        let duration =
+                            (self.chroma_time * (pos + 1) / 320) - (self.chroma_time * pos / 320);
                         let combined_pixel = YuvPixel::average(*current_row_pixel, *next_row_pixel);
                         self.emit_tone(combined_pixel.chroma_red_tone(
                             Robot36::BLACK,
@@ -160,14 +165,9 @@ where
             EncoderState::OddLuma(position) => match self.next_row.get(position) {
                 Some(pixel) => {
                     self.state = EncoderState::OddLuma(position + 1);
-                    let fixed_remaining = Robot36::BLANK_DURATION
-                        + Robot36::SYNC_DURATION
-                        + Robot36::BACK_PORCH_DURATION;
-                    let total_pixel_time = Robot36::LINE_DURATION - fixed_remaining;
-                    let chroma_time = total_pixel_time / 3;
-                    let remaining_luma_time =
-                        self.remaining_line_time - fixed_remaining - chroma_time;
-                    let duration = remaining_luma_time / (320 - position as u32);
+                    let pos = position as u32;
+                    let duration =
+                        (self.luma_time * (pos + 1) / 320) - (self.luma_time * pos / 320);
                     self.emit_tone(pixel.luma_tone(Robot36::BLACK, Robot36::WHITE, duration))
                 }
                 None => {
@@ -183,9 +183,9 @@ where
                 match (self.current_row.get(position), self.next_row.get(position)) {
                     (Some(current_row_pixel), Some(next_row_pixel)) => {
                         self.state = EncoderState::OddChroma(position + 1);
-                        let fixed_remaining = Robot36::SYNC_DURATION + Robot36::BACK_PORCH_DURATION;
-                        let remaining_chroma_time = self.remaining_line_time - fixed_remaining;
-                        let duration = remaining_chroma_time / (320 - position as u32);
+                        let pos = position as u32;
+                        let duration =
+                            (self.chroma_time * (pos + 1) / 320) - (self.chroma_time * pos / 320);
                         let combined_pixel = YuvPixel::average(*current_row_pixel, *next_row_pixel);
                         self.emit_tone(combined_pixel.chroma_blue_tone(
                             Robot36::BLACK,
@@ -227,7 +227,7 @@ mod tests {
     use super::*;
     use crate::modes::robot36::Robot36;
     use crate::synthesizer::Tone;
-    use crate::{Hz, ms, us};
+    use crate::{Hz, ms, ns};
 
     #[test]
     fn test_identification_tones_robot36() {
@@ -303,8 +303,8 @@ mod tests {
             let line = line.unwrap();
             let parts: Vec<&str> = line.split(',').collect();
             let hz: u32 = parts[0].parse().unwrap();
-            let micros: u32 = parts[1].parse().unwrap();
-            expected_tones.push(Tone(Hz!(hz), us!(micros)));
+            let nanos: u64 = parts[1].parse().unwrap();
+            expected_tones.push(Tone(Hz!(hz), ns!(nanos)));
         }
 
         let generated_tones: Vec<Tone> = encoder.collect();

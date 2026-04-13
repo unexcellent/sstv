@@ -29,7 +29,7 @@ fn main() {
 
     encoder.for_each(|tone| {
         let freq = tone.0.hz() as f64;
-        let duration_sec = tone.1.micros() as f64 / 1_000_000.0;
+        let duration_sec = tone.1.nanos() as f64 / 1_000_000_000.0;
 
         let exact_samples = (duration_sec * sample_rate as f64) + sample_adjust;
         let num_samples = exact_samples.round() as usize;

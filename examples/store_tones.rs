@@ -25,9 +25,9 @@ fn main() {
     let encoder_writer = GzEncoder::new(file, Compression::default());
     let mut writer = BufWriter::new(encoder_writer);
 
-    writer.write_all(b"hz,micros\n").unwrap();
+    writer.write_all(b"hz,nanos\n").unwrap();
 
     encoder.for_each(|tone| {
-        writeln!(writer, "{},{}", tone.0.hz(), tone.1.micros()).unwrap();
+        writeln!(writer, "{},{}", tone.0.hz(), tone.1.nanos()).unwrap();
     });
 }
