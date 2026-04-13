@@ -13,15 +13,10 @@ fn main() {
     assert_eq!(width, 320, "Image width must be exactly 320");
     assert_eq!(height, 240, "Image height must be exactly 240");
 
-    let mut pixels = vec![[RgbPixel::new(0, 0, 0); 320]; 240];
-
-    img.pixels().for_each(|(x, y, rgba)| {
-        pixels[y as usize][x as usize] = RgbPixel::new(rgba[0], rgba[1], rgba[2]);
-    });
-
-    // Cast the outer Vec slice to the exact sized array reference required by the encoder
-    let pixel_array: &[[RgbPixel; 320]; 240] = pixels.as_slice().try_into().unwrap();
-    let encoder = Robot36Encoder::new(pixel_array);
+    let encoder = Robot36Encoder::new(
+        img.pixels()
+            .map(|(_, _, rgba)| RgbPixel::new(rgba[0], rgba[1], rgba[2])),
+    );
 
     fs::create_dir_all("local").expect("Failed to create local/ directory");
     let out_path = Path::new("local").join("output.wav");
@@ -36,8 +31,6 @@ fn main() {
 
     let mut writer = WavWriter::create(out_path, spec).expect("Failed to create WAV writer");
     let mut phase: f64 = 0.0;
-
-    // Track fractional sample error to prevent cumulative timing skew
     let mut sample_adjust: f64 = 0.0;
 
     encoder.for_each(|tone| {
@@ -47,7 +40,6 @@ fn main() {
         let exact_samples = (duration_sec * sample_rate as f64) + sample_adjust;
         let num_samples = exact_samples.round() as usize;
 
-        // Carry over the rounding remainder to the next tone
         sample_adjust = exact_samples - num_samples as f64;
 
         let phase_increment = 2.0 * PI * freq / sample_rate as f64;

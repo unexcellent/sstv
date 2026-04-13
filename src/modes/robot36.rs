@@ -6,7 +6,6 @@ use crate::{
     units::{Duration, Frequency},
     us,
 };
-use core::array;
 
 pub struct Robot36;
 
@@ -31,25 +30,42 @@ enum EncoderState {
     Done,
 }
 
-pub struct Robot36Encoder<'a> {
+pub struct Robot36Encoder<I>
+where
+    I: Iterator<Item = RgbPixel>,
+{
     state: EncoderState,
-    image: &'a [[RgbPixel; 320]; 240],
-    row_index: usize,
+    pixel_iter: I,
     current_row: [YuvPixel; 320],
     next_row: [YuvPixel; 320],
     remaining_line_time: Duration,
 }
 
-impl<'a> Robot36Encoder<'a> {
-    pub fn new(image: &'a [[RgbPixel; 320]; 240]) -> Self {
+impl<I> Robot36Encoder<I>
+where
+    I: Iterator<Item = RgbPixel>,
+{
+    pub fn new(mut pixel_iter: I) -> Self {
+        let current_row = Self::fill_row(&mut pixel_iter)
+            .unwrap_or([YuvPixel::from(RgbPixel::new(0, 0, 0)); 320]);
+        let next_row = Self::fill_row(&mut pixel_iter)
+            .unwrap_or([YuvPixel::from(RgbPixel::new(0, 0, 0)); 320]);
+
         Self {
             state: EncoderState::Header { position: 0 },
-            image,
-            row_index: 0,
-            current_row: Self::rgb_row_to_yuv(&image[0]),
-            next_row: Self::rgb_row_to_yuv(&image[1]),
+            pixel_iter,
+            current_row,
+            next_row,
             remaining_line_time: Robot36::LINE_DURATION,
         }
+    }
+
+    fn fill_row(iter: &mut I) -> Option<[YuvPixel; 320]> {
+        let mut row = [YuvPixel::from(RgbPixel::new(0, 0, 0)); 320];
+        for pixel in row.iter_mut() {
+            *pixel = iter.next()?.into();
+        }
+        Some(row)
     }
 
     fn emit_tone(&mut self, tone: Tone) -> Option<Tone> {
@@ -61,27 +77,19 @@ impl<'a> Robot36Encoder<'a> {
     }
 
     fn fetch_next_rows(&mut self) {
-        self.row_index += 2;
-        match self.image.get(self.row_index) {
-            Some(row) => {
-                self.current_row = Self::rgb_row_to_yuv(row);
+        match Self::fill_row(&mut self.pixel_iter) {
+            Some(row) => self.current_row = row,
+            None => {
+                self.state = EncoderState::Done;
+                return;
             }
+        }
+        match Self::fill_row(&mut self.pixel_iter) {
+            Some(row) => self.next_row = row,
             None => {
                 self.state = EncoderState::Done;
             }
         }
-        match self.image.get(self.row_index + 1) {
-            Some(row) => {
-                self.next_row = Self::rgb_row_to_yuv(row);
-            }
-            None => {
-                self.state = EncoderState::Done;
-            }
-        }
-    }
-
-    fn rgb_row_to_yuv(rgb_row: &[RgbPixel; 320]) -> [YuvPixel; 320] {
-        array::from_fn(|i| YuvPixel::from(rgb_row[i]))
     }
 
     fn pixel_luma_tone(pixel: &YuvPixel, duration: Duration) -> Tone {
@@ -115,7 +123,10 @@ impl<'a> Robot36Encoder<'a> {
     }
 }
 
-impl<'a> Iterator for Robot36Encoder<'a> {
+impl<I> Iterator for Robot36Encoder<I>
+where
+    I: Iterator<Item = RgbPixel>,
+{
     type Item = Tone;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -310,8 +321,7 @@ mod tests {
             pixels[y as usize][x as usize] = RgbPixel::new(rgba[0], rgba[1], rgba[2]);
         });
 
-        let pixel_array: &[[RgbPixel; 320]; 240] = pixels.as_slice().try_into().unwrap();
-        let encoder = Robot36Encoder::new(pixel_array);
+        let encoder = Robot36Encoder::new(pixels.into_iter().flatten());
 
         let sample_rate = 48000.0;
         let mut phase: f64 = 0.0;
