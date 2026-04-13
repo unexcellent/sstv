@@ -1,9 +1,10 @@
 use crate::{
+    Hz,
     image::{RgbPixel, YuvPixel},
     modes::mode::Mode,
     synthesizer::Tone,
     units::{Duration, Frequency},
-    us, Hz,
+    us,
 };
 use core::array;
 
@@ -227,7 +228,7 @@ impl<'a> Iterator for Robot36Encoder<'a> {
             }
             EncoderState::LineGap => {
                 self.state = EncoderState::EvenLuma(0);
-                let gap_length = self.remaining_line_time.clone();
+                let gap_length = self.remaining_line_time;
                 self.remaining_line_time = Robot36::LINE_DURATION;
                 self.emit_tone(Tone(Hz!(0), gap_length))
             }
@@ -279,7 +280,7 @@ mod tests {
     use crate::modes::robot36::Robot36;
     use crate::synthesizer::Tone;
     use crate::units::{Duration, Frequency};
-    use crate::{ms, Hz};
+    use crate::{Hz, ms};
 
     #[test]
     fn test_identification_tones_robot36() {
