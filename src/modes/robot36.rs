@@ -237,38 +237,6 @@ impl<'a> Iterator for Robot36Encoder<'a> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct MergedRows([YuvPixel; 320], usize);
-
-impl MergedRows {
-    pub fn new(two_rows: &[RgbPixel; 640]) -> Self {
-        let yuv_rows: [YuvPixel; 640] = array::from_fn(|i| YuvPixel::from(two_rows[i]));
-        let merged_rows: [YuvPixel; 320] = array::from_fn(|i| {
-            let first_row_pixel = yuv_rows[i];
-            let second_row_pixel = yuv_rows[i + 320];
-            YuvPixel::new(
-                first_row_pixel.luma(),
-                second_row_pixel.chroma_red(),
-                second_row_pixel.chroma_blue(),
-            )
-        });
-        Self(merged_rows, 0)
-    }
-}
-
-impl Iterator for MergedRows {
-    type Item = YuvPixel;
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.1 < 320 {
-            let pixel = self.0[self.1];
-            self.1 += 1;
-            Some(pixel)
-        } else {
-            None
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     extern crate std;
@@ -279,7 +247,6 @@ mod tests {
     use super::*;
     use crate::modes::robot36::Robot36;
     use crate::synthesizer::Tone;
-    use crate::units::{Duration, Frequency};
     use crate::{Hz, ms};
 
     #[test]
