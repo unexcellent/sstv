@@ -122,10 +122,11 @@ where
             EncoderState::EvenLuma(position) => match self.current_row.get(position) {
                 Some(pixel) => {
                     self.state = EncoderState::EvenLuma(position + 1);
-                    let pos = position as u32;
-                    let duration =
-                        (self.luma_time * (pos + 1) / 320) - (self.luma_time * pos / 320);
-                    self.emit_tone(pixel.luma_tone(Robot36::BLACK, Robot36::WHITE, duration))
+                    self.emit_tone(pixel.luma_tone(
+                        Robot36::BLACK,
+                        Robot36::WHITE,
+                        self.luma_time / 320,
+                    ))
                 }
                 None => {
                     self.state = EncoderState::EvenLumaToChroma;
@@ -140,14 +141,11 @@ where
                 match (self.current_row.get(position), self.next_row.get(position)) {
                     (Some(current_row_pixel), Some(next_row_pixel)) => {
                         self.state = EncoderState::EvenChroma(position + 1);
-                        let pos = position as u32;
-                        let duration =
-                            (self.chroma_time * (pos + 1) / 320) - (self.chroma_time * pos / 320);
                         let combined_pixel = YuvPixel::average(*current_row_pixel, *next_row_pixel);
                         self.emit_tone(combined_pixel.chroma_red_tone(
                             Robot36::BLACK,
                             Robot36::WHITE,
-                            duration,
+                            self.chroma_time / 320,
                         ))
                     }
                     _ => {
@@ -165,10 +163,11 @@ where
             EncoderState::OddLuma(position) => match self.next_row.get(position) {
                 Some(pixel) => {
                     self.state = EncoderState::OddLuma(position + 1);
-                    let pos = position as u32;
-                    let duration =
-                        (self.luma_time * (pos + 1) / 320) - (self.luma_time * pos / 320);
-                    self.emit_tone(pixel.luma_tone(Robot36::BLACK, Robot36::WHITE, duration))
+                    self.emit_tone(pixel.luma_tone(
+                        Robot36::BLACK,
+                        Robot36::WHITE,
+                        self.luma_time / 320,
+                    ))
                 }
                 None => {
                     self.state = EncoderState::OddLumaToChroma;
@@ -183,14 +182,11 @@ where
                 match (self.current_row.get(position), self.next_row.get(position)) {
                     (Some(current_row_pixel), Some(next_row_pixel)) => {
                         self.state = EncoderState::OddChroma(position + 1);
-                        let pos = position as u32;
-                        let duration =
-                            (self.chroma_time * (pos + 1) / 320) - (self.chroma_time * pos / 320);
                         let combined_pixel = YuvPixel::average(*current_row_pixel, *next_row_pixel);
                         self.emit_tone(combined_pixel.chroma_blue_tone(
                             Robot36::BLACK,
                             Robot36::WHITE,
-                            duration,
+                            self.chroma_time / 320,
                         ))
                     }
                     _ => {
