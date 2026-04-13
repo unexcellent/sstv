@@ -1,9 +1,10 @@
-use hound::{SampleFormat, WavSpec, WavWriter};
 use image::GenericImageView;
+use mp3lame_encoder::{Builder, FlushNoGap, MonoPcm};
 use sstv::image::RgbPixel;
 use sstv::modes::robot36::Robot36Encoder;
 use std::f64::consts::PI;
 use std::fs;
+use std::io::Write;
 use std::path::Path;
 
 fn main() {
@@ -19,19 +20,12 @@ fn main() {
     );
 
     fs::create_dir_all("local").expect("Failed to create local/ directory");
-    let out_path = Path::new("local").join("output.wav");
+    let out_path = Path::new("local").join("output.mp3");
 
     let sample_rate = 48000;
-    let spec = WavSpec {
-        channels: 1,
-        sample_rate,
-        bits_per_sample: 16,
-        sample_format: SampleFormat::Int,
-    };
-
-    let mut writer = WavWriter::create(out_path, spec).expect("Failed to create WAV writer");
     let mut phase: f64 = 0.0;
     let mut sample_adjust: f64 = 0.0;
+    let mut pcm_samples: Vec<i16> = Vec::new();
 
     encoder.for_each(|tone| {
         let freq = tone.0.hz() as f64;
@@ -46,10 +40,34 @@ fn main() {
 
         (0..num_samples).for_each(|_| {
             let sample = (phase.sin() * i16::MAX as f64) as i16;
-            writer.write_sample(sample).unwrap();
+            pcm_samples.push(sample);
             phase = (phase + phase_increment) % (2.0 * PI);
         });
     });
 
-    writer.finalize().expect("Failed to finalize output.wav");
+    let mut mp3_builder = Builder::new().expect("Create LAME builder");
+    mp3_builder.set_num_channels(1).unwrap();
+    mp3_builder.set_sample_rate(sample_rate).unwrap();
+    mp3_builder
+        .set_brate(mp3lame_encoder::Bitrate::Kbps192)
+        .unwrap();
+    mp3_builder
+        .set_quality(mp3lame_encoder::Quality::Best)
+        .unwrap();
+
+    let mut mp3_encoder = mp3_builder.build().expect("To initialize LAME encoder");
+    let mut mp3_out_buffer = Vec::new();
+    mp3_out_buffer.reserve(mp3lame_encoder::max_required_buffer_size(pcm_samples.len()));
+
+    mp3_encoder
+        .encode_to_vec(MonoPcm(pcm_samples.as_slice()), &mut mp3_out_buffer)
+        .expect("Failed to encode PCM data");
+
+    mp3_encoder
+        .flush_to_vec::<FlushNoGap>(&mut mp3_out_buffer)
+        .expect("Failed to flush MP3 encoder");
+
+    let mut file = fs::File::create(out_path).expect("Failed to create output.mp3");
+    file.write_all(&mp3_out_buffer)
+        .expect("Failed to write MP3 data");
 }

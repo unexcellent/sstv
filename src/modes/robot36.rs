@@ -218,14 +218,16 @@ where
 #[cfg(test)]
 mod tests {
     extern crate std;
+    use flate2::read::GzDecoder;
     use image::GenericImageView;
-    use std::f64::consts::PI;
+    use std::fs::File;
+    use std::io::{BufRead, BufReader};
     use std::vec::Vec;
 
     use super::*;
     use crate::modes::robot36::Robot36;
     use crate::synthesizer::Tone;
-    use crate::{Hz, ms};
+    use crate::{Hz, ms, us};
 
     #[test]
     fn test_identification_tones_robot36() {
@@ -275,7 +277,7 @@ mod tests {
     }
 
     #[test]
-    fn test_encode_robot36_against_golden_file_with_tolerance() {
+    fn test_encode_robot36_against_golden_tones() {
         let img = image::open("examples/patch.png").expect("Failed to open examples/patch.png");
         let (width, height) = img.dimensions();
 
@@ -290,60 +292,35 @@ mod tests {
 
         let encoder = Robot36Encoder::new(pixels.into_iter().flatten());
 
-        let sample_rate = 48000.0;
-        let mut phase: f64 = 0.0;
-        let mut sample_adjust: f64 = 0.0;
-        let mut generated_samples = Vec::new();
-
-        encoder.for_each(|tone| {
-            let freq = tone.0.hz() as f64;
-            let duration_sec = tone.1.micros() as f64 / 1_000_000.0;
-
-            let exact_samples = (duration_sec * sample_rate) + sample_adjust;
-            let num_samples = exact_samples.round() as usize;
-            sample_adjust = exact_samples - num_samples as f64;
-
-            let phase_increment = 2.0 * PI * freq / sample_rate;
-
-            (0..num_samples).for_each(|_| {
-                let sample = (phase.sin() * i16::MAX as f64) as i16;
-                generated_samples.push(sample);
-                phase = (phase + phase_increment) % (2.0 * PI);
-            });
-        });
-
-        let mut reader = hound::WavReader::open("examples/patch-robot36.wav")
-            .expect("Failed to open golden WAV");
-        let golden_samples: Vec<i16> = reader.samples::<i16>().map(|s| s.unwrap()).collect();
-
-        // Duration tolerance: Ensure total length is within 0.1 seconds (4800 samples)
-        let len_diff = (generated_samples.len() as isize - golden_samples.len() as isize).abs();
-        assert!(
-            len_diff < 4800,
-            "Duration deviation exceeded. Length difference: {} samples",
-            len_diff
+        let file = File::open("examples/patch-robot36-tones.csv.gz").expect(
+            "Failed to open golden tones file. Run 'cargo run --example store_tones' first.",
         );
+        let decoder = GzDecoder::new(file);
+        let reader = BufReader::new(decoder);
+        let mut expected_tones = Vec::new();
 
-        let min_len = generated_samples.len().min(golden_samples.len());
-
-        // Amplitude tolerance: Allows capturing phase drift without hard-failing instantly.
-        let amplitude_tolerance = 4000;
-        let mut error_count = 0;
-
-        for i in 0..min_len {
-            if (generated_samples[i] as i32 - golden_samples[i] as i32).abs() > amplitude_tolerance
-            {
-                error_count += 1;
-            }
+        for line in reader.lines().skip(1) {
+            let line = line.unwrap();
+            let parts: Vec<&str> = line.split(',').collect();
+            let hz: u32 = parts[0].parse().unwrap();
+            let micros: u32 = parts[1].parse().unwrap();
+            expected_tones.push(Tone(Hz!(hz), us!(micros)));
         }
 
-        let error_rate = error_count as f64 / min_len as f64;
+        let generated_tones: Vec<Tone> = encoder.collect();
 
-        // Frequency tolerance: Allow up to 10% of the transmission to exceed the drift threshold
-        assert!(
-            error_rate < 0.10,
-            "Phase/Frequency deviation exceeded. Error rate: {:.2}%",
-            error_rate * 100.0
+        assert_eq!(
+            generated_tones.len(),
+            expected_tones.len(),
+            "Number of generated tones does not match golden file"
         );
+
+        for (i, (g, exp)) in generated_tones
+            .iter()
+            .zip(expected_tones.iter())
+            .enumerate()
+        {
+            assert_eq!(g, exp, "Tone mismatch at index {}", i);
+        }
     }
 }
