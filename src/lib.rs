@@ -2,7 +2,6 @@
 
 extern crate alloc;
 
-pub mod encode;
 pub mod encoder;
 pub mod error;
 pub mod image;

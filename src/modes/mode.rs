@@ -1,6 +1,6 @@
 use crate::synthesizer::Tone;
 use crate::units::{Duration, Frequency};
-use crate::{Hz, ms, us};
+use crate::{ms, us, Hz};
 
 pub trait Mode {
     const SYNC: Frequency = Hz!(1200);
@@ -16,6 +16,7 @@ pub trait Mode {
     const IDENTIFICATION: u8;
     const IMAGE_WIDTH: u16;
     const IMAGE_HEIGHT: u16;
+    const LINE_DURATION: Duration;
     const SYNC_DURATION: Duration = ms!(9);
     const BACK_PORCH_DURATION: Duration = ms!(3);
     const BLANK_DURATION: Duration = us!(5400);

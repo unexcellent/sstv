@@ -2,8 +2,8 @@ use crate::{
     image::{RgbPixel, YuvPixel},
     modes::mode::Mode,
     synthesizer::Tone,
-    units::Frequency,
-    us,
+    units::{Duration, Frequency},
+    us, Hz,
 };
 use core::array;
 
@@ -13,6 +13,7 @@ impl Mode for Robot36 {
     const IDENTIFICATION: u8 = 136;
     const IMAGE_WIDTH: u16 = 320;
     const IMAGE_HEIGHT: u16 = 240;
+    const LINE_DURATION: Duration = us!(150_008);
 }
 
 enum EncoderState {
@@ -25,6 +26,7 @@ enum EncoderState {
     OddLumaToChroma,
     OddChroma(usize),
     OddToEven,
+    LineGap,
     Done,
 }
 
@@ -34,6 +36,7 @@ pub struct Robot36Encoder<'a> {
     row_index: usize,
     current_row: [YuvPixel; 320],
     next_row: [YuvPixel; 320],
+    remaining_line_time: Duration,
 }
 
 impl<'a> Robot36Encoder<'a> {
@@ -44,7 +47,16 @@ impl<'a> Robot36Encoder<'a> {
             row_index: 0,
             current_row: Self::rgb_row_to_yuv(&image[0]),
             next_row: Self::rgb_row_to_yuv(&image[1]),
+            remaining_line_time: Robot36::LINE_DURATION,
         }
+    }
+
+    fn emit_tone(&mut self, tone: Tone) -> Option<Tone> {
+        if self.remaining_line_time.micros() < tone.1.micros() {
+            panic!("Underflow for tone {}Hz {}ms", tone.0.hz(), tone.1.micros());
+        }
+        self.remaining_line_time = self.remaining_line_time - tone.1;
+        Some(tone)
     }
 
     fn fetch_next_rows(&mut self) {
@@ -71,26 +83,34 @@ impl<'a> Robot36Encoder<'a> {
         array::from_fn(|i| YuvPixel::from(rgb_row[i]))
     }
 
-    fn pixel_luma_tone(pixel: &YuvPixel) -> Tone {
+    fn pixel_luma_tone(pixel: &YuvPixel, duration: Duration) -> Tone {
         let frequency: u32 = Robot36::BLACK.hz()
             + (pixel.luma() as u32 * (Robot36::WHITE.hz() - Robot36::BLACK.hz()) / 255);
-        Tone(Frequency::from_hz(frequency), us!(276))
+        Tone(Frequency::from_hz(frequency), duration)
     }
 
-    fn pixel_chroma_red_tone(current_row_pixel: &YuvPixel, next_row_pixel: &YuvPixel) -> Tone {
+    fn pixel_chroma_red_tone(
+        current_row_pixel: &YuvPixel,
+        next_row_pixel: &YuvPixel,
+        duration: Duration,
+    ) -> Tone {
         let average_chroma: u32 =
             (current_row_pixel.chroma_red() as u32 + next_row_pixel.chroma_red() as u32) / 2;
         let frequency: u32 = Robot36::BLACK.hz()
             + (average_chroma * (Robot36::WHITE.hz() - Robot36::BLACK.hz()) / 255);
-        Tone(Frequency::from_hz(frequency), us!(138))
+        Tone(Frequency::from_hz(frequency), duration)
     }
 
-    fn pixel_chroma_blue_tone(current_row_pixel: &YuvPixel, next_row_pixel: &YuvPixel) -> Tone {
+    fn pixel_chroma_blue_tone(
+        current_row_pixel: &YuvPixel,
+        next_row_pixel: &YuvPixel,
+        duration: Duration,
+    ) -> Tone {
         let average_chroma: u32 =
             (current_row_pixel.chroma_blue() as u32 + next_row_pixel.chroma_blue() as u32) / 2;
         let frequency: u32 = Robot36::BLACK.hz()
             + (average_chroma * (Robot36::WHITE.hz() - Robot36::BLACK.hz()) / 255);
-        Tone(Frequency::from_hz(frequency), us!(138))
+        Tone(Frequency::from_hz(frequency), duration)
     }
 }
 
@@ -115,69 +135,101 @@ impl<'a> Iterator for Robot36Encoder<'a> {
             EncoderState::EvenLuma(position) => match self.current_row.get(position) {
                 Some(pixel) => {
                     self.state = EncoderState::EvenLuma(position + 1);
-                    Some(Self::pixel_luma_tone(pixel))
+                    let fixed_remaining = Robot36::BLANK_DURATION
+                        + Robot36::SYNC_DURATION
+                        + Robot36::BACK_PORCH_DURATION;
+                    let total_pixel_time = Robot36::LINE_DURATION - fixed_remaining;
+                    let chroma_time = total_pixel_time / 3;
+                    let remaining_luma_time =
+                        self.remaining_line_time - fixed_remaining - chroma_time;
+                    let duration = remaining_luma_time / (320 - position as u32);
+                    self.emit_tone(Self::pixel_luma_tone(pixel, duration))
                 }
                 None => {
                     self.state = EncoderState::EvenLumaToChroma;
-                    Some(Tone(Robot36::BLACK, Robot36::BLANK_DURATION * 2 / 3))
+                    self.emit_tone(Tone(Robot36::BLACK, Robot36::BLANK_DURATION * 2 / 3))
                 }
             },
             EncoderState::EvenLumaToChroma => {
                 self.state = EncoderState::EvenChroma(0);
-                Some(Tone(Robot36::SEPARATOR, Robot36::BLANK_DURATION / 3))
+                self.emit_tone(Tone(Robot36::SEPARATOR, Robot36::BLANK_DURATION / 3))
             }
             EncoderState::EvenChroma(position) => {
                 match (self.current_row.get(position), self.next_row.get(position)) {
                     (Some(current_row_pixel), Some(next_row_pixel)) => {
                         self.state = EncoderState::EvenChroma(position + 1);
-                        Some(Self::pixel_chroma_red_tone(
+                        let fixed_remaining = Robot36::SYNC_DURATION + Robot36::BACK_PORCH_DURATION;
+                        let remaining_chroma_time = self.remaining_line_time - fixed_remaining;
+                        let duration = remaining_chroma_time / (320 - position as u32);
+                        self.emit_tone(Self::pixel_chroma_red_tone(
                             current_row_pixel,
                             next_row_pixel,
+                            duration,
                         ))
                     }
                     _ => {
                         self.state = EncoderState::EvenToOdd;
-                        Some(Tone(Robot36::SYNC, Robot36::SYNC_DURATION))
+                        self.emit_tone(Tone(Robot36::SYNC, Robot36::SYNC_DURATION))
                     }
                 }
             }
             EncoderState::EvenToOdd => {
                 self.state = EncoderState::OddLuma(0);
-                Some(Tone(Robot36::BLACK, Robot36::BACK_PORCH_DURATION))
+                let tone = self.emit_tone(Tone(Robot36::BLACK, Robot36::BACK_PORCH_DURATION));
+                self.remaining_line_time = Robot36::LINE_DURATION;
+                tone
             }
             EncoderState::OddLuma(position) => match self.next_row.get(position) {
                 Some(pixel) => {
                     self.state = EncoderState::OddLuma(position + 1);
-                    Some(Self::pixel_luma_tone(pixel))
+                    let fixed_remaining = Robot36::BLANK_DURATION
+                        + Robot36::SYNC_DURATION
+                        + Robot36::BACK_PORCH_DURATION;
+                    let total_pixel_time = Robot36::LINE_DURATION - fixed_remaining;
+                    let chroma_time = total_pixel_time / 3;
+                    let remaining_luma_time =
+                        self.remaining_line_time - fixed_remaining - chroma_time;
+                    let duration = remaining_luma_time / (320 - position as u32);
+                    self.emit_tone(Self::pixel_luma_tone(pixel, duration))
                 }
                 None => {
                     self.state = EncoderState::OddLumaToChroma;
-                    Some(Tone(Robot36::WHITE, Robot36::BLANK_DURATION * 2 / 3))
+                    self.emit_tone(Tone(Robot36::WHITE, Robot36::BLANK_DURATION * 2 / 3))
                 }
             },
             EncoderState::OddLumaToChroma => {
                 self.state = EncoderState::OddChroma(0);
-                Some(Tone(Robot36::SEPARATOR, Robot36::BLANK_DURATION / 3))
+                self.emit_tone(Tone(Robot36::SEPARATOR, Robot36::BLANK_DURATION / 3))
             }
             EncoderState::OddChroma(position) => {
                 match (self.current_row.get(position), self.next_row.get(position)) {
                     (Some(current_row_pixel), Some(next_row_pixel)) => {
                         self.state = EncoderState::OddChroma(position + 1);
-                        Some(Self::pixel_chroma_blue_tone(
+                        let fixed_remaining = Robot36::SYNC_DURATION + Robot36::BACK_PORCH_DURATION;
+                        let remaining_chroma_time = self.remaining_line_time - fixed_remaining;
+                        let duration = remaining_chroma_time / (320 - position as u32);
+                        self.emit_tone(Self::pixel_chroma_blue_tone(
                             current_row_pixel,
                             next_row_pixel,
+                            duration,
                         ))
                     }
                     _ => {
                         self.state = EncoderState::OddToEven;
-                        Some(Tone(Robot36::SYNC, Robot36::SYNC_DURATION))
+                        self.emit_tone(Tone(Robot36::SYNC, Robot36::SYNC_DURATION))
                     }
                 }
             }
             EncoderState::OddToEven => {
-                self.state = EncoderState::EvenLuma(0);
+                self.state = EncoderState::LineGap;
                 self.fetch_next_rows();
-                Some(Tone(Robot36::BLACK, Robot36::BACK_PORCH_DURATION))
+                self.emit_tone(Tone(Robot36::BLACK, Robot36::BACK_PORCH_DURATION))
+            }
+            EncoderState::LineGap => {
+                self.state = EncoderState::EvenLuma(0);
+                let gap_length = self.remaining_line_time.clone();
+                self.remaining_line_time = Robot36::LINE_DURATION;
+                self.emit_tone(Tone(Hz!(0), gap_length))
             }
             EncoderState::Done => None,
         }
@@ -218,12 +270,16 @@ impl Iterator for MergedRows {
 
 #[cfg(test)]
 mod tests {
+    extern crate std;
+    use image::GenericImageView;
+    use std::f64::consts::PI;
+    use std::vec::Vec;
+
     use super::*;
     use crate::modes::robot36::Robot36;
     use crate::synthesizer::Tone;
     use crate::units::{Duration, Frequency};
-    use crate::{Hz, ms};
-    use alloc::vec::Vec;
+    use crate::{ms, Hz};
 
     #[test]
     fn test_identification_tones_robot36() {
@@ -273,54 +329,76 @@ mod tests {
     }
 
     #[test]
-    fn test_compare_encoder_tones_with_encode_rs() {
-        use crate::encode::{ImageData, RgbPixel as EncodeRgbPixel, generate_robot36_tones};
+    fn test_encode_robot36_against_golden_file_with_tolerance() {
+        let img = image::open("examples/patch.png").expect("Failed to open examples/patch.png");
+        let (width, height) = img.dimensions();
 
-        let width = 320;
-        let height = 240;
+        assert_eq!(width, 320);
+        assert_eq!(height, 240);
 
-        let mut encode_pixels = Vec::with_capacity(width * height);
-        let pixel = RgbPixel::new(100, 150, 200);
-        let image_pixels = [[pixel; 320]; 240];
+        let mut pixels = std::vec![[RgbPixel::new(0, 0, 0); 320]; 240];
 
-        for _ in 0..(width * height) {
-            encode_pixels.push(EncodeRgbPixel::new(100, 150, 200));
+        img.pixels().for_each(|(x, y, rgba)| {
+            pixels[y as usize][x as usize] = RgbPixel::new(rgba[0], rgba[1], rgba[2]);
+        });
+
+        let pixel_array: &[[RgbPixel; 320]; 240] = pixels.as_slice().try_into().unwrap();
+        let encoder = Robot36Encoder::new(pixel_array);
+
+        let sample_rate = 48000.0;
+        let mut phase: f64 = 0.0;
+        let mut sample_adjust: f64 = 0.0;
+        let mut generated_samples = Vec::new();
+
+        encoder.for_each(|tone| {
+            let freq = tone.0.hz() as f64;
+            let duration_sec = tone.1.micros() as f64 / 1_000_000.0;
+
+            let exact_samples = (duration_sec * sample_rate) + sample_adjust;
+            let num_samples = exact_samples.round() as usize;
+            sample_adjust = exact_samples - num_samples as f64;
+
+            let phase_increment = 2.0 * PI * freq / sample_rate;
+
+            (0..num_samples).for_each(|_| {
+                let sample = (phase.sin() * i16::MAX as f64) as i16;
+                generated_samples.push(sample);
+                phase = (phase + phase_increment) % (2.0 * PI);
+            });
+        });
+
+        let mut reader = hound::WavReader::open("examples/patch-robot36.wav")
+            .expect("Failed to open golden WAV");
+        let golden_samples: Vec<i16> = reader.samples::<i16>().map(|s| s.unwrap()).collect();
+
+        // Duration tolerance: Ensure total length is within 0.1 seconds (4800 samples)
+        let len_diff = (generated_samples.len() as isize - golden_samples.len() as isize).abs();
+        assert!(
+            len_diff < 4800,
+            "Duration deviation exceeded. Length difference: {} samples",
+            len_diff
+        );
+
+        let min_len = generated_samples.len().min(golden_samples.len());
+
+        // Amplitude tolerance: Allows capturing phase drift without hard-failing instantly.
+        let amplitude_tolerance = 4000;
+        let mut error_count = 0;
+
+        for i in 0..min_len {
+            if (generated_samples[i] as i32 - golden_samples[i] as i32).abs() > amplitude_tolerance
+            {
+                error_count += 1;
+            }
         }
 
-        let image_data = ImageData::new(width as u32, height as u32, encode_pixels);
-        let expected_encode_tones = generate_robot36_tones(&image_data).unwrap();
+        let error_rate = error_count as f64 / min_len as f64;
 
-        let mut encoder = Robot36Encoder::new(&image_pixels);
-
-        for (i, exp_tone) in expected_encode_tones.into_iter().enumerate() {
-            let actual = encoder
-                .next()
-                .unwrap_or_else(|| panic!("Missing tone at index {}", i));
-
-            let exp_hz = exp_tone.freq.round() as u16;
-            let exp_micros = (exp_tone.duration * 1_000_000.0).round() as u32;
-
-            let expected_synth_tone = Tone(
-                Frequency::from_hz(exp_hz as u32),
-                Duration::from_us(exp_micros),
-            );
-
-            assert_eq!(
-                actual.0.hz(),
-                expected_synth_tone.0.hz(),
-                "Tone {} frequency mismatch: Expected {} Hz, got {} Hz",
-                i,
-                expected_synth_tone.0.hz(),
-                actual.0.hz()
-            );
-
-            assert!(
-                actual.1.micros().abs_diff(expected_synth_tone.1.micros()) <= 5,
-                "Tone {} duration mismatch: Expected {} us, got {} us",
-                i,
-                expected_synth_tone.1.micros(),
-                actual.1.micros()
-            );
-        }
+        // Frequency tolerance: Allow up to 10% of the transmission to exceed the drift threshold
+        assert!(
+            error_rate < 0.10,
+            "Phase/Frequency deviation exceeded. Error rate: {:.2}%",
+            error_rate * 100.0
+        );
     }
 }
