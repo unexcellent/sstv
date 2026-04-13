@@ -1,3 +1,8 @@
+use crate::{
+    synthesizer::Tone,
+    units::{Duration, Frequency},
+};
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct RgbPixel {
     red: u8,
@@ -33,6 +38,13 @@ impl YuvPixel {
             chroma_blue,
         }
     }
+    pub fn average(first: Self, second: Self) -> Self {
+        Self {
+            luma: first.luma(),
+            chroma_red: ((first.chroma_red() as u16 + second.chroma_red() as u16) / 2) as u8,
+            chroma_blue: ((first.chroma_blue() as u16 + second.chroma_blue() as u16) / 2) as u8,
+        }
+    }
     pub fn luma(self) -> u8 {
         self.luma
     }
@@ -41,6 +53,24 @@ impl YuvPixel {
     }
     pub fn chroma_blue(self) -> u8 {
         self.chroma_blue
+    }
+    pub fn luma_frequency(self, black: Frequency, white: Frequency) -> Frequency {
+        black + (white - black) * self.luma as u32 / 255
+    }
+    pub fn luma_tone(self, black: Frequency, white: Frequency, duration: Duration) -> Tone {
+        Tone(self.luma_frequency(black, white), duration)
+    }
+    pub fn chroma_red_frequency(self, black: Frequency, white: Frequency) -> Frequency {
+        black + (white - black) * self.chroma_red as u32 / 255
+    }
+    pub fn chroma_red_tone(self, black: Frequency, white: Frequency, duration: Duration) -> Tone {
+        Tone(self.chroma_red_frequency(black, white), duration)
+    }
+    pub fn chroma_blue_frequency(self, black: Frequency, white: Frequency) -> Frequency {
+        black + (white - black) * self.chroma_blue as u32 / 255
+    }
+    pub fn chroma_blue_tone(self, black: Frequency, white: Frequency, duration: Duration) -> Tone {
+        Tone(self.chroma_blue_frequency(black, white), duration)
     }
 }
 

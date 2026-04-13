@@ -3,7 +3,7 @@ use crate::{
     image::{RgbPixel, YuvPixel},
     modes::mode::Mode,
     synthesizer::Tone,
-    units::{Duration, Frequency},
+    units::Duration,
     us,
 };
 
@@ -69,9 +69,6 @@ where
     }
 
     fn emit_tone(&mut self, tone: Tone) -> Option<Tone> {
-        if self.remaining_line_time.micros() < tone.1.micros() {
-            panic!("Underflow for tone {}Hz {}ms", tone.0.hz(), tone.1.micros());
-        }
         self.remaining_line_time = self.remaining_line_time - tone.1;
         Some(tone)
     }
@@ -90,36 +87,6 @@ where
                 self.state = EncoderState::Done;
             }
         }
-    }
-
-    fn pixel_luma_tone(pixel: &YuvPixel, duration: Duration) -> Tone {
-        let frequency: u32 = Robot36::BLACK.hz()
-            + (pixel.luma() as u32 * (Robot36::WHITE.hz() - Robot36::BLACK.hz()) / 255);
-        Tone(Frequency::from_hz(frequency), duration)
-    }
-
-    fn pixel_chroma_red_tone(
-        current_row_pixel: &YuvPixel,
-        next_row_pixel: &YuvPixel,
-        duration: Duration,
-    ) -> Tone {
-        let average_chroma: u32 =
-            (current_row_pixel.chroma_red() as u32 + next_row_pixel.chroma_red() as u32) / 2;
-        let frequency: u32 = Robot36::BLACK.hz()
-            + (average_chroma * (Robot36::WHITE.hz() - Robot36::BLACK.hz()) / 255);
-        Tone(Frequency::from_hz(frequency), duration)
-    }
-
-    fn pixel_chroma_blue_tone(
-        current_row_pixel: &YuvPixel,
-        next_row_pixel: &YuvPixel,
-        duration: Duration,
-    ) -> Tone {
-        let average_chroma: u32 =
-            (current_row_pixel.chroma_blue() as u32 + next_row_pixel.chroma_blue() as u32) / 2;
-        let frequency: u32 = Robot36::BLACK.hz()
-            + (average_chroma * (Robot36::WHITE.hz() - Robot36::BLACK.hz()) / 255);
-        Tone(Frequency::from_hz(frequency), duration)
     }
 }
 
@@ -153,7 +120,7 @@ where
                     let remaining_luma_time =
                         self.remaining_line_time - fixed_remaining - chroma_time;
                     let duration = remaining_luma_time / (320 - position as u32);
-                    self.emit_tone(Self::pixel_luma_tone(pixel, duration))
+                    self.emit_tone(pixel.luma_tone(Robot36::BLACK, Robot36::WHITE, duration))
                 }
                 None => {
                     self.state = EncoderState::EvenLumaToChroma;
@@ -171,9 +138,10 @@ where
                         let fixed_remaining = Robot36::SYNC_DURATION + Robot36::BACK_PORCH_DURATION;
                         let remaining_chroma_time = self.remaining_line_time - fixed_remaining;
                         let duration = remaining_chroma_time / (320 - position as u32);
-                        self.emit_tone(Self::pixel_chroma_red_tone(
-                            current_row_pixel,
-                            next_row_pixel,
+                        let combined_pixel = YuvPixel::average(*current_row_pixel, *next_row_pixel);
+                        self.emit_tone(combined_pixel.chroma_red_tone(
+                            Robot36::BLACK,
+                            Robot36::WHITE,
                             duration,
                         ))
                     }
@@ -200,7 +168,7 @@ where
                     let remaining_luma_time =
                         self.remaining_line_time - fixed_remaining - chroma_time;
                     let duration = remaining_luma_time / (320 - position as u32);
-                    self.emit_tone(Self::pixel_luma_tone(pixel, duration))
+                    self.emit_tone(pixel.luma_tone(Robot36::BLACK, Robot36::WHITE, duration))
                 }
                 None => {
                     self.state = EncoderState::OddLumaToChroma;
@@ -218,9 +186,10 @@ where
                         let fixed_remaining = Robot36::SYNC_DURATION + Robot36::BACK_PORCH_DURATION;
                         let remaining_chroma_time = self.remaining_line_time - fixed_remaining;
                         let duration = remaining_chroma_time / (320 - position as u32);
-                        self.emit_tone(Self::pixel_chroma_blue_tone(
-                            current_row_pixel,
-                            next_row_pixel,
+                        let combined_pixel = YuvPixel::average(*current_row_pixel, *next_row_pixel);
+                        self.emit_tone(combined_pixel.chroma_blue_tone(
+                            Robot36::BLACK,
+                            Robot36::WHITE,
                             duration,
                         ))
                     }
