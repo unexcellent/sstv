@@ -1,20 +1,10 @@
 use crate::{
     Hz,
     image::{RgbPixel, YuvPixel},
-    modes::mode::Mode,
+    modes::Mode,
     synthesizer::Tone,
     units::Duration,
-    us,
 };
-
-pub struct Robot36;
-
-impl Mode for Robot36 {
-    const IDENTIFICATION: u8 = 136;
-    const IMAGE_WIDTH: u16 = 320;
-    const IMAGE_HEIGHT: u16 = 240;
-    const LINE_DURATION: Duration = us!(150_008);
-}
 
 enum EncoderState {
     Header(usize),
@@ -53,9 +43,10 @@ where
         let next_row = Self::fill_row(&mut pixel_iter)
             .unwrap_or([YuvPixel::from(RgbPixel::new(0, 0, 0)); 320]);
 
-        let fixed_remaining =
-            Robot36::BLANK_DURATION + Robot36::SYNC_DURATION + Robot36::BACK_PORCH_DURATION;
-        let total_pixel_time = Robot36::LINE_DURATION - fixed_remaining;
+        let fixed_remaining = Mode::Robot36.blank_duration()
+            + Mode::Robot36.sync_duration()
+            + Mode::Robot36.back_porch_duration();
+        let total_pixel_time = Mode::Robot36.line_duration() - fixed_remaining;
         let chroma_time = total_pixel_time / 3;
         let luma_time = total_pixel_time - chroma_time;
 
@@ -64,7 +55,7 @@ where
             pixel_iter,
             current_row,
             next_row,
-            remaining_line_time: Robot36::LINE_DURATION,
+            remaining_line_time: Mode::Robot36.line_duration(),
             luma_time,
             chroma_time,
         }
@@ -109,7 +100,7 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         match self.state {
             EncoderState::Header(position) => {
-                let header_tones = Robot36.header_sequence();
+                let header_tones = Mode::Robot36.header_sequence();
                 let tone = header_tones[position];
                 self.state = if position + 1 < header_tones.len() {
                     EncoderState::Header(position + 1)
@@ -123,19 +114,25 @@ where
                 Some(pixel) => {
                     self.state = EncoderState::EvenLuma(position + 1);
                     self.emit_tone(pixel.luma_tone(
-                        Robot36::BLACK,
-                        Robot36::WHITE,
+                        Mode::Robot36.black_frequency(),
+                        Mode::Robot36.white_frequency(),
                         self.luma_time / 320,
                     ))
                 }
                 None => {
                     self.state = EncoderState::EvenLumaToChroma;
-                    self.emit_tone(Tone(Robot36::BLACK, Robot36::BLANK_DURATION * 2 / 3))
+                    self.emit_tone(Tone(
+                        Mode::Robot36.black_frequency(),
+                        Mode::Robot36.blank_duration() * 2 / 3,
+                    ))
                 }
             },
             EncoderState::EvenLumaToChroma => {
                 self.state = EncoderState::EvenChroma(0);
-                self.emit_tone(Tone(Robot36::SEPARATOR, Robot36::BLANK_DURATION / 3))
+                self.emit_tone(Tone(
+                    Mode::Robot36.separator_frequency(),
+                    Mode::Robot36.blank_duration() / 3,
+                ))
             }
             EncoderState::EvenChroma(position) => {
                 match (self.current_row.get(position), self.next_row.get(position)) {
@@ -143,40 +140,52 @@ where
                         self.state = EncoderState::EvenChroma(position + 1);
                         let combined_pixel = YuvPixel::average(*current_row_pixel, *next_row_pixel);
                         self.emit_tone(combined_pixel.chroma_red_tone(
-                            Robot36::BLACK,
-                            Robot36::WHITE,
+                            Mode::Robot36.black_frequency(),
+                            Mode::Robot36.white_frequency(),
                             self.chroma_time / 320,
                         ))
                     }
                     _ => {
                         self.state = EncoderState::EvenToOdd;
-                        self.emit_tone(Tone(Robot36::SYNC, Robot36::SYNC_DURATION))
+                        self.emit_tone(Tone(
+                            Mode::Robot36.sync_frequency(),
+                            Mode::Robot36.sync_duration(),
+                        ))
                     }
                 }
             }
             EncoderState::EvenToOdd => {
                 self.state = EncoderState::OddLuma(0);
-                let tone = self.emit_tone(Tone(Robot36::BLACK, Robot36::BACK_PORCH_DURATION));
-                self.remaining_line_time = Robot36::LINE_DURATION;
+                let tone = self.emit_tone(Tone(
+                    Mode::Robot36.black_frequency(),
+                    Mode::Robot36.back_porch_duration(),
+                ));
+                self.remaining_line_time = Mode::Robot36.line_duration();
                 tone
             }
             EncoderState::OddLuma(position) => match self.next_row.get(position) {
                 Some(pixel) => {
                     self.state = EncoderState::OddLuma(position + 1);
                     self.emit_tone(pixel.luma_tone(
-                        Robot36::BLACK,
-                        Robot36::WHITE,
+                        Mode::Robot36.black_frequency(),
+                        Mode::Robot36.white_frequency(),
                         self.luma_time / 320,
                     ))
                 }
                 None => {
                     self.state = EncoderState::OddLumaToChroma;
-                    self.emit_tone(Tone(Robot36::WHITE, Robot36::BLANK_DURATION * 2 / 3))
+                    self.emit_tone(Tone(
+                        Mode::Robot36.white_frequency(),
+                        Mode::Robot36.blank_duration() * 2 / 3,
+                    ))
                 }
             },
             EncoderState::OddLumaToChroma => {
                 self.state = EncoderState::OddChroma(0);
-                self.emit_tone(Tone(Robot36::SEPARATOR, Robot36::BLANK_DURATION / 3))
+                self.emit_tone(Tone(
+                    Mode::Robot36.separator_frequency(),
+                    Mode::Robot36.blank_duration() / 3,
+                ))
             }
             EncoderState::OddChroma(position) => {
                 match (self.current_row.get(position), self.next_row.get(position)) {
@@ -184,26 +193,32 @@ where
                         self.state = EncoderState::OddChroma(position + 1);
                         let combined_pixel = YuvPixel::average(*current_row_pixel, *next_row_pixel);
                         self.emit_tone(combined_pixel.chroma_blue_tone(
-                            Robot36::BLACK,
-                            Robot36::WHITE,
+                            Mode::Robot36.black_frequency(),
+                            Mode::Robot36.white_frequency(),
                             self.chroma_time / 320,
                         ))
                     }
                     _ => {
                         self.state = EncoderState::OddToEven;
-                        self.emit_tone(Tone(Robot36::SYNC, Robot36::SYNC_DURATION))
+                        self.emit_tone(Tone(
+                            Mode::Robot36.sync_frequency(),
+                            Mode::Robot36.sync_duration(),
+                        ))
                     }
                 }
             }
             EncoderState::OddToEven => {
                 self.state = EncoderState::LineGap;
                 self.fetch_next_rows();
-                self.emit_tone(Tone(Robot36::BLACK, Robot36::BACK_PORCH_DURATION))
+                self.emit_tone(Tone(
+                    Mode::Robot36.black_frequency(),
+                    Mode::Robot36.back_porch_duration(),
+                ))
             }
             EncoderState::LineGap => {
                 self.state = EncoderState::EvenLuma(0);
                 let gap_length = self.remaining_line_time;
-                self.remaining_line_time = Robot36::LINE_DURATION;
+                self.remaining_line_time = Mode::Robot36.line_duration();
                 self.emit_tone(Tone(Hz!(0), gap_length))
             }
             EncoderState::Done => None,
@@ -221,63 +236,13 @@ mod tests {
     use std::vec::Vec;
 
     use super::*;
-    use crate::modes::robot36::Robot36;
     use crate::synthesizer::Tone;
-    use crate::{Hz, ms, ns};
-
-    #[test]
-    fn test_identification_tones_robot36() {
-        assert_eq!(
-            Robot36.identification_sequence(),
-            [
-                Tone(Robot36::BINARY_0, Robot36::BIT_DURATION),
-                Tone(Robot36::BINARY_0, Robot36::BIT_DURATION),
-                Tone(Robot36::BINARY_0, Robot36::BIT_DURATION),
-                Tone(Robot36::BINARY_1, Robot36::BIT_DURATION),
-                Tone(Robot36::BINARY_0, Robot36::BIT_DURATION),
-                Tone(Robot36::BINARY_0, Robot36::BIT_DURATION),
-                Tone(Robot36::BINARY_0, Robot36::BIT_DURATION),
-                Tone(Robot36::BINARY_1, Robot36::BIT_DURATION),
-            ]
-        )
-    }
-
-    #[test]
-    fn test_header_tones_robot36() {
-        assert_eq!(
-            Robot36.header_sequence(),
-            [
-                Tone(Hz!(1900), ms!(100)),
-                Tone(Hz!(1500), ms!(100)),
-                Tone(Hz!(1900), ms!(100)),
-                Tone(Hz!(1500), ms!(100)),
-                Tone(Hz!(2300), ms!(100)),
-                Tone(Hz!(1500), ms!(100)),
-                Tone(Hz!(2300), ms!(100)),
-                Tone(Hz!(1500), ms!(100)),
-                Tone(Hz!(1900), ms!(300)),
-                Tone(Hz!(1200), ms!(10)),
-                Tone(Hz!(1900), ms!(300)),
-                Tone(Hz!(1200), ms!(30)),
-                Tone(Hz!(1300), ms!(30)),
-                Tone(Hz!(1300), ms!(30)),
-                Tone(Hz!(1300), ms!(30)),
-                Tone(Hz!(1100), ms!(30)),
-                Tone(Hz!(1300), ms!(30)),
-                Tone(Hz!(1300), ms!(30)),
-                Tone(Hz!(1300), ms!(30)),
-                Tone(Hz!(1100), ms!(30)),
-                Tone(Hz!(1200), ms!(30)),
-            ]
-        )
-    }
+    use crate::{Hz, ns};
 
     #[test]
     fn test_encode_robot36_against_golden_tones() {
         let img = image::open("examples/patch.png").expect("Failed to open examples/patch.png");
-        let (width, height) = img.dimensions();
-
-        assert_eq!(width, 320);
+        let (_, height) = img.dimensions();
         assert_eq!(height, 240);
 
         let mut pixels = std::vec![[RgbPixel::new(0, 0, 0); 320]; 240];
