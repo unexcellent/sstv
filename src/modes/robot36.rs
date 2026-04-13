@@ -17,7 +17,7 @@ impl Mode for Robot36 {
 }
 
 enum EncoderState {
-    Header { position: u8 },
+    Header(usize),
     EvenLuma(usize),
     EvenLumaToChroma,
     EvenChroma(usize),
@@ -52,7 +52,7 @@ where
             .unwrap_or([YuvPixel::from(RgbPixel::new(0, 0, 0)); 320]);
 
         Self {
-            state: EncoderState::Header { position: 0 },
+            state: EncoderState::Header(0),
             pixel_iter,
             current_row,
             next_row,
@@ -131,13 +131,11 @@ where
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.state {
-            EncoderState::Header { position } => {
+            EncoderState::Header(position) => {
                 let header_tones = Robot36.header_sequence();
-                let tone = header_tones[position as usize];
-                self.state = if (position as usize) + 1 < header_tones.len() {
-                    EncoderState::Header {
-                        position: position + 1,
-                    }
+                let tone = header_tones[position];
+                self.state = if position + 1 < header_tones.len() {
+                    EncoderState::Header(position + 1)
                 } else {
                     EncoderState::EvenLuma(0)
                 };
