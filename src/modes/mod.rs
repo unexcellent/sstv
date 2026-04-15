@@ -1,9 +1,13 @@
 use crate::{
-    Hz, ms,
+    Hz,
+    image::RgbPixel,
+    modes::robot36::Robot36Encoder,
+    ms,
     synthesizer::Tone,
     units::{Duration, Frequency},
     us,
 };
+use alloc::boxed::Box;
 use core::array;
 
 pub mod robot36;
@@ -92,6 +96,15 @@ impl Mode {
             12..=19 => identification[i - 12],
             _ => Tone(self.break_frequency(), self.bit_duration()),
         })
+    }
+
+    pub fn encoder<I>(&self, pixels: I) -> Box<dyn Iterator<Item = Tone>>
+    where
+        I: Iterator<Item = RgbPixel> + 'static,
+    {
+        match self {
+            Mode::Robot36 => Box::new(Robot36Encoder::new(pixels)),
+        }
     }
 }
 
