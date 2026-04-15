@@ -1,7 +1,8 @@
 use image::GenericImageView;
 use mp3lame_encoder::{Builder, FlushNoGap, MonoPcm};
+use sstv::encoder::Encoder;
 use sstv::image::RgbPixel;
-use sstv::modes::robot36::Robot36Encoder;
+use sstv::modes::Mode;
 use std::f64::consts::PI;
 use std::fs;
 use std::io::Write;
@@ -14,10 +15,13 @@ fn main() {
     assert_eq!(width, 320, "Image width must be exactly 320");
     assert_eq!(height, 240, "Image height must be exactly 240");
 
-    let encoder = Robot36Encoder::new(
-        img.pixels()
-            .map(|(_, _, rgba)| RgbPixel::new(rgba[0], rgba[1], rgba[2])),
-    );
+    let mut pixels = std::vec![[RgbPixel::new(0, 0, 0); 320]; 240];
+
+    img.pixels().for_each(|(x, y, rgba)| {
+        pixels[y as usize][x as usize] = RgbPixel::new(rgba[0], rgba[1], rgba[2]);
+    });
+
+    let encoder = Encoder::new(Mode::Robot36, pixels.into_iter().flatten());
 
     fs::create_dir_all("local").expect("Failed to create local/ directory");
     let out_path = Path::new("local").join("output.mp3");

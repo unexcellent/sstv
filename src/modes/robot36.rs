@@ -236,6 +236,7 @@ mod tests {
     use std::vec::Vec;
 
     use super::*;
+    use crate::encoder::Encoder;
     use crate::synthesizer::Tone;
     use crate::{Hz, ns};
 
@@ -251,7 +252,7 @@ mod tests {
             pixels[y as usize][x as usize] = RgbPixel::new(rgba[0], rgba[1], rgba[2]);
         });
 
-        let encoder = Robot36Encoder::new(pixels.into_iter().flatten());
+        let encoder = Encoder::new(Mode::Robot36, pixels.into_iter().flatten());
 
         let file = File::open("examples/patch-robot36-tones.csv.gz").expect(
             "Failed to open golden tones file. Run 'cargo run --example store_tones' first.",
