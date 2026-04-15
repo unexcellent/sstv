@@ -68,6 +68,13 @@ impl Mode {
         self.line_duration() - self.line_suffix_duration()
     }
 
+    pub const fn image_width(&self) -> u32 {
+        320
+    }
+    pub const fn image_height(&self) -> u32 {
+        240
+    }
+
     pub const fn identification(&self) -> u8 {
         136
     }

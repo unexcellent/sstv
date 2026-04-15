@@ -152,7 +152,7 @@ where
                     self.emit_tone(pixel.luma_tone(
                         Self::mode().black_frequency(),
                         Self::mode().white_frequency(),
-                        self.luma_time / 320,
+                        self.luma_time / Self::mode().image_width(),
                     ))
                 }
                 None => {
@@ -178,7 +178,7 @@ where
                         self.emit_tone(combined_pixel.chroma_red_tone(
                             Self::mode().black_frequency(),
                             Self::mode().white_frequency(),
-                            self.chroma_time / 320,
+                            self.chroma_time / Self::mode().image_width(),
                         ))
                     }
                     _ => {
@@ -205,7 +205,7 @@ where
                     self.emit_tone(pixel.luma_tone(
                         Self::mode().black_frequency(),
                         Self::mode().white_frequency(),
-                        self.luma_time / 320,
+                        self.luma_time / Self::mode().image_width(),
                     ))
                 }
                 None => {
@@ -231,7 +231,7 @@ where
                         self.emit_tone(combined_pixel.chroma_blue_tone(
                             Self::mode().black_frequency(),
                             Self::mode().white_frequency(),
-                            self.chroma_time / 320,
+                            self.chroma_time / Self::mode().image_width(),
                         ))
                     }
                     _ => {
