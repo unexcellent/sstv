@@ -32,6 +32,7 @@ impl EncoderState {
             _ => (),
         }
     }
+
     /// Advance to the next state
     pub fn advance(&mut self) {
         match self {
@@ -77,10 +78,7 @@ where
             None => return Err(Error::EmptyImage),
         };
 
-        let fixed_remaining = Mode::Robot36.blank_duration()
-            + Mode::Robot36.sync_duration()
-            + Mode::Robot36.back_porch_duration();
-        let total_pixel_time = Mode::Robot36.line_duration() - fixed_remaining;
+        let total_pixel_time = Self::mode().line_pixel_duration();
         let chroma_time = total_pixel_time / 3;
         let luma_time = total_pixel_time - chroma_time;
 
@@ -89,10 +87,14 @@ where
             pixel_iter,
             current_row,
             next_row,
-            remaining_line_time: Mode::Robot36.line_duration(),
+            remaining_line_time: Self::mode().line_duration(),
             luma_time,
             chroma_time,
         })
+    }
+
+    pub fn mode() -> Mode {
+        Mode::Robot36
     }
 
     fn fill_row(iter: &mut I) -> Option<[YuvPixel; 320]> {
@@ -134,7 +136,7 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         match self.state {
             EncoderState::Header(position) => {
-                let header_tones = Mode::Robot36.header_sequence();
+                let header_tones = Self::mode().header_sequence();
 
                 if position < Mode::HEADER_SEQUENCE_LENGTH - 1 {
                     self.state.increment();
@@ -148,24 +150,24 @@ where
                 Some(pixel) => {
                     self.state.increment();
                     self.emit_tone(pixel.luma_tone(
-                        Mode::Robot36.black_frequency(),
-                        Mode::Robot36.white_frequency(),
+                        Self::mode().black_frequency(),
+                        Self::mode().white_frequency(),
                         self.luma_time / 320,
                     ))
                 }
                 None => {
                     self.state.advance();
                     self.emit_tone(Tone(
-                        Mode::Robot36.black_frequency(),
-                        Mode::Robot36.blank_duration() * 2 / 3,
+                        Self::mode().black_frequency(),
+                        Self::mode().blank_duration() * 2 / 3,
                     ))
                 }
             },
             EncoderState::EvenLumaToChroma => {
                 self.state.advance();
                 self.emit_tone(Tone(
-                    Mode::Robot36.separator_frequency(),
-                    Mode::Robot36.blank_duration() / 3,
+                    Self::mode().separator_frequency(),
+                    Self::mode().blank_duration() / 3,
                 ))
             }
             EncoderState::EvenChroma(position) => {
@@ -174,16 +176,16 @@ where
                         self.state.increment();
                         let combined_pixel = YuvPixel::average(*current_row_pixel, *next_row_pixel);
                         self.emit_tone(combined_pixel.chroma_red_tone(
-                            Mode::Robot36.black_frequency(),
-                            Mode::Robot36.white_frequency(),
+                            Self::mode().black_frequency(),
+                            Self::mode().white_frequency(),
                             self.chroma_time / 320,
                         ))
                     }
                     _ => {
                         self.state.advance();
                         self.emit_tone(Tone(
-                            Mode::Robot36.sync_frequency(),
-                            Mode::Robot36.sync_duration(),
+                            Self::mode().sync_frequency(),
+                            Self::mode().sync_duration(),
                         ))
                     }
                 }
@@ -191,34 +193,34 @@ where
             EncoderState::EvenToOdd => {
                 self.state.advance();
                 let tone = self.emit_tone(Tone(
-                    Mode::Robot36.black_frequency(),
-                    Mode::Robot36.back_porch_duration(),
+                    Self::mode().black_frequency(),
+                    Self::mode().back_porch_duration(),
                 ));
-                self.remaining_line_time = Mode::Robot36.line_duration();
+                self.remaining_line_time = Self::mode().line_duration();
                 tone
             }
             EncoderState::OddLuma(position) => match self.next_row.get(position) {
                 Some(pixel) => {
                     self.state.increment();
                     self.emit_tone(pixel.luma_tone(
-                        Mode::Robot36.black_frequency(),
-                        Mode::Robot36.white_frequency(),
+                        Self::mode().black_frequency(),
+                        Self::mode().white_frequency(),
                         self.luma_time / 320,
                     ))
                 }
                 None => {
                     self.state.advance();
                     self.emit_tone(Tone(
-                        Mode::Robot36.white_frequency(),
-                        Mode::Robot36.blank_duration() * 2 / 3,
+                        Self::mode().white_frequency(),
+                        Self::mode().blank_duration() * 2 / 3,
                     ))
                 }
             },
             EncoderState::OddLumaToChroma => {
                 self.state.advance();
                 self.emit_tone(Tone(
-                    Mode::Robot36.separator_frequency(),
-                    Mode::Robot36.blank_duration() / 3,
+                    Self::mode().separator_frequency(),
+                    Self::mode().blank_duration() / 3,
                 ))
             }
             EncoderState::OddChroma(position) => {
@@ -227,16 +229,16 @@ where
                         self.state.increment();
                         let combined_pixel = YuvPixel::average(*current_row_pixel, *next_row_pixel);
                         self.emit_tone(combined_pixel.chroma_blue_tone(
-                            Mode::Robot36.black_frequency(),
-                            Mode::Robot36.white_frequency(),
+                            Self::mode().black_frequency(),
+                            Self::mode().white_frequency(),
                             self.chroma_time / 320,
                         ))
                     }
                     _ => {
                         self.state.advance();
                         self.emit_tone(Tone(
-                            Mode::Robot36.sync_frequency(),
-                            Mode::Robot36.sync_duration(),
+                            Self::mode().sync_frequency(),
+                            Self::mode().sync_duration(),
                         ))
                     }
                 }
@@ -245,14 +247,14 @@ where
                 self.state.advance();
                 self.fetch_next_rows();
                 self.emit_tone(Tone(
-                    Mode::Robot36.black_frequency(),
-                    Mode::Robot36.back_porch_duration(),
+                    Self::mode().black_frequency(),
+                    Self::mode().back_porch_duration(),
                 ))
             }
             EncoderState::LineGap => {
                 self.state.advance();
                 let gap_length = self.remaining_line_time;
-                self.remaining_line_time = Mode::Robot36.line_duration();
+                self.remaining_line_time = Self::mode().line_duration();
                 self.emit_tone(Tone(Hz!(0), gap_length))
             }
             EncoderState::Done => None,

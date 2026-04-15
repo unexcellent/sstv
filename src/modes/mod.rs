@@ -59,6 +59,14 @@ impl Mode {
     pub const fn line_duration(&self) -> Duration {
         us!(150_008)
     }
+    /// The duration of each line tones not used to transmit pixel information
+    pub fn line_suffix_duration(&self) -> Duration {
+        self.back_porch_duration() + self.blank_duration() + self.sync_duration()
+    }
+    /// The duration of each line tones used to transmit pixel information
+    pub fn line_pixel_duration(&self) -> Duration {
+        self.line_duration() - self.line_suffix_duration()
+    }
 
     pub const fn identification(&self) -> u8 {
         136
