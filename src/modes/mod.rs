@@ -1,5 +1,5 @@
 use crate::{
-    Hz,
+    Hz, Result,
     image::RgbPixel,
     modes::robot36::Robot36Encoder,
     ms,
@@ -98,12 +98,12 @@ impl Mode {
         })
     }
 
-    pub fn encoder<I>(&self, pixels: I) -> Box<dyn Iterator<Item = Tone>>
+    pub fn encoder<I>(&self, pixels: I) -> Result<Box<dyn Iterator<Item = Tone>>>
     where
         I: Iterator<Item = RgbPixel> + 'static,
     {
         match self {
-            Mode::Robot36 => Box::new(Robot36Encoder::new(pixels)),
+            Mode::Robot36 => Ok(Box::new(Robot36Encoder::new(pixels)?)),
         }
     }
 }

@@ -1,5 +1,5 @@
 use crate::{
-    Hz,
+    Error, Hz, Result,
     image::{RgbPixel, YuvPixel},
     modes::Mode,
     synthesizer::Tone,
@@ -37,11 +37,15 @@ impl<I> Robot36Encoder<I>
 where
     I: Iterator<Item = RgbPixel>,
 {
-    pub fn new(mut pixel_iter: I) -> Self {
-        let current_row = Self::fill_row(&mut pixel_iter)
-            .unwrap_or([YuvPixel::from(RgbPixel::new(0, 0, 0)); 320]);
-        let next_row = Self::fill_row(&mut pixel_iter)
-            .unwrap_or([YuvPixel::from(RgbPixel::new(0, 0, 0)); 320]);
+    pub fn new(mut pixel_iter: I) -> Result<Self> {
+        let current_row = match Self::fill_row(&mut pixel_iter) {
+            Some(pixels) => pixels,
+            None => return Err(Error::EmptyImage),
+        };
+        let next_row = match Self::fill_row(&mut pixel_iter) {
+            Some(pixels) => pixels,
+            None => return Err(Error::EmptyImage),
+        };
 
         let fixed_remaining = Mode::Robot36.blank_duration()
             + Mode::Robot36.sync_duration()
@@ -50,7 +54,7 @@ where
         let chroma_time = total_pixel_time / 3;
         let luma_time = total_pixel_time - chroma_time;
 
-        Self {
+        Ok(Self {
             state: EncoderState::Header(0),
             pixel_iter,
             current_row,
@@ -58,7 +62,7 @@ where
             remaining_line_time: Mode::Robot36.line_duration(),
             luma_time,
             chroma_time,
-        }
+        })
     }
 
     fn fill_row(iter: &mut I) -> Option<[YuvPixel; 320]> {
@@ -241,6 +245,16 @@ mod tests {
     use crate::{Hz, ns};
 
     #[test]
+    fn test_empty_image() {
+        let empty_image: Vec<RgbPixel> = vec![];
+
+        assert!(matches!(
+            Encoder::new(Mode::Robot36, empty_image.into_iter()),
+            Err(Error::EmptyImage)
+        ));
+    }
+
+    #[test]
     fn test_encode_robot36_against_golden_tones() {
         let img = image::open("examples/patch.png").expect("Failed to open examples/patch.png");
         let (_, height) = img.dimensions();
@@ -269,7 +283,7 @@ mod tests {
             expected_tones.push(Tone(Hz!(hz), ns!(nanos)));
         }
 
-        let generated_tones: Vec<Tone> = encoder.collect();
+        let generated_tones: Vec<Tone> = encoder.unwrap().collect();
 
         assert_eq!(
             generated_tones.len(),

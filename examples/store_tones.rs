@@ -1,8 +1,9 @@
 use flate2::Compression;
 use flate2::write::GzEncoder;
 use image::GenericImageView;
+use sstv::encoder::Encoder;
 use sstv::image::RgbPixel;
-use sstv::modes::robot36::Robot36Encoder;
+use sstv::modes::Mode;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 
@@ -13,10 +14,13 @@ fn main() {
     assert_eq!(width, 320, "Image width must be exactly 320");
     assert_eq!(height, 240, "Image height must be exactly 240");
 
-    let encoder = Robot36Encoder::new(
-        img.pixels()
-            .map(|(_, _, rgba)| RgbPixel::new(rgba[0], rgba[1], rgba[2])),
-    );
+    let mut pixels = std::vec![[RgbPixel::new(0, 0, 0); 320]; 240];
+
+    img.pixels().for_each(|(x, y, rgba)| {
+        pixels[y as usize][x as usize] = RgbPixel::new(rgba[0], rgba[1], rgba[2]);
+    });
+
+    let encoder = Encoder::new(Mode::Robot36, pixels.into_iter().flatten()).unwrap();
 
     let file = File::create("examples/patch-robot36-tones.csv.gz")
         .expect("Failed to create examples/patch-robot36-tones.csv.gz");

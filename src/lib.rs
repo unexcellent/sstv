@@ -2,9 +2,12 @@
 
 extern crate alloc;
 
+mod error;
+
 pub mod encoder;
-pub mod error;
 pub mod image;
 pub mod modes;
 pub mod synthesizer;
 pub mod units;
+
+pub use error::{Error, Result};

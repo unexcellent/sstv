@@ -21,7 +21,7 @@ fn main() {
         pixels[y as usize][x as usize] = RgbPixel::new(rgba[0], rgba[1], rgba[2]);
     });
 
-    let encoder = Encoder::new(Mode::Robot36, pixels.into_iter().flatten());
+    let encoder = Encoder::new(Mode::Robot36, pixels.into_iter().flatten()).unwrap();
 
     fs::create_dir_all("local").expect("Failed to create local/ directory");
     let out_path = Path::new("local").join("output.mp3");

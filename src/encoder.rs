@@ -1,5 +1,6 @@
 use alloc::boxed::Box;
 
+use crate::Result;
 use crate::image::RgbPixel;
 use crate::modes::Mode;
 use crate::synthesizer::Tone;
@@ -9,13 +10,13 @@ pub struct Encoder {
 }
 
 impl Encoder {
-    pub fn new<I>(mode: Mode, pixels: I) -> Self
+    pub fn new<I>(mode: Mode, pixels: I) -> Result<Self>
     where
         I: Iterator<Item = RgbPixel> + 'static,
     {
-        Self {
-            inner: mode.encoder(pixels),
-        }
+        Ok(Self {
+            inner: mode.encoder(pixels)?,
+        })
     }
 }
 
