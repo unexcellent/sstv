@@ -20,6 +20,36 @@ enum EncoderState {
     Done,
 }
 
+impl EncoderState {
+    /// Increment the inner position in the states that have an inner position
+    pub fn increment(&mut self) {
+        match self {
+            Self::Header(pos) => *self = Self::Header(*pos + 1),
+            Self::EvenLuma(pos) => *self = Self::EvenLuma(*pos + 1),
+            Self::EvenChroma(pos) => *self = Self::EvenChroma(*pos + 1),
+            Self::OddLuma(pos) => *self = Self::OddLuma(*pos + 1),
+            Self::OddChroma(pos) => *self = Self::OddChroma(*pos + 1),
+            _ => (),
+        }
+    }
+    /// Advance to the next state
+    pub fn advance(&mut self) {
+        match self {
+            Self::Header(_) => *self = Self::EvenLuma(0),
+            Self::EvenLuma(_) => *self = Self::EvenLumaToChroma,
+            Self::EvenLumaToChroma => *self = Self::EvenChroma(0),
+            Self::EvenChroma(_) => *self = Self::EvenToOdd,
+            Self::EvenToOdd => *self = Self::OddLuma(0),
+            Self::OddLuma(_) => *self = Self::OddLumaToChroma,
+            Self::OddLumaToChroma => *self = Self::OddChroma(0),
+            Self::OddChroma(_) => *self = Self::OddToEven,
+            Self::OddToEven => *self = Self::LineGap,
+            Self::LineGap => *self = Self::EvenLuma(0),
+            Self::Done => *self = Self::Done,
+        }
+    }
+}
+
 pub struct Robot36Encoder<I>
 where
     I: Iterator<Item = RgbPixel>,
@@ -105,18 +135,18 @@ where
         match self.state {
             EncoderState::Header(position) => {
                 let header_tones = Mode::Robot36.header_sequence();
-                let tone = header_tones[position];
-                self.state = if position + 1 < header_tones.len() {
-                    EncoderState::Header(position + 1)
-                } else {
-                    EncoderState::EvenLuma(0)
-                };
 
-                Some(tone)
+                if position < Mode::HEADER_SEQUENCE_LENGTH - 1 {
+                    self.state.increment();
+                } else {
+                    self.state.advance();
+                }
+
+                Some(header_tones[position])
             }
             EncoderState::EvenLuma(position) => match self.current_row.get(position) {
                 Some(pixel) => {
-                    self.state = EncoderState::EvenLuma(position + 1);
+                    self.state.increment();
                     self.emit_tone(pixel.luma_tone(
                         Mode::Robot36.black_frequency(),
                         Mode::Robot36.white_frequency(),
@@ -124,7 +154,7 @@ where
                     ))
                 }
                 None => {
-                    self.state = EncoderState::EvenLumaToChroma;
+                    self.state.advance();
                     self.emit_tone(Tone(
                         Mode::Robot36.black_frequency(),
                         Mode::Robot36.blank_duration() * 2 / 3,
@@ -132,7 +162,7 @@ where
                 }
             },
             EncoderState::EvenLumaToChroma => {
-                self.state = EncoderState::EvenChroma(0);
+                self.state.advance();
                 self.emit_tone(Tone(
                     Mode::Robot36.separator_frequency(),
                     Mode::Robot36.blank_duration() / 3,
@@ -141,7 +171,7 @@ where
             EncoderState::EvenChroma(position) => {
                 match (self.current_row.get(position), self.next_row.get(position)) {
                     (Some(current_row_pixel), Some(next_row_pixel)) => {
-                        self.state = EncoderState::EvenChroma(position + 1);
+                        self.state.increment();
                         let combined_pixel = YuvPixel::average(*current_row_pixel, *next_row_pixel);
                         self.emit_tone(combined_pixel.chroma_red_tone(
                             Mode::Robot36.black_frequency(),
@@ -150,7 +180,7 @@ where
                         ))
                     }
                     _ => {
-                        self.state = EncoderState::EvenToOdd;
+                        self.state.advance();
                         self.emit_tone(Tone(
                             Mode::Robot36.sync_frequency(),
                             Mode::Robot36.sync_duration(),
@@ -159,7 +189,7 @@ where
                 }
             }
             EncoderState::EvenToOdd => {
-                self.state = EncoderState::OddLuma(0);
+                self.state.advance();
                 let tone = self.emit_tone(Tone(
                     Mode::Robot36.black_frequency(),
                     Mode::Robot36.back_porch_duration(),
@@ -169,7 +199,7 @@ where
             }
             EncoderState::OddLuma(position) => match self.next_row.get(position) {
                 Some(pixel) => {
-                    self.state = EncoderState::OddLuma(position + 1);
+                    self.state.increment();
                     self.emit_tone(pixel.luma_tone(
                         Mode::Robot36.black_frequency(),
                         Mode::Robot36.white_frequency(),
@@ -177,7 +207,7 @@ where
                     ))
                 }
                 None => {
-                    self.state = EncoderState::OddLumaToChroma;
+                    self.state.advance();
                     self.emit_tone(Tone(
                         Mode::Robot36.white_frequency(),
                         Mode::Robot36.blank_duration() * 2 / 3,
@@ -185,7 +215,7 @@ where
                 }
             },
             EncoderState::OddLumaToChroma => {
-                self.state = EncoderState::OddChroma(0);
+                self.state.advance();
                 self.emit_tone(Tone(
                     Mode::Robot36.separator_frequency(),
                     Mode::Robot36.blank_duration() / 3,
@@ -194,7 +224,7 @@ where
             EncoderState::OddChroma(position) => {
                 match (self.current_row.get(position), self.next_row.get(position)) {
                     (Some(current_row_pixel), Some(next_row_pixel)) => {
-                        self.state = EncoderState::OddChroma(position + 1);
+                        self.state.increment();
                         let combined_pixel = YuvPixel::average(*current_row_pixel, *next_row_pixel);
                         self.emit_tone(combined_pixel.chroma_blue_tone(
                             Mode::Robot36.black_frequency(),
@@ -203,7 +233,7 @@ where
                         ))
                     }
                     _ => {
-                        self.state = EncoderState::OddToEven;
+                        self.state.advance();
                         self.emit_tone(Tone(
                             Mode::Robot36.sync_frequency(),
                             Mode::Robot36.sync_duration(),
@@ -212,7 +242,7 @@ where
                 }
             }
             EncoderState::OddToEven => {
-                self.state = EncoderState::LineGap;
+                self.state.advance();
                 self.fetch_next_rows();
                 self.emit_tone(Tone(
                     Mode::Robot36.black_frequency(),
@@ -220,7 +250,7 @@ where
                 ))
             }
             EncoderState::LineGap => {
-                self.state = EncoderState::EvenLuma(0);
+                self.state.advance();
                 let gap_length = self.remaining_line_time;
                 self.remaining_line_time = Mode::Robot36.line_duration();
                 self.emit_tone(Tone(Hz!(0), gap_length))
