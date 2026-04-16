@@ -11,8 +11,8 @@ use crate::synthesizer::Tone;
 /// ```rust
 /// use sstv::{Encoder, Error, Mode, RgbPixel};
 ///
-/// let image = [RgbPixel::new(0, 0, 0); 320];
-/// let encoder = Encoder::new(Mode::Robot36, image.into_iter());
+/// let image = [RgbPixel::new(0, 0, 0); 320 * 240];
+/// let encoder = Encoder::new(Mode::Robot36, image.into_iter()).expect("error during encoding");
 /// for tone in encoder {
 ///     // emit or save the tones
 /// }
