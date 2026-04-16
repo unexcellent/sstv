@@ -1,9 +1,9 @@
 use flate2::Compression;
 use flate2::write::GzEncoder;
 use image::GenericImageView;
-use sstv::encoder::Encoder;
-use sstv::image::RgbPixel;
-use sstv::modes::Mode;
+use sstv::Encoder;
+use sstv::Mode;
+use sstv::RgbPixel;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 

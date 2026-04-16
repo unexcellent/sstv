@@ -1,8 +1,8 @@
 use image::GenericImageView;
 use mp3lame_encoder::{Builder, FlushNoGap, MonoPcm};
-use sstv::encoder::Encoder;
-use sstv::image::RgbPixel;
-use sstv::modes::Mode;
+use sstv::Encoder;
+use sstv::Mode;
+use sstv::RgbPixel;
 use std::f64::consts::PI;
 use std::fs;
 use std::io::Write;
