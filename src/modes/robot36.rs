@@ -61,8 +61,6 @@ where
     even_row: [YuvPixel; 320],
     odd_row: [YuvPixel; 320],
     remaining_line_time: Duration,
-    luma_time: Duration,
-    chroma_time: Duration,
 }
 
 impl<I> Robot36Encoder<I>
@@ -81,18 +79,12 @@ where
         let averaged_even_row = Self::average_rows(&first_row, &second_row);
         let averaged_odd_row = Self::average_rows(&second_row, &first_row);
 
-        let total_pixel_time = Self::mode().line_pixel_duration();
-        let chroma_time = total_pixel_time / 3;
-        let luma_time = total_pixel_time - chroma_time;
-
         Ok(Self {
             state: EncoderState::Header(0),
             pixel_iter,
             even_row: averaged_even_row,
             odd_row: averaged_odd_row,
             remaining_line_time: Self::mode().line_duration(),
-            luma_time,
-            chroma_time,
         })
     }
 
@@ -165,7 +157,7 @@ where
                     self.emit_tone(pixel.luma_tone(
                         Self::mode().black_frequency(),
                         Self::mode().white_frequency(),
-                        self.luma_time / Self::mode().image_width(),
+                        Self::mode().pixel_luma_duration(),
                     ))
                 }
                 None => {
@@ -189,7 +181,7 @@ where
                     self.emit_tone(pixel.chroma_red_tone(
                         Self::mode().black_frequency(),
                         Self::mode().white_frequency(),
-                        self.chroma_time / Self::mode().image_width(),
+                        Self::mode().pixel_chroma_duration(),
                     ))
                 }
                 None => {
@@ -215,7 +207,7 @@ where
                     self.emit_tone(pixel.luma_tone(
                         Self::mode().black_frequency(),
                         Self::mode().white_frequency(),
-                        self.luma_time / Self::mode().image_width(),
+                        Self::mode().pixel_luma_duration(),
                     ))
                 }
                 None => {
@@ -239,7 +231,7 @@ where
                     self.emit_tone(pixel.chroma_blue_tone(
                         Self::mode().black_frequency(),
                         Self::mode().white_frequency(),
-                        self.chroma_time / Self::mode().image_width(),
+                        Self::mode().pixel_chroma_duration(),
                     ))
                 }
                 None => {

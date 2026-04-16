@@ -67,6 +67,18 @@ impl Mode {
     pub fn line_pixel_duration(&self) -> Duration {
         self.line_duration() - self.line_suffix_duration()
     }
+    pub fn line_luma_duration(&self) -> Duration {
+        self.line_pixel_duration() - self.line_chroma_duration()
+    }
+    pub fn line_chroma_duration(&self) -> Duration {
+        self.line_pixel_duration() / 3
+    }
+    pub fn pixel_luma_duration(&self) -> Duration {
+        self.line_luma_duration() / self.image_width()
+    }
+    pub fn pixel_chroma_duration(&self) -> Duration {
+        self.line_chroma_duration() / self.image_width()
+    }
 
     pub const fn image_width(&self) -> u32 {
         320
