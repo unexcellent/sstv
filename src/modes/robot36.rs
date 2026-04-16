@@ -7,46 +7,87 @@ use crate::{
 use core::array;
 
 enum EncoderState {
+    NotStarted,
     Header(usize),
     EvenLuma(usize),
-    EvenLumaToChroma,
+    EvenLumaToChroma(usize),
     EvenChroma(usize),
-    EvenToOdd,
+    EvenToOdd(usize),
     OddLuma(usize),
-    OddLumaToChroma,
+    OddLumaToChroma(usize),
     OddChroma(usize),
-    OddToEven,
-    LineGap,
-    Done,
+    OddToEven(usize),
+    Finished,
 }
 
 impl EncoderState {
-    /// Increment the inner position in the states that have an inner position
-    pub fn increment(&mut self) {
-        match self {
-            Self::Header(pos) => *self = Self::Header(*pos + 1),
-            Self::EvenLuma(pos) => *self = Self::EvenLuma(*pos + 1),
-            Self::EvenChroma(pos) => *self = Self::EvenChroma(*pos + 1),
-            Self::OddLuma(pos) => *self = Self::OddLuma(*pos + 1),
-            Self::OddChroma(pos) => *self = Self::OddChroma(*pos + 1),
-            _ => (),
-        }
-    }
-
-    /// Advance to the next state
     pub fn advance(&mut self) {
         match self {
-            Self::Header(_) => *self = Self::EvenLuma(0),
-            Self::EvenLuma(_) => *self = Self::EvenLumaToChroma,
-            Self::EvenLumaToChroma => *self = Self::EvenChroma(0),
-            Self::EvenChroma(_) => *self = Self::EvenToOdd,
-            Self::EvenToOdd => *self = Self::OddLuma(0),
-            Self::OddLuma(_) => *self = Self::OddLumaToChroma,
-            Self::OddLumaToChroma => *self = Self::OddChroma(0),
-            Self::OddChroma(_) => *self = Self::OddToEven,
-            Self::OddToEven => *self = Self::LineGap,
-            Self::LineGap => *self = Self::EvenLuma(0),
-            Self::Done => *self = Self::Done,
+            Self::NotStarted => *self = Self::Header(0),
+            Self::Header(pos) => {
+                if *pos < Mode::HEADER_SEQUENCE_LENGTH - 1 {
+                    *self = Self::Header(*pos + 1);
+                } else {
+                    *self = Self::EvenLuma(0);
+                }
+            }
+            Self::EvenLuma(pos) => {
+                if *pos < Mode::Robot36.image_width() as usize - 1 {
+                    *self = Self::EvenLuma(*pos + 1);
+                } else {
+                    *self = Self::EvenLumaToChroma(0);
+                }
+            }
+            Self::EvenLumaToChroma(pos) => {
+                if *pos == 0 {
+                    *self = Self::EvenLumaToChroma(1);
+                } else {
+                    *self = Self::EvenChroma(0);
+                }
+            }
+            Self::EvenChroma(pos) => {
+                if *pos < Mode::Robot36.image_width() as usize - 1 {
+                    *self = Self::EvenChroma(*pos + 1);
+                } else {
+                    *self = Self::EvenToOdd(0);
+                }
+            }
+            Self::EvenToOdd(pos) => {
+                if *pos == 0 {
+                    *self = Self::EvenToOdd(1);
+                } else {
+                    *self = Self::OddLuma(0);
+                }
+            }
+            Self::OddLuma(pos) => {
+                if *pos < Mode::Robot36.image_width() as usize - 1 {
+                    *self = Self::OddLuma(*pos + 1);
+                } else {
+                    *self = Self::OddLumaToChroma(0);
+                }
+            }
+            Self::OddLumaToChroma(pos) => {
+                if *pos == 0 {
+                    *self = Self::OddLumaToChroma(1);
+                } else {
+                    *self = Self::OddChroma(0);
+                }
+            }
+            Self::OddChroma(pos) => {
+                if *pos < Mode::Robot36.image_width() as usize - 1 {
+                    *self = Self::OddChroma(*pos + 1);
+                } else {
+                    *self = Self::OddToEven(0);
+                }
+            }
+            Self::OddToEven(pos) => {
+                if *pos < 2 {
+                    *self = Self::OddToEven(*pos + 1);
+                } else {
+                    *self = Self::EvenLuma(0);
+                }
+            }
+            Self::Finished => (),
         }
     }
 }
@@ -78,7 +119,7 @@ where
         let averaged_odd_row = Self::average_rows(&second_row, &first_row);
 
         Ok(Self {
-            state: EncoderState::Header(0),
+            state: EncoderState::NotStarted,
             pixel_iter,
             even_row: averaged_even_row,
             odd_row: averaged_odd_row,
@@ -108,19 +149,95 @@ where
         let first_row = match Self::fill_row(&mut self.pixel_iter) {
             Some(row) => row,
             None => {
-                self.state = EncoderState::Done;
+                self.state = EncoderState::Finished;
                 return;
             }
         };
         let second_row = match Self::fill_row(&mut self.pixel_iter) {
             Some(row) => row,
             None => {
-                self.state = EncoderState::Done;
+                self.state = EncoderState::Finished;
                 return;
             }
         };
         self.even_row = Self::average_rows(&first_row, &second_row);
         self.odd_row = Self::average_rows(&second_row, &first_row);
+    }
+
+    fn emit(&mut self) -> Option<Tone> {
+        match self.state {
+            EncoderState::NotStarted => None,
+            EncoderState::Header(pos) => Some(Self::mode().header_sequence()[pos]),
+            EncoderState::EvenLuma(pos) => Some(self.even_row[pos].luma_tone(
+                Self::mode().black_frequency(),
+                Self::mode().white_frequency(),
+                Self::mode().pixel_luma_duration(),
+            )),
+            EncoderState::EvenLumaToChroma(pos) => match pos {
+                0 => Some(Tone(
+                    Self::mode().black_frequency(),
+                    Self::mode().blank_duration() * 2 / 3,
+                )),
+                _ => Some(Tone(
+                    Self::mode().separator_frequency(),
+                    Self::mode().blank_duration() / 3,
+                )),
+            },
+            EncoderState::EvenChroma(pos) => Some(self.even_row[pos].chroma_red_tone(
+                Self::mode().black_frequency(),
+                Self::mode().white_frequency(),
+                Self::mode().pixel_chroma_duration(),
+            )),
+            EncoderState::EvenToOdd(pos) => match pos {
+                0 => Some(Tone(
+                    Self::mode().sync_frequency(),
+                    Self::mode().sync_duration(),
+                )),
+                _ => Some(Tone(
+                    Self::mode().black_frequency(),
+                    Self::mode().back_porch_duration(),
+                )),
+            },
+            EncoderState::OddLuma(pos) => Some(self.odd_row[pos].luma_tone(
+                Self::mode().black_frequency(),
+                Self::mode().white_frequency(),
+                Self::mode().pixel_luma_duration(),
+            )),
+            EncoderState::OddLumaToChroma(pos) => match pos {
+                0 => Some(Tone(
+                    Self::mode().white_frequency(),
+                    Self::mode().blank_duration() * 2 / 3,
+                )),
+                _ => Some(Tone(
+                    Self::mode().separator_frequency(),
+                    Self::mode().blank_duration() / 3,
+                )),
+            },
+            EncoderState::OddChroma(pos) => Some(self.odd_row[pos].chroma_blue_tone(
+                Self::mode().black_frequency(),
+                Self::mode().white_frequency(),
+                Self::mode().pixel_chroma_duration(),
+            )),
+            EncoderState::OddToEven(pos) => match pos {
+                0 => Some(Tone(
+                    Self::mode().sync_frequency(),
+                    Self::mode().sync_duration(),
+                )),
+                1 => Some(Tone(
+                    Self::mode().black_frequency(),
+                    Self::mode().back_porch_duration(),
+                )),
+                _ => {
+                    self.fetch_next_rows();
+                    if let EncoderState::Finished = self.state {
+                        None
+                    } else {
+                        Some(Tone(Hz!(0), Self::mode().line_gap_duration()))
+                    }
+                }
+            },
+            EncoderState::Finished => None,
+        }
     }
 }
 
@@ -131,121 +248,8 @@ where
     type Item = Tone;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.state {
-            EncoderState::Header(position) => {
-                let header_tones = Self::mode().header_sequence();
-
-                if position < Mode::HEADER_SEQUENCE_LENGTH - 1 {
-                    self.state.increment();
-                } else {
-                    self.state.advance();
-                }
-
-                Some(header_tones[position])
-            }
-            EncoderState::EvenLuma(position) => match self.even_row.get(position) {
-                Some(pixel) => {
-                    self.state.increment();
-                    Some(pixel.luma_tone(
-                        Self::mode().black_frequency(),
-                        Self::mode().white_frequency(),
-                        Self::mode().pixel_luma_duration(),
-                    ))
-                }
-                None => {
-                    self.state.advance();
-                    Some(Tone(
-                        Self::mode().black_frequency(),
-                        Self::mode().blank_duration() * 2 / 3,
-                    ))
-                }
-            },
-            EncoderState::EvenLumaToChroma => {
-                self.state.advance();
-                Some(Tone(
-                    Self::mode().separator_frequency(),
-                    Self::mode().blank_duration() / 3,
-                ))
-            }
-            EncoderState::EvenChroma(position) => match self.even_row.get(position) {
-                Some(pixel) => {
-                    self.state.increment();
-                    Some(pixel.chroma_red_tone(
-                        Self::mode().black_frequency(),
-                        Self::mode().white_frequency(),
-                        Self::mode().pixel_chroma_duration(),
-                    ))
-                }
-                None => {
-                    self.state.advance();
-                    Some(Tone(
-                        Self::mode().sync_frequency(),
-                        Self::mode().sync_duration(),
-                    ))
-                }
-            },
-            EncoderState::EvenToOdd => {
-                self.state.advance();
-                Some(Tone(
-                    Self::mode().black_frequency(),
-                    Self::mode().back_porch_duration(),
-                ))
-            }
-            EncoderState::OddLuma(position) => match self.odd_row.get(position) {
-                Some(pixel) => {
-                    self.state.increment();
-                    Some(pixel.luma_tone(
-                        Self::mode().black_frequency(),
-                        Self::mode().white_frequency(),
-                        Self::mode().pixel_luma_duration(),
-                    ))
-                }
-                None => {
-                    self.state.advance();
-                    Some(Tone(
-                        Self::mode().white_frequency(),
-                        Self::mode().blank_duration() * 2 / 3,
-                    ))
-                }
-            },
-            EncoderState::OddLumaToChroma => {
-                self.state.advance();
-                Some(Tone(
-                    Self::mode().separator_frequency(),
-                    Self::mode().blank_duration() / 3,
-                ))
-            }
-            EncoderState::OddChroma(position) => match self.odd_row.get(position) {
-                Some(pixel) => {
-                    self.state.increment();
-                    Some(pixel.chroma_blue_tone(
-                        Self::mode().black_frequency(),
-                        Self::mode().white_frequency(),
-                        Self::mode().pixel_chroma_duration(),
-                    ))
-                }
-                None => {
-                    self.state.advance();
-                    Some(Tone(
-                        Self::mode().sync_frequency(),
-                        Self::mode().sync_duration(),
-                    ))
-                }
-            },
-            EncoderState::OddToEven => {
-                self.state.advance();
-                self.fetch_next_rows();
-                Some(Tone(
-                    Self::mode().black_frequency(),
-                    Self::mode().back_porch_duration(),
-                ))
-            }
-            EncoderState::LineGap => {
-                self.state.advance();
-                Some(Tone(Hz!(0), Self::mode().line_gap_duration()))
-            }
-            EncoderState::Done => None,
-        }
+        self.state.advance();
+        self.emit()
     }
 }
 
