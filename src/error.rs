@@ -1,31 +1,17 @@
-use alloc::string::String;
 use core::fmt;
 
 #[derive(Debug)]
 pub enum Error {
-    DimensionMismatch {
-        expected_width: u32,
-        expected_height: u32,
-        actual_width: u32,
-        actual_height: u32,
-    },
-    EncodingError(String),
+    EmptyImage,
 }
 
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::DimensionMismatch {
-                expected_width,
-                expected_height,
-                actual_width,
-                actual_height,
-            } => write!(
+            Self::EmptyImage => write!(
                 f,
-                "Image dimensions {}x{} don't match mode requirements {}x{}",
-                actual_width, actual_height, expected_width, expected_height
+                "The supplied image is empty. Was the pixel iterator already used?"
             ),
-            Self::EncodingError(msg) => write!(f, "Encoding error: {}", msg),
         }
     }
 }
