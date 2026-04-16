@@ -4,33 +4,43 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// A single pixel in an image represented by red, green, blue components.
 pub struct RgbPixel {
     red: u8,
     green: u8,
     blue: u8,
 }
 impl RgbPixel {
+    /// Construct from the color components.
     pub fn new(red: u8, green: u8, blue: u8) -> Self {
         Self { red, green, blue }
     }
+    /// Return the red value.
     pub fn red(self) -> u8 {
         self.red
     }
+    /// Return the green value.
     pub fn green(self) -> u8 {
         self.green
     }
+    /// Return the blue value.
     pub fn blue(self) -> u8 {
         self.blue
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+/// A single pixel in an image represented by separate brightness and color information.
 pub struct YuvPixel {
+    /// Brightness of the pixel.
     luma: u8,
+    /// Red color component.
     chroma_red: u8,
+    /// Blue color component.
     chroma_blue: u8,
 }
 impl YuvPixel {
+    /// Construct from the individual components.
     pub fn new(luma: u8, chroma_red: u8, chroma_blue: u8) -> Self {
         Self {
             luma,
@@ -38,6 +48,9 @@ impl YuvPixel {
             chroma_blue,
         }
     }
+    /// Construct the average of the color components of two pixels.
+    ///
+    /// The returned pixel has the luma of the first argument and the average red/blue chroma from both components.
     pub fn average(first: Self, second: Self) -> Self {
         Self {
             luma: first.luma(),
@@ -45,30 +58,39 @@ impl YuvPixel {
             chroma_blue: ((first.chroma_blue() as u16 + second.chroma_blue() as u16) / 2) as u8,
         }
     }
+    /// Return the brightness of the pixel.
     pub fn luma(self) -> u8 {
         self.luma
     }
+    /// Return the red color component.
     pub fn chroma_red(self) -> u8 {
         self.chroma_red
     }
+    /// Return the blue color component.
     pub fn chroma_blue(self) -> u8 {
         self.chroma_blue
     }
-    pub fn luma_frequency(self, black: Frequency, white: Frequency) -> Frequency {
-        black + (white - black) * self.luma as u32 / 255
+    /// Return the frequency associated with the brightness.
+    pub fn luma_frequency(self, lower: Frequency, upper: Frequency) -> Frequency {
+        lower + (upper - lower) * self.luma as u32 / 255
     }
+    /// Return the tone associated with the brightness.
     pub fn luma_tone(self, black: Frequency, white: Frequency, duration: Duration) -> Tone {
         Tone(self.luma_frequency(black, white), duration)
     }
+    /// Return the frequency associated with the red chroma.
     pub fn chroma_red_frequency(self, black: Frequency, white: Frequency) -> Frequency {
         black + (white - black) * self.chroma_red as u32 / 255
     }
+    /// Return the tone associated with the red chroma.
     pub fn chroma_red_tone(self, black: Frequency, white: Frequency, duration: Duration) -> Tone {
         Tone(self.chroma_red_frequency(black, white), duration)
     }
+    /// Return the frequency associated with the blue chroma.
     pub fn chroma_blue_frequency(self, black: Frequency, white: Frequency) -> Frequency {
         black + (white - black) * self.chroma_blue as u32 / 255
     }
+    /// Return the tone associated with the blue chroma.
     pub fn chroma_blue_tone(self, black: Frequency, white: Frequency, duration: Duration) -> Tone {
         Tone(self.chroma_blue_frequency(black, white), duration)
     }

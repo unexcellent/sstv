@@ -1,9 +1,9 @@
 use flate2::Compression;
 use flate2::write::GzEncoder;
 use image::GenericImageView;
-use sstv::encoder::Encoder;
-use sstv::image::RgbPixel;
-use sstv::modes::Mode;
+use sstv::Encoder;
+use sstv::Mode;
+use sstv::RgbPixel;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 
@@ -32,6 +32,6 @@ fn main() {
     writer.write_all(b"hz,nanos\n").unwrap();
 
     encoder.for_each(|tone| {
-        writeln!(writer, "{},{}", tone.0.hz(), tone.1.nanos()).unwrap();
+        writeln!(writer, "{},{}", tone.0.hz(), tone.1.ns()).unwrap();
     });
 }
