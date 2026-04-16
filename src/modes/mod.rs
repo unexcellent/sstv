@@ -2,7 +2,7 @@ use crate::{
     Hz, Result,
     image::RgbPixel,
     modes::robot36::Robot36Encoder,
-    ms,
+    ms, ns,
     synthesizer::Tone,
     units::{Duration, Frequency},
     us,
@@ -58,6 +58,9 @@ impl Mode {
     }
     pub const fn line_duration(&self) -> Duration {
         us!(150_008)
+    }
+    pub const fn line_gap_duration(&self) -> Duration {
+        ns!(320)
     }
     /// The duration of each line tones not used to transmit pixel information
     pub fn line_suffix_duration(&self) -> Duration {

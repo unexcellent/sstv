@@ -3,7 +3,6 @@ use crate::{
     image::{RgbPixel, YuvPixel},
     modes::Mode,
     synthesizer::Tone,
-    units::Duration,
 };
 use core::array;
 
@@ -60,7 +59,6 @@ where
     pixel_iter: I,
     even_row: [YuvPixel; 320],
     odd_row: [YuvPixel; 320],
-    remaining_line_time: Duration,
 }
 
 impl<I> Robot36Encoder<I>
@@ -84,7 +82,6 @@ where
             pixel_iter,
             even_row: averaged_even_row,
             odd_row: averaged_odd_row,
-            remaining_line_time: Self::mode().line_duration(),
         })
     }
 
@@ -105,11 +102,6 @@ where
             *pixel = iter.next()?.into();
         }
         Some(row)
-    }
-
-    fn emit_tone(&mut self, tone: Tone) -> Option<Tone> {
-        self.remaining_line_time = self.remaining_line_time - tone.1;
-        Some(tone)
     }
 
     fn fetch_next_rows(&mut self) {
@@ -154,7 +146,7 @@ where
             EncoderState::EvenLuma(position) => match self.even_row.get(position) {
                 Some(pixel) => {
                     self.state.increment();
-                    self.emit_tone(pixel.luma_tone(
+                    Some(pixel.luma_tone(
                         Self::mode().black_frequency(),
                         Self::mode().white_frequency(),
                         Self::mode().pixel_luma_duration(),
@@ -162,7 +154,7 @@ where
                 }
                 None => {
                     self.state.advance();
-                    self.emit_tone(Tone(
+                    Some(Tone(
                         Self::mode().black_frequency(),
                         Self::mode().blank_duration() * 2 / 3,
                     ))
@@ -170,7 +162,7 @@ where
             },
             EncoderState::EvenLumaToChroma => {
                 self.state.advance();
-                self.emit_tone(Tone(
+                Some(Tone(
                     Self::mode().separator_frequency(),
                     Self::mode().blank_duration() / 3,
                 ))
@@ -178,7 +170,7 @@ where
             EncoderState::EvenChroma(position) => match self.even_row.get(position) {
                 Some(pixel) => {
                     self.state.increment();
-                    self.emit_tone(pixel.chroma_red_tone(
+                    Some(pixel.chroma_red_tone(
                         Self::mode().black_frequency(),
                         Self::mode().white_frequency(),
                         Self::mode().pixel_chroma_duration(),
@@ -186,7 +178,7 @@ where
                 }
                 None => {
                     self.state.advance();
-                    self.emit_tone(Tone(
+                    Some(Tone(
                         Self::mode().sync_frequency(),
                         Self::mode().sync_duration(),
                     ))
@@ -194,17 +186,15 @@ where
             },
             EncoderState::EvenToOdd => {
                 self.state.advance();
-                let tone = self.emit_tone(Tone(
+                Some(Tone(
                     Self::mode().black_frequency(),
                     Self::mode().back_porch_duration(),
-                ));
-                self.remaining_line_time = Self::mode().line_duration();
-                tone
+                ))
             }
             EncoderState::OddLuma(position) => match self.odd_row.get(position) {
                 Some(pixel) => {
                     self.state.increment();
-                    self.emit_tone(pixel.luma_tone(
+                    Some(pixel.luma_tone(
                         Self::mode().black_frequency(),
                         Self::mode().white_frequency(),
                         Self::mode().pixel_luma_duration(),
@@ -212,7 +202,7 @@ where
                 }
                 None => {
                     self.state.advance();
-                    self.emit_tone(Tone(
+                    Some(Tone(
                         Self::mode().white_frequency(),
                         Self::mode().blank_duration() * 2 / 3,
                     ))
@@ -220,7 +210,7 @@ where
             },
             EncoderState::OddLumaToChroma => {
                 self.state.advance();
-                self.emit_tone(Tone(
+                Some(Tone(
                     Self::mode().separator_frequency(),
                     Self::mode().blank_duration() / 3,
                 ))
@@ -228,7 +218,7 @@ where
             EncoderState::OddChroma(position) => match self.odd_row.get(position) {
                 Some(pixel) => {
                     self.state.increment();
-                    self.emit_tone(pixel.chroma_blue_tone(
+                    Some(pixel.chroma_blue_tone(
                         Self::mode().black_frequency(),
                         Self::mode().white_frequency(),
                         Self::mode().pixel_chroma_duration(),
@@ -236,7 +226,7 @@ where
                 }
                 None => {
                     self.state.advance();
-                    self.emit_tone(Tone(
+                    Some(Tone(
                         Self::mode().sync_frequency(),
                         Self::mode().sync_duration(),
                     ))
@@ -245,16 +235,14 @@ where
             EncoderState::OddToEven => {
                 self.state.advance();
                 self.fetch_next_rows();
-                self.emit_tone(Tone(
+                Some(Tone(
                     Self::mode().black_frequency(),
                     Self::mode().back_porch_duration(),
                 ))
             }
             EncoderState::LineGap => {
                 self.state.advance();
-                let gap_length = self.remaining_line_time;
-                self.remaining_line_time = Self::mode().line_duration();
-                self.emit_tone(Tone(Hz!(0), gap_length))
+                Some(Tone(Hz!(0), Self::mode().line_gap_duration()))
             }
             EncoderState::Done => None,
         }
