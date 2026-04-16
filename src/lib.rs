@@ -1,5 +1,6 @@
 #![doc = "Slow-Scan Television Encoding With Minimal Memory Usage"]
 #![cfg_attr(not(test), no_std)]
+#![warn(missing_docs)]
 
 extern crate alloc;
 
