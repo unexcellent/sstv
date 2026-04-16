@@ -16,3 +16,4 @@ pub use error::{Error, Result};
 pub use image::{RgbPixel, YuvPixel};
 pub use modes::Mode;
 pub use synthesizer::Tone;
+pub use units::{Duration, Frequency};
