@@ -7,13 +7,13 @@ use crate::{
 use core::array;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum RowType {
+enum Row {
     Even,
     Odd,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum Subpixel {
+enum Yuv {
     Luma,
     Chroma,
 }
@@ -22,7 +22,7 @@ enum Subpixel {
 enum EncoderState {
     NotStarted,
     Header(usize),
-    Pixel(usize, RowType, Subpixel),
+    Pixel(usize, Row, Yuv),
     EvenLumaToChroma(usize),
     EvenToOdd(usize),
     OddLumaToChroma(usize),
@@ -38,18 +38,18 @@ impl EncoderState {
                 if *pos < Mode::HEADER_SEQUENCE_LENGTH - 1 {
                     *self = Self::Header(*pos + 1);
                 } else {
-                    *self = Self::Pixel(0, RowType::Even, Subpixel::Luma);
+                    *self = Self::Pixel(0, Row::Even, Yuv::Luma);
                 }
             }
-            Self::Pixel(pos, row, subpixel) => {
+            Self::Pixel(pos, row, yuv) => {
                 if *pos < Mode::Robot36.image_width() as usize - 1 {
-                    *self = Self::Pixel(*pos + 1, *row, *subpixel);
+                    *self = Self::Pixel(*pos + 1, *row, *yuv);
                 } else {
-                    match (row, subpixel) {
-                        (RowType::Even, Subpixel::Luma) => *self = Self::EvenLumaToChroma(0),
-                        (RowType::Even, Subpixel::Chroma) => *self = Self::EvenToOdd(0),
-                        (RowType::Odd, Subpixel::Luma) => *self = Self::OddLumaToChroma(0),
-                        (RowType::Odd, Subpixel::Chroma) => *self = Self::OddToEven(0),
+                    match (row, yuv) {
+                        (Row::Even, Yuv::Luma) => *self = Self::EvenLumaToChroma(0),
+                        (Row::Even, Yuv::Chroma) => *self = Self::EvenToOdd(0),
+                        (Row::Odd, Yuv::Luma) => *self = Self::OddLumaToChroma(0),
+                        (Row::Odd, Yuv::Chroma) => *self = Self::OddToEven(0),
                     }
                 }
             }
@@ -57,28 +57,28 @@ impl EncoderState {
                 if *pos == 0 {
                     *self = Self::EvenLumaToChroma(1);
                 } else {
-                    *self = Self::Pixel(0, RowType::Even, Subpixel::Chroma);
+                    *self = Self::Pixel(0, Row::Even, Yuv::Chroma);
                 }
             }
             Self::EvenToOdd(pos) => {
                 if *pos == 0 {
                     *self = Self::EvenToOdd(1);
                 } else {
-                    *self = Self::Pixel(0, RowType::Odd, Subpixel::Luma);
+                    *self = Self::Pixel(0, Row::Odd, Yuv::Luma);
                 }
             }
             Self::OddLumaToChroma(pos) => {
                 if *pos == 0 {
                     *self = Self::OddLumaToChroma(1);
                 } else {
-                    *self = Self::Pixel(0, RowType::Odd, Subpixel::Chroma);
+                    *self = Self::Pixel(0, Row::Odd, Yuv::Chroma);
                 }
             }
             Self::OddToEven(pos) => {
                 if *pos < 2 {
                     *self = Self::OddToEven(*pos + 1);
                 } else {
-                    *self = Self::Pixel(0, RowType::Even, Subpixel::Luma);
+                    *self = Self::Pixel(0, Row::Even, Yuv::Luma);
                 }
             }
             Self::Finished => (),
@@ -162,13 +162,11 @@ where
         match self.state {
             EncoderState::NotStarted => None,
             EncoderState::Header(pos) => Some(Self::mode().header_sequence()[pos]),
-            EncoderState::Pixel(pos, RowType::Even, Subpixel::Luma) => {
-                Some(self.even_row[pos].luma_tone(
-                    Self::mode().black_frequency(),
-                    Self::mode().white_frequency(),
-                    Self::mode().pixel_luma_duration(),
-                ))
-            }
+            EncoderState::Pixel(pos, Row::Even, Yuv::Luma) => Some(self.even_row[pos].luma_tone(
+                Self::mode().black_frequency(),
+                Self::mode().white_frequency(),
+                Self::mode().pixel_luma_duration(),
+            )),
             EncoderState::EvenLumaToChroma(pos) => match pos {
                 0 => Some(Tone(
                     Self::mode().black_frequency(),
@@ -179,7 +177,7 @@ where
                     Self::mode().blank_duration() / 3,
                 )),
             },
-            EncoderState::Pixel(pos, RowType::Even, Subpixel::Chroma) => {
+            EncoderState::Pixel(pos, Row::Even, Yuv::Chroma) => {
                 Some(self.even_row[pos].chroma_red_tone(
                     Self::mode().black_frequency(),
                     Self::mode().white_frequency(),
@@ -196,13 +194,11 @@ where
                     Self::mode().back_porch_duration(),
                 )),
             },
-            EncoderState::Pixel(pos, RowType::Odd, Subpixel::Luma) => {
-                Some(self.odd_row[pos].luma_tone(
-                    Self::mode().black_frequency(),
-                    Self::mode().white_frequency(),
-                    Self::mode().pixel_luma_duration(),
-                ))
-            }
+            EncoderState::Pixel(pos, Row::Odd, Yuv::Luma) => Some(self.odd_row[pos].luma_tone(
+                Self::mode().black_frequency(),
+                Self::mode().white_frequency(),
+                Self::mode().pixel_luma_duration(),
+            )),
             EncoderState::OddLumaToChroma(pos) => match pos {
                 0 => Some(Tone(
                     Self::mode().white_frequency(),
@@ -213,7 +209,7 @@ where
                     Self::mode().blank_duration() / 3,
                 )),
             },
-            EncoderState::Pixel(pos, RowType::Odd, Subpixel::Chroma) => {
+            EncoderState::Pixel(pos, Row::Odd, Yuv::Chroma) => {
                 Some(self.odd_row[pos].chroma_blue_tone(
                     Self::mode().black_frequency(),
                     Self::mode().white_frequency(),
