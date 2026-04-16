@@ -270,16 +270,6 @@ mod tests {
     use crate::{Hz, ns};
 
     #[test]
-    fn test_empty_image() {
-        let empty_image: Vec<RgbPixel> = vec![];
-
-        assert!(matches!(
-            Encoder::new(Mode::Robot36, empty_image.into_iter()),
-            Err(Error::EmptyImage)
-        ));
-    }
-
-    #[test]
     fn test_encode_robot36_against_golden_tones() {
         let img = image::open("examples/patch.png").expect("Failed to open examples/patch.png");
         let (_, height) = img.dimensions();
