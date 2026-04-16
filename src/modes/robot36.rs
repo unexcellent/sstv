@@ -5,6 +5,7 @@ use crate::{
     synthesizer::Tone,
     units::Duration,
 };
+use core::array;
 
 enum EncoderState {
     Header(usize),
@@ -57,8 +58,8 @@ where
 {
     state: EncoderState,
     pixel_iter: I,
-    current_row: [YuvPixel; 320],
-    next_row: [YuvPixel; 320],
+    even_row: [YuvPixel; 320],
+    odd_row: [YuvPixel; 320],
     remaining_line_time: Duration,
     luma_time: Duration,
     chroma_time: Duration,
@@ -69,14 +70,16 @@ where
     I: Iterator<Item = RgbPixel>,
 {
     pub fn new(mut pixel_iter: I) -> Result<Self> {
-        let current_row = match Self::fill_row(&mut pixel_iter) {
+        let first_row = match Self::fill_row(&mut pixel_iter) {
             Some(pixels) => pixels,
             None => return Err(Error::EmptyImage),
         };
-        let next_row = match Self::fill_row(&mut pixel_iter) {
+        let second_row = match Self::fill_row(&mut pixel_iter) {
             Some(pixels) => pixels,
             None => return Err(Error::EmptyImage),
         };
+        let averaged_even_row = Self::average_rows(&first_row, &second_row);
+        let averaged_odd_row = Self::average_rows(&second_row, &first_row);
 
         let total_pixel_time = Self::mode().line_pixel_duration();
         let chroma_time = total_pixel_time / 3;
@@ -85,16 +88,23 @@ where
         Ok(Self {
             state: EncoderState::Header(0),
             pixel_iter,
-            current_row,
-            next_row,
+            even_row: averaged_even_row,
+            odd_row: averaged_odd_row,
             remaining_line_time: Self::mode().line_duration(),
             luma_time,
             chroma_time,
         })
     }
 
-    pub fn mode() -> Mode {
+    pub const fn mode() -> Mode {
         Mode::Robot36
+    }
+
+    fn average_rows(
+        primary_row: &[YuvPixel; 320],
+        secondary_row: &[YuvPixel; 320],
+    ) -> [YuvPixel; 320] {
+        array::from_fn(|i| YuvPixel::average(primary_row[i], secondary_row[i]))
     }
 
     fn fill_row(iter: &mut I) -> Option<[YuvPixel; 320]> {
@@ -111,19 +121,22 @@ where
     }
 
     fn fetch_next_rows(&mut self) {
-        match Self::fill_row(&mut self.pixel_iter) {
-            Some(row) => self.current_row = row,
+        let first_row = match Self::fill_row(&mut self.pixel_iter) {
+            Some(row) => row,
             None => {
                 self.state = EncoderState::Done;
                 return;
             }
-        }
-        match Self::fill_row(&mut self.pixel_iter) {
-            Some(row) => self.next_row = row,
+        };
+        let second_row = match Self::fill_row(&mut self.pixel_iter) {
+            Some(row) => row,
             None => {
                 self.state = EncoderState::Done;
+                return;
             }
-        }
+        };
+        self.even_row = Self::average_rows(&first_row, &second_row);
+        self.odd_row = Self::average_rows(&second_row, &first_row);
     }
 }
 
@@ -146,7 +159,7 @@ where
 
                 Some(header_tones[position])
             }
-            EncoderState::EvenLuma(position) => match self.current_row.get(position) {
+            EncoderState::EvenLuma(position) => match self.even_row.get(position) {
                 Some(pixel) => {
                     self.state.increment();
                     self.emit_tone(pixel.luma_tone(
@@ -170,26 +183,23 @@ where
                     Self::mode().blank_duration() / 3,
                 ))
             }
-            EncoderState::EvenChroma(position) => {
-                match (self.current_row.get(position), self.next_row.get(position)) {
-                    (Some(current_row_pixel), Some(next_row_pixel)) => {
-                        self.state.increment();
-                        let combined_pixel = YuvPixel::average(*current_row_pixel, *next_row_pixel);
-                        self.emit_tone(combined_pixel.chroma_red_tone(
-                            Self::mode().black_frequency(),
-                            Self::mode().white_frequency(),
-                            self.chroma_time / Self::mode().image_width(),
-                        ))
-                    }
-                    _ => {
-                        self.state.advance();
-                        self.emit_tone(Tone(
-                            Self::mode().sync_frequency(),
-                            Self::mode().sync_duration(),
-                        ))
-                    }
+            EncoderState::EvenChroma(position) => match self.even_row.get(position) {
+                Some(pixel) => {
+                    self.state.increment();
+                    self.emit_tone(pixel.chroma_red_tone(
+                        Self::mode().black_frequency(),
+                        Self::mode().white_frequency(),
+                        self.chroma_time / Self::mode().image_width(),
+                    ))
                 }
-            }
+                None => {
+                    self.state.advance();
+                    self.emit_tone(Tone(
+                        Self::mode().sync_frequency(),
+                        Self::mode().sync_duration(),
+                    ))
+                }
+            },
             EncoderState::EvenToOdd => {
                 self.state.advance();
                 let tone = self.emit_tone(Tone(
@@ -199,7 +209,7 @@ where
                 self.remaining_line_time = Self::mode().line_duration();
                 tone
             }
-            EncoderState::OddLuma(position) => match self.next_row.get(position) {
+            EncoderState::OddLuma(position) => match self.odd_row.get(position) {
                 Some(pixel) => {
                     self.state.increment();
                     self.emit_tone(pixel.luma_tone(
@@ -223,26 +233,23 @@ where
                     Self::mode().blank_duration() / 3,
                 ))
             }
-            EncoderState::OddChroma(position) => {
-                match (self.current_row.get(position), self.next_row.get(position)) {
-                    (Some(current_row_pixel), Some(next_row_pixel)) => {
-                        self.state.increment();
-                        let combined_pixel = YuvPixel::average(*current_row_pixel, *next_row_pixel);
-                        self.emit_tone(combined_pixel.chroma_blue_tone(
-                            Self::mode().black_frequency(),
-                            Self::mode().white_frequency(),
-                            self.chroma_time / Self::mode().image_width(),
-                        ))
-                    }
-                    _ => {
-                        self.state.advance();
-                        self.emit_tone(Tone(
-                            Self::mode().sync_frequency(),
-                            Self::mode().sync_duration(),
-                        ))
-                    }
+            EncoderState::OddChroma(position) => match self.odd_row.get(position) {
+                Some(pixel) => {
+                    self.state.increment();
+                    self.emit_tone(pixel.chroma_blue_tone(
+                        Self::mode().black_frequency(),
+                        Self::mode().white_frequency(),
+                        self.chroma_time / Self::mode().image_width(),
+                    ))
                 }
-            }
+                None => {
+                    self.state.advance();
+                    self.emit_tone(Tone(
+                        Self::mode().sync_frequency(),
+                        Self::mode().sync_duration(),
+                    ))
+                }
+            },
             EncoderState::OddToEven => {
                 self.state.advance();
                 self.fetch_next_rows();
