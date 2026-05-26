@@ -120,20 +120,20 @@ impl Mode {
     /// Construct the initial calibration and VIS digital tones sent before the image.
     pub fn header_sequence(&self) -> [Tone; Self::HEADER_SEQUENCE_LENGTH] {
         let tuning = [
-            Tone(self.separator_frequency(), ms!(100)),
-            Tone(self.black_frequency(), ms!(100)),
-            Tone(self.separator_frequency(), ms!(100)),
-            Tone(self.black_frequency(), ms!(100)),
-            Tone(self.white_frequency(), ms!(100)),
-            Tone(self.black_frequency(), ms!(100)),
-            Tone(self.white_frequency(), ms!(100)),
-            Tone(self.black_frequency(), ms!(100)),
+            Tone::new(self.separator_frequency(), ms!(100)),
+            Tone::new(self.black_frequency(), ms!(100)),
+            Tone::new(self.separator_frequency(), ms!(100)),
+            Tone::new(self.black_frequency(), ms!(100)),
+            Tone::new(self.white_frequency(), ms!(100)),
+            Tone::new(self.black_frequency(), ms!(100)),
+            Tone::new(self.white_frequency(), ms!(100)),
+            Tone::new(self.black_frequency(), ms!(100)),
         ];
         let calibration = [
-            Tone(self.leader_frequency(), ms!(300)),
-            Tone(self.break_frequency(), ms!(10)),
-            Tone(self.leader_frequency(), ms!(300)),
-            Tone(self.break_frequency(), self.bit_duration()),
+            Tone::new(self.leader_frequency(), ms!(300)),
+            Tone::new(self.break_frequency(), ms!(10)),
+            Tone::new(self.leader_frequency(), ms!(300)),
+            Tone::new(self.break_frequency(), self.bit_duration()),
         ];
         let identification: [Tone; 8] = array::from_fn(|i| {
             let freq = if (self.identification() >> i) & 1 == 1 {
@@ -141,14 +141,14 @@ impl Mode {
             } else {
                 self.zero_frequency()
             };
-            Tone(freq, self.bit_duration())
+            Tone::new(freq, self.bit_duration())
         });
 
         array::from_fn(|i| match i {
             0..=7 => tuning[i],
             8..=11 => calibration[i - 8],
             12..=19 => identification[i - 12],
-            _ => Tone(self.break_frequency(), self.bit_duration()),
+            _ => Tone::new(self.break_frequency(), self.bit_duration()),
         })
     }
 
@@ -176,27 +176,27 @@ mod tests {
         assert_eq!(
             Mode::Robot36.header_sequence(),
             [
-                Tone(Hz!(1900), ms!(100)),
-                Tone(Hz!(1500), ms!(100)),
-                Tone(Hz!(1900), ms!(100)),
-                Tone(Hz!(1500), ms!(100)),
-                Tone(Hz!(2300), ms!(100)),
-                Tone(Hz!(1500), ms!(100)),
-                Tone(Hz!(2300), ms!(100)),
-                Tone(Hz!(1500), ms!(100)),
-                Tone(Hz!(1900), ms!(300)),
-                Tone(Hz!(1200), ms!(10)),
-                Tone(Hz!(1900), ms!(300)),
-                Tone(Hz!(1200), ms!(30)),
-                Tone(Hz!(1300), ms!(30)),
-                Tone(Hz!(1300), ms!(30)),
-                Tone(Hz!(1300), ms!(30)),
-                Tone(Hz!(1100), ms!(30)),
-                Tone(Hz!(1300), ms!(30)),
-                Tone(Hz!(1300), ms!(30)),
-                Tone(Hz!(1300), ms!(30)),
-                Tone(Hz!(1100), ms!(30)),
-                Tone(Hz!(1200), ms!(30)),
+                Tone::new(Hz!(1900), ms!(100)),
+                Tone::new(Hz!(1500), ms!(100)),
+                Tone::new(Hz!(1900), ms!(100)),
+                Tone::new(Hz!(1500), ms!(100)),
+                Tone::new(Hz!(2300), ms!(100)),
+                Tone::new(Hz!(1500), ms!(100)),
+                Tone::new(Hz!(2300), ms!(100)),
+                Tone::new(Hz!(1500), ms!(100)),
+                Tone::new(Hz!(1900), ms!(300)),
+                Tone::new(Hz!(1200), ms!(10)),
+                Tone::new(Hz!(1900), ms!(300)),
+                Tone::new(Hz!(1200), ms!(30)),
+                Tone::new(Hz!(1300), ms!(30)),
+                Tone::new(Hz!(1300), ms!(30)),
+                Tone::new(Hz!(1300), ms!(30)),
+                Tone::new(Hz!(1100), ms!(30)),
+                Tone::new(Hz!(1300), ms!(30)),
+                Tone::new(Hz!(1300), ms!(30)),
+                Tone::new(Hz!(1300), ms!(30)),
+                Tone::new(Hz!(1100), ms!(30)),
+                Tone::new(Hz!(1200), ms!(30)),
             ]
         )
     }

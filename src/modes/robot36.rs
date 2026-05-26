@@ -168,11 +168,11 @@ where
                 Self::mode().pixel_luma_duration(),
             )),
             EncoderState::EvenLumaToChroma(pos) => match pos {
-                0 => Some(Tone(
+                0 => Some(Tone::new(
                     Self::mode().black_frequency(),
                     Self::mode().blank_duration() * 2 / 3,
                 )),
-                _ => Some(Tone(
+                _ => Some(Tone::new(
                     Self::mode().separator_frequency(),
                     Self::mode().blank_duration() / 3,
                 )),
@@ -185,11 +185,11 @@ where
                 ))
             }
             EncoderState::EvenToOdd(pos) => match pos {
-                0 => Some(Tone(
+                0 => Some(Tone::new(
                     Self::mode().sync_frequency(),
                     Self::mode().sync_duration(),
                 )),
-                _ => Some(Tone(
+                _ => Some(Tone::new(
                     Self::mode().black_frequency(),
                     Self::mode().back_porch_duration(),
                 )),
@@ -200,11 +200,11 @@ where
                 Self::mode().pixel_luma_duration(),
             )),
             EncoderState::OddLumaToChroma(pos) => match pos {
-                0 => Some(Tone(
+                0 => Some(Tone::new(
                     Self::mode().white_frequency(),
                     Self::mode().blank_duration() * 2 / 3,
                 )),
-                _ => Some(Tone(
+                _ => Some(Tone::new(
                     Self::mode().separator_frequency(),
                     Self::mode().blank_duration() / 3,
                 )),
@@ -217,11 +217,11 @@ where
                 ))
             }
             EncoderState::OddToEven(pos) => match pos {
-                0 => Some(Tone(
+                0 => Some(Tone::new(
                     Self::mode().sync_frequency(),
                     Self::mode().sync_duration(),
                 )),
-                1 => Some(Tone(
+                1 => Some(Tone::new(
                     Self::mode().black_frequency(),
                     Self::mode().back_porch_duration(),
                 )),
@@ -230,7 +230,7 @@ where
                     if let EncoderState::Finished = self.state {
                         None
                     } else {
-                        Some(Tone(Hz!(0), Self::mode().line_gap_duration()))
+                        Some(Tone::new(Hz!(0), Self::mode().line_gap_duration()))
                     }
                 }
             },
@@ -291,7 +291,7 @@ mod tests {
             let parts: Vec<&str> = line.split(',').collect();
             let hz: u32 = parts[0].parse().unwrap();
             let nanos: u64 = parts[1].parse().unwrap();
-            expected_tones.push(Tone(Hz!(hz), ns!(nanos)));
+            expected_tones.push(Tone::new(Hz!(hz), ns!(nanos)));
         }
 
         let generated_tones: Vec<Tone> = encoder.unwrap().collect();
