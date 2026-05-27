@@ -76,7 +76,7 @@ impl YuvPixel {
     }
     /// Return the tone associated with the brightness.
     pub fn luma_tone(self, black: Frequency, white: Frequency, duration: Duration) -> Tone {
-        Tone(self.luma_frequency(black, white), duration)
+        Tone::new(self.luma_frequency(black, white), duration)
     }
     /// Return the frequency associated with the red chroma.
     pub fn chroma_red_frequency(self, black: Frequency, white: Frequency) -> Frequency {
@@ -84,7 +84,7 @@ impl YuvPixel {
     }
     /// Return the tone associated with the red chroma.
     pub fn chroma_red_tone(self, black: Frequency, white: Frequency, duration: Duration) -> Tone {
-        Tone(self.chroma_red_frequency(black, white), duration)
+        Tone::new(self.chroma_red_frequency(black, white), duration)
     }
     /// Return the frequency associated with the blue chroma.
     pub fn chroma_blue_frequency(self, black: Frequency, white: Frequency) -> Frequency {
@@ -92,7 +92,7 @@ impl YuvPixel {
     }
     /// Return the tone associated with the blue chroma.
     pub fn chroma_blue_tone(self, black: Frequency, white: Frequency, duration: Duration) -> Tone {
-        Tone(self.chroma_blue_frequency(black, white), duration)
+        Tone::new(self.chroma_blue_frequency(black, white), duration)
     }
 }
 

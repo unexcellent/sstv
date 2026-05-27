@@ -32,6 +32,6 @@ fn main() {
     writer.write_all(b"hz,nanos\n").unwrap();
 
     encoder.for_each(|tone| {
-        writeln!(writer, "{},{}", tone.0.hz(), tone.1.ns()).unwrap();
+        writeln!(writer, "{},{}", tone.frequency.hz(), tone.duration.ns()).unwrap();
     });
 }
