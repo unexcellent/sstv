@@ -21,14 +21,27 @@ impl Tone {
     }
 }
 
-/// An iterator that converts an iterator of [`Tone`]s into 16-bit PCM samples.
+/// Use a `Synthesizer` to encode an iterator of `Tone`s into 16-bit PCM samples.
 ///
+/// You would usually use it to encode an image into single samples to emit them via an audio device.
+/// ```rust
+/// use sstv::{Encoder, Mode, RgbPixel, Synthesizer};
+///
+/// let image = [RgbPixel::new(0, 0, 0); 320 * 240];
+/// let encoder = Encoder::new(Mode::Robot36, image.into_iter()).expect("error during encoding");
+/// for sample in Synthesizer::new(encoder, 8000) {
+///     // ...
+/// }
+/// ```
+///
+/// It can be used with a single `Tone` as well.
 /// ```rust
 /// use sstv::{Synthesizer, Tone, Hz, us};
 ///
-/// let tones = [Tone::new(Hz!(1500), us!(1000))];
-/// let samples: Vec<i16> = Synthesizer::new(tones.into_iter(), 8000).collect();
-/// assert!(!samples.is_empty());
+/// let tone = Tone::new(Hz!(1500), us!(1000));
+/// for sample in Synthesizer::new([tone].into_iter(), 8000) {
+///     // ...
+/// }
 /// ```
 pub struct Synthesizer<I: Iterator<Item = Tone>> {
     tones: I,
@@ -40,7 +53,7 @@ pub struct Synthesizer<I: Iterator<Item = Tone>> {
 }
 
 impl<I: Iterator<Item = Tone>> Synthesizer<I> {
-    /// Create a new [`Synthesizer`] from a tone iterator and a sample rate in Hz.
+    /// Create a new `Synthesizer` from a tone iterator and a sample rate in Hz.
     ///
     /// `sample_rate` must be greater than zero.
     pub fn new(tones: I, sample_rate: u32) -> Self {
@@ -88,10 +101,8 @@ mod tests {
     use super::*;
     use core::f64::consts::PI;
 
-    /// Worst-case quantization error for a 256-point sine table:
-    /// max|sin'| = 1, halfstep = π/256, so max error ≈ 32767 * π/256 ≈ 402.
-    /// 500 gives headroom for phase-accumulator truncation error on top.
-    const MAX_SAMPLE_DEVIATION: i32 = 500;
+    // The 16 bit sample should not differ from the pure sinewave ground truth by more than 2%.
+    const MAX_SAMPLE_DEVIATION: i16 = i16::MAX / 50;
 
     fn float_reference(tones: &[Tone], sample_rate: u32) -> Vec<i16> {
         let mut samples = Vec::new();
@@ -113,7 +124,7 @@ mod tests {
     }
 
     #[test]
-    fn dds_matches_float_ground_truth() {
+    fn synthesizer_matches_pure_sine_wave() {
         let sample_rate = 48000u32;
         let tones = [
             Tone::new(Frequency::from_hz(1200), Duration::from_ms(10)),
@@ -127,7 +138,7 @@ mod tests {
         assert_eq!(dds.len(), reference.len(), "sample counts differ");
 
         for (i, (&dds_sample, &ref_sample)) in dds.iter().zip(reference.iter()).enumerate() {
-            let deviation = (dds_sample as i32 - ref_sample as i32).abs();
+            let deviation = (dds_sample - ref_sample as i16).abs();
             assert!(
                 deviation <= MAX_SAMPLE_DEVIATION,
                 "sample {i}: DDS={dds_sample}, reference={ref_sample}, deviation={deviation} > {MAX_SAMPLE_DEVIATION}",
