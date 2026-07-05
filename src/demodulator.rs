@@ -126,30 +126,51 @@ mod tests {
         Synthesizer::new([tone].into_iter(), sample_rate).collect()
     }
 
-    #[test]
-    fn pure_frequencies() {
-        let frequencies = [1500u32, 1900, 2300];
-        let sample_rates = [8_000u32, 44_100, 48_000];
+    fn test_pure_frequency(actual_frequency: Frequency, sample_rate: u32) {
+        let samples = synthesize(actual_frequency, sample_rate);
+        let estimates: Vec<Frequency> =
+            Demodulator::new(samples.clone().into_iter(), sample_rate).collect();
 
-        for freq in frequencies {
-            for sample_rate in sample_rates {
-                let actual_frequency = Frequency::from_hz(freq);
-                let samples = synthesize(actual_frequency, sample_rate);
-                let sample_count = samples.len();
+        assert!(!estimates.is_empty());
 
-                let estimates: Vec<Frequency> =
-                    Demodulator::new(samples.into_iter(), sample_rate).collect();
-
-                let allowed_deviation = freq / 10;
-                for estimated_frequency in estimates {
-                    let deviation = estimated_frequency.hz().abs_diff(freq);
-                    assert!(
-                        deviation <= allowed_deviation,
-                        "freq={freq} rate={sample_rate}: estimate={} deviates by {deviation} Hz",
-                        estimated_frequency.hz(),
-                    );
-                }
-            }
+        let allowed_deviation = actual_frequency / 100;
+        for estimated_frequency in estimates {
+            let deviation = estimated_frequency.abs_diff(actual_frequency);
+            assert!(
+                deviation < allowed_deviation,
+                "|{} Hz - {} Hz| > {} Hz",
+                estimated_frequency.hz(),
+                actual_frequency.hz(),
+                allowed_deviation.hz()
+            )
         }
+    }
+
+    #[test]
+    fn pure_1500hz_at_48000() {
+        let actual_frequency = Frequency::from_hz(1500);
+        let sample_rate: u32 = 48_000;
+        test_pure_frequency(actual_frequency, sample_rate);
+    }
+
+    #[test]
+    fn pure_2300hz_at_48000() {
+        let actual_frequency = Frequency::from_hz(2300);
+        let sample_rate: u32 = 48_000;
+        test_pure_frequency(actual_frequency, sample_rate);
+    }
+
+    #[test]
+    fn pure_1200hz_at_8000() {
+        let actual_frequency = Frequency::from_hz(1200);
+        let sample_rate: u32 = 8_000;
+        test_pure_frequency(actual_frequency, sample_rate);
+    }
+
+    #[test]
+    fn pure_1000hz_at_8000() {
+        let actual_frequency = Frequency::from_hz(1000);
+        let sample_rate: u32 = 8_000;
+        test_pure_frequency(actual_frequency, sample_rate);
     }
 }
