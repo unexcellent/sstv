@@ -21,6 +21,7 @@ target
 #.idea/
 
 local/
+.claude/
 
 # Added by cargo
 
