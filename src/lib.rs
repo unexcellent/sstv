@@ -6,12 +6,14 @@ extern crate alloc;
 
 mod error;
 
+mod demodulator;
 mod encoder;
 mod image;
 mod modes;
 mod synthesizer;
 mod units;
 
+pub use demodulator::Demodulator;
 pub use encoder::Encoder;
 pub use error::{Error, Result};
 pub use image::{RgbPixel, YuvPixel};
