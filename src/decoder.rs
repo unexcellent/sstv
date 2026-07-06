@@ -333,11 +333,6 @@ mod tests {
 
     use super::*;
     use crate::{Encoder, Synthesizer};
-    use image::GenericImageView;
-    use std::io::Read;
-
-    // Not committed (large, reproducible); regenerate with the encode script.
-    const INTEROP_FIXTURE: &str = "local/patch-robot36-pysstv.wav.gz";
 
     /// The number of samples occupied by our encoder's header at a sample rate.
     fn header_sample_count(sample_rate: u32) -> usize {
@@ -428,69 +423,5 @@ mod tests {
             Decoder::new(samples.into_iter(), 48_000),
             Err(Error::EmptyImage)
         ));
-    }
-
-    /// Load `examples/patch.png` as a row-major `RgbPixel` buffer.
-    fn reference_image() -> Vec<RgbPixel> {
-        let image = image::open("examples/patch.png").expect("open patch.png");
-        let (width, height) = image.dimensions();
-        assert_eq!((width, height), (WIDTH as u32, HEIGHT as u32));
-
-        let mut pixels = std::vec![RgbPixel::new(0, 0, 0); (width * height) as usize];
-        for (x, y, rgba) in image.pixels() {
-            pixels[(y * width + x) as usize] = RgbPixel::new(rgba[0], rgba[1], rgba[2]);
-        }
-        pixels
-    }
-
-    /// Read a gzipped WAV fixture, returning its samples (first channel) and rate.
-    fn read_gzipped_wav(path: &str) -> (Vec<i16>, u32) {
-        let file = std::fs::File::open(path).expect("open fixture");
-        let mut wav_bytes = Vec::new();
-        flate2::read::GzDecoder::new(file)
-            .read_to_end(&mut wav_bytes)
-            .expect("gunzip fixture");
-
-        let reader = hound::WavReader::new(std::io::Cursor::new(wav_bytes)).expect("parse wav");
-        let channels = reader.spec().channels as usize;
-        let sample_rate = reader.spec().sample_rate;
-        let samples = reader
-            .into_samples::<i16>()
-            .map(|sample| sample.expect("read sample"))
-            .step_by(channels)
-            .collect();
-        (samples, sample_rate)
-    }
-
-    /// Decode a Robot36 signal produced by PySSTV (an independent implementation)
-    /// and check it resembles the source image.
-    ///
-    /// Requires the fixture (not committed); generate it with
-    /// `python3 scripts/encode_with_pysstv.py`.
-    #[test]
-    fn interop_decodes_pysstv_robot36() {
-        assert!(
-            std::path::Path::new(INTEROP_FIXTURE).exists(),
-            "{INTEROP_FIXTURE} not found. Generate it with `python3 scripts/encode_with_pysstv.py`",
-        );
-
-        let (samples, sample_rate) = read_gzipped_wav(INTEROP_FIXTURE);
-        let reference = reference_image();
-
-        let decoded: Vec<RgbPixel> = Decoder::new(samples.into_iter(), sample_rate)
-            .expect("decode fixture")
-            .collect();
-
-        // A real transmission may not carry the last line or two all the way to
-        // the end; require nearly the full image.
-        let rows = decoded.len() / WIDTH;
-        assert!(rows >= HEIGHT - 2, "only decoded {rows} of {HEIGHT} rows");
-
-        let error = mean_abs_error(&reference[..decoded.len()], &decoded);
-        std::eprintln!("interop: {rows} rows, mean abs error {error}");
-        // Looser than the self round-trip (~3.5): PySSTV uses different YUV
-        // coefficients, so some colour drift is expected. A misaligned decode
-        // would be far higher (40+).
-        assert!(error < 15.0, "interop mean abs error {error} too high");
     }
 }

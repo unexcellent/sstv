@@ -2,23 +2,22 @@
 """Produce the reference image the encoder test checks against.
 
 Encodes examples/patch.png with THIS crate's encoder (via the `encode` example),
-then decodes the result with the independent colaclanth `sstv` decoder. The
-decoded image is the reference: if our encoder produces valid Robot36, it should
-resemble the source image.
+then decodes the result with the independent colaclanth `sstv` decoder. If our
+encoder produces valid Robot36, the decoded image should resemble the source.
 
-Both outputs are written to the gitignored local/ directory.
+Outputs are written into tests/assets/ (gitignored *.wav / *.png).
 
-Requires:  pip install --no-deps -r scripts/requirements.txt
-Usage:     python3 scripts/decode_reference.py
+Regenerate with:  python3 tests/scripts/decode_reference.py
+Requires:         pip install --no-deps -r tests/scripts/requirements.txt
 """
 
 import os
 import subprocess
 import sys
 
-REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-WAV = os.path.join(REPO_ROOT, "local", "encoded.wav")
-OUTPUT = os.path.join(REPO_ROOT, "local", "encoder-robot36-sstv.png")
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+WAV = os.path.join(REPO_ROOT, "tests", "assets", "encoded.wav")
+OUTPUT = os.path.join(REPO_ROOT, "tests", "assets", "encoder-robot36-sstv.png")
 
 
 def main() -> None:
