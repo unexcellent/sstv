@@ -121,29 +121,35 @@ mod tests {
     use crate::synthesizer::{Synthesizer, Tone};
     use crate::units::Duration;
 
-    fn synthesize(frequency: Frequency, sample_rate: u32) -> Vec<i16> {
-        let tone = Tone::new(frequency, Duration::from_ms(10));
-        Synthesizer::new([tone].into_iter(), sample_rate).collect()
+    fn synthesize(frequencies: Vec<Frequency>, sample_rate: u32) -> Vec<i16> {
+        let tones: Vec<Tone> = frequencies
+            .into_iter()
+            .map(|freq| Tone::new(freq, Duration::from_ms(10)))
+            .collect();
+        Synthesizer::new(tones.into_iter(), sample_rate).collect()
     }
 
     fn test_pure_frequency(actual_frequency: Frequency, sample_rate: u32) {
-        let samples = synthesize(actual_frequency, sample_rate);
+        let samples = synthesize(vec![actual_frequency], sample_rate);
         let estimates: Vec<Frequency> =
             Demodulator::new(samples.clone().into_iter(), sample_rate).collect();
 
         assert!(!estimates.is_empty());
 
-        let allowed_deviation = actual_frequency / 100;
         for estimated_frequency in estimates {
-            let deviation = estimated_frequency.abs_diff(actual_frequency);
             assert!(
-                deviation < allowed_deviation,
-                "|{} Hz - {} Hz| > {} Hz",
+                frequencies_match(estimated_frequency, actual_frequency),
+                "{} Hz ≉ {} Hz",
                 estimated_frequency.hz(),
                 actual_frequency.hz(),
-                allowed_deviation.hz()
             )
         }
+    }
+
+    fn frequencies_match(estimated: Frequency, actual: Frequency) -> bool {
+        let allowed_deviation = actual / 100;
+        let deviation = estimated.abs_diff(actual);
+        deviation <= allowed_deviation
     }
 
     #[test]
@@ -172,5 +178,30 @@ mod tests {
         let actual_frequency = Frequency::from_hz(1000);
         let sample_rate: u32 = 8_000;
         test_pure_frequency(actual_frequency, sample_rate);
+    }
+
+    #[test]
+    fn switch_between_two_frequencies() {
+        let first_actual = Frequency::from_hz(1500);
+        let second_actual = Frequency::from_hz(2300);
+        let sample_rate: u32 = 48_000;
+
+        let samples = synthesize(vec![first_actual, second_actual], sample_rate);
+        let estimates: Vec<Frequency> =
+            Demodulator::new(samples.clone().into_iter(), sample_rate).collect();
+
+        for estimated in estimates {
+            if !frequencies_match(estimated, first_actual)
+                && !frequencies_match(estimated, second_actual)
+            {
+                assert!(
+                    false,
+                    "{} not in [{}, {}]",
+                    estimated.hz(),
+                    first_actual.hz(),
+                    second_actual.hz()
+                )
+            }
+        }
     }
 }
