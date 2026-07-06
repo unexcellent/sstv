@@ -115,6 +115,22 @@ impl From<RgbPixel> for YuvPixel {
     }
 }
 
+impl From<YuvPixel> for RgbPixel {
+    fn from(yuv: YuvPixel) -> Self {
+        let luma = yuv.luma() as i32;
+
+        // Inverse of the clamped conversions in `From<RgbPixel>`.
+        let red_difference = (14 * yuv.chroma_red() as i32 - 7 * 255) / 10;
+        let blue_difference = (178 * yuv.chroma_blue() as i32 - 89 * 255) / 100;
+
+        let red = (luma + red_difference).clamp(0, 255);
+        let blue = (luma + blue_difference).clamp(0, 255);
+        let green = ((100 * luma - 30 * red - 11 * blue) / 59).clamp(0, 255);
+
+        RgbPixel::new(red as u8, green as u8, blue as u8)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -125,5 +141,26 @@ mod tests {
             YuvPixel::from(RgbPixel::new(67, 69, 42)),
             YuvPixel::new(65, 128, 114)
         )
+    }
+
+    #[test]
+    fn rgb_survives_yuv_round_trip() {
+        // The YUV conversion quantizes and clamps, so a small deviation is
+        // expected rather than exact equality.
+        for rgb in [
+            RgbPixel::new(0, 0, 0),
+            RgbPixel::new(255, 255, 255),
+            RgbPixel::new(200, 100, 50),
+            RgbPixel::new(30, 180, 220),
+        ] {
+            let restored = RgbPixel::from(YuvPixel::from(rgb));
+            let deviation = |a: u8, b: u8| (a as i32 - b as i32).abs();
+            assert!(
+                deviation(restored.red(), rgb.red()) <= 6
+                    && deviation(restored.green(), rgb.green()) <= 6
+                    && deviation(restored.blue(), rgb.blue()) <= 6,
+                "{rgb:?} -> {restored:?}",
+            );
+        }
     }
 }
