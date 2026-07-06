@@ -152,6 +152,38 @@ mod tests {
         deviation <= allowed_deviation
     }
 
+    struct Noise(u64);
+    impl Noise {
+        fn next_u64(&mut self) -> u64 {
+            self.0 = self.0.wrapping_add(0x9E3779B97F4A7C15);
+            let mut z = self.0;
+            z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
+            z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
+            z ^ (z >> 31)
+        }
+        fn next_gaussian(&mut self) -> f64 {
+            let u1 = (self.next_u64() >> 11) as f64 / (1u64 << 53) as f64 + f64::MIN_POSITIVE;
+            let u2 = (self.next_u64() >> 11) as f64 / (1u64 << 53) as f64;
+            (-2.0 * u1.ln()).sqrt() * (core::f64::consts::TAU * u2).cos()
+        }
+    }
+
+    fn add_noise(samples: &[i16], snr_db: f64) -> Vec<i16> {
+        let signal_rms = i16::MAX as f64 / core::f64::consts::SQRT_2;
+        let sigma = signal_rms / 10f64.powf(snr_db / 20.0);
+
+        let seed: u64 = 0x5EED;
+        let mut noise = Noise(seed);
+        samples
+            .iter()
+            .map(|&s| {
+                (s as f64 + noise.next_gaussian() * sigma)
+                    .round()
+                    .clamp(i16::MIN as f64, i16::MAX as f64) as i16
+            })
+            .collect()
+    }
+
     #[test]
     fn pure_1500hz_at_48000() {
         let actual_frequency = Frequency::from_hz(1500);
@@ -178,6 +210,29 @@ mod tests {
         let actual_frequency = Frequency::from_hz(1000);
         let sample_rate: u32 = 8_000;
         test_pure_frequency(actual_frequency, sample_rate);
+    }
+
+    #[test]
+    fn noisy_2300hz_at_48000() {
+        let actual_frequency = Frequency::from_hz(2300);
+        let sample_rate: u32 = 48_000;
+        let signal_to_noise_ratio_db = 20.0;
+
+        let clean = synthesize(vec![actual_frequency], sample_rate);
+        let samples = add_noise(&clean, signal_to_noise_ratio_db);
+        let mut estimates: Vec<Frequency> =
+            Demodulator::new(samples.into_iter(), sample_rate).collect();
+
+        assert!(!estimates.is_empty());
+
+        estimates.sort();
+        let median = estimates[estimates.len() / 2];
+        assert!(
+            frequencies_match(median, actual_frequency),
+            "median {} Hz ≉ {} Hz",
+            median.hz(),
+            actual_frequency.hz(),
+        )
     }
 
     #[test]
