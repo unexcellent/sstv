@@ -35,8 +35,7 @@ pub struct Demodulator<I: Iterator<Item = i16>> {
     previous_sample: i16,
     index: u64,
     last_crossing: Option<f64>,
-    frequency: Frequency,
-    has_started: bool,
+    frequency: Option<Frequency>,
 }
 
 impl<I: Iterator<Item = i16>> Demodulator<I> {
@@ -51,9 +50,27 @@ impl<I: Iterator<Item = i16>> Demodulator<I> {
             previous_sample: first_sample.unwrap_or_default(),
             index: 0,
             last_crossing: None,
-            frequency: Frequency::from_hz(0),
-            has_started: false,
+            frequency: None,
         }
+    }
+
+    fn calculate_frequency(&mut self, current_sample: i16, index: u64) -> Option<Frequency> {
+        let previous_sample = self.previous_sample;
+        self.previous_sample = current_sample;
+
+        let samples_crossed_the_zero_line = (previous_sample >= 0) != (current_sample >= 0);
+        if !samples_crossed_the_zero_line {
+            return None;
+        }
+
+        let zero_line_crossing = (index as f64 - 1.0)
+            + previous_sample as f64 / (previous_sample as f64 - current_sample as f64);
+
+        let last_crossing = self.last_crossing.replace(zero_line_crossing);
+        let half_period = zero_line_crossing - last_crossing?;
+        let frequency_float = self.sample_rate as f64 / (2.0 * half_period);
+
+        Some(Frequency::from_hz(frequency_float as u32))
     }
 }
 
@@ -61,51 +78,25 @@ impl<I: Iterator<Item = i16>> Iterator for Demodulator<I> {
     type Item = Frequency;
 
     fn next(&mut self) -> Option<Frequency> {
-        // Consume samples until we can emit: during the warm-up (before the
-        // first estimate) this loops without producing anything; afterwards it
-        // returns exactly once per sample.
-        loop {
+        while self.frequency.is_none() {
             let current_sample = self.samples.next()?;
             let index = self.index;
             self.index += 1;
 
-            // A sign change between the two samples marks a zero crossing.
-            if (self.previous_sample >= 0) != (current_sample >= 0) {
-                let prev_f = self.previous_sample as f64;
-                let curr_f = current_sample as f64;
-                // Fraction of the way from `prev` to `curr` at which the
-                // straight line between them reaches zero, in `[0, 1)`.
-                let frac = prev_f / (prev_f - curr_f);
-                let crossing = (index as f64 - 1.0) + frac;
-
-                if let Some(last) = self.last_crossing {
-                    // Successive crossings are half a period apart.
-                    let half_period = crossing - last;
-                    if half_period > 0.0 {
-                        let hz = self.sample_rate as f64 / (2.0 * half_period);
-                        self.frequency = Frequency::from_hz(round_hz(hz));
-                        self.has_started = true;
-                    }
-                }
-                self.last_crossing = Some(crossing);
-            }
-
-            self.previous_sample = current_sample;
-
-            if self.has_started {
-                return Some(self.frequency);
-            }
+            self.frequency = self.calculate_frequency(current_sample, index);
         }
-    }
-}
 
-/// Round a positive, finite frequency to the nearest whole Hertz, mapping
-/// anything else (non-finite, zero, negative) to zero.
-fn round_hz(hz: f64) -> u32 {
-    if hz.is_finite() && hz > 0.0 {
-        (hz + 0.5) as u32
-    } else {
-        0
+        let current_sample = self.samples.next()?;
+        let index = self.index;
+        self.index += 1;
+
+        match self.calculate_frequency(current_sample, index) {
+            Some(frequency) => {
+                self.frequency = Some(frequency);
+                Some(frequency)
+            }
+            None => self.frequency,
+        }
     }
 }
 
