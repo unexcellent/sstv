@@ -10,7 +10,7 @@ Regenerate the fixture with:
 
     python3 scripts/encode_with_pysstv.py
 
-Requires:  pip install pysstv pillow
+Requires:  pip install --no-deps -r scripts/requirements.txt
 """
 
 import gzip

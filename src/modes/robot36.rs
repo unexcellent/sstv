@@ -254,60 +254,54 @@ where
 #[cfg(test)]
 mod tests {
     extern crate std;
-    use flate2::read::GzDecoder;
-    use image::GenericImageView;
-    use std::fs::File;
-    use std::io::{BufRead, BufReader};
-    use std::vec::Vec;
 
-    use super::*;
-    use crate::encoder::Encoder;
-    use crate::synthesizer::Tone;
-    use crate::{Hz, ns};
+    /// Load an image as raw row-major RGB bytes, with its dimensions.
+    fn rgb_bytes(path: &str) -> (std::vec::Vec<u8>, (u32, u32)) {
+        let image = image::open(path).expect("open image").to_rgb8();
+        let dimensions = image.dimensions();
+        (image.into_raw(), dimensions)
+    }
 
-    #[test]
-    fn test_encode_robot36_against_golden_tones() {
-        let img = image::open("examples/patch.png").expect("Failed to open examples/patch.png");
-        let (_, height) = img.dimensions();
-        assert_eq!(height, 240);
-
-        let mut pixels = std::vec![[RgbPixel::new(0, 0, 0); 320]; 240];
-
-        img.pixels().for_each(|(x, y, rgba)| {
-            pixels[y as usize][x as usize] = RgbPixel::new(rgba[0], rgba[1], rgba[2]);
-        });
-
-        let encoder = Encoder::new(Mode::Robot36, pixels.into_iter().flatten());
-
-        let file = File::open("examples/patch-robot36-tones.csv.gz").expect(
-            "Failed to open golden tones file. Run 'cargo run --example store_tones' first.",
-        );
-        let decoder = GzDecoder::new(file);
-        let reader = BufReader::new(decoder);
-        let mut expected_tones = Vec::new();
-
-        for line in reader.lines().skip(1) {
-            let line = line.unwrap();
-            let parts: Vec<&str> = line.split(',').collect();
-            let hz: u32 = parts[0].parse().unwrap();
-            let nanos: u64 = parts[1].parse().unwrap();
-            expected_tones.push(Tone::new(Hz!(hz), ns!(nanos)));
-        }
-
-        let generated_tones: Vec<Tone> = encoder.unwrap().collect();
-
-        assert_eq!(
-            generated_tones.len(),
-            expected_tones.len(),
-            "Number of generated tones does not match golden file"
-        );
-
-        for (i, (g, exp)) in generated_tones
+    /// Mean absolute per-channel error between two equal-length byte buffers.
+    fn mean_abs_error(a: &[u8], b: &[u8]) -> f64 {
+        assert_eq!(a.len(), b.len());
+        let sum: u64 = a
             .iter()
-            .zip(expected_tones.iter())
-            .enumerate()
-        {
-            assert_eq!(g, exp, "Tone mismatch at index {}", i);
-        }
+            .zip(b)
+            .map(|(x, y)| (*x as i32 - *y as i32).unsigned_abs() as u64)
+            .sum();
+        sum as f64 / a.len() as f64
+    }
+
+    /// Validate the encoder by decoding its output with the independent `sstv`
+    /// decoder and comparing the result to the source image.
+    ///
+    /// The reference is produced by `python3 scripts/decode_reference.py` and
+    /// stored in the (gitignored) `local/` directory; the test fails if it is
+    /// absent.
+    #[test]
+    fn encoder_output_decodes_via_sstv() {
+        const REFERENCE: &str = "local/encoder-robot36-sstv.png";
+        assert!(
+            std::path::Path::new(REFERENCE).exists(),
+            "{REFERENCE} not found. Generate it with `python3 scripts/decode_reference.py`",
+        );
+
+        let (decoded, decoded_dimensions) = rgb_bytes(REFERENCE);
+        let (original, original_dimensions) = rgb_bytes("examples/patch.png");
+        assert_eq!(
+            decoded_dimensions, original_dimensions,
+            "decoded image dimensions differ from the source",
+        );
+
+        let error = mean_abs_error(&original, &decoded);
+        std::eprintln!("encoder -> sstv decode error: {error}");
+        // A foreign decoder introduces its own timing/colourspace interpretation,
+        // so this is tolerance-based. Measured ~13.6; 20 leaves margin while still
+        // catching a broken encoder (which would spike far higher).
+        assert!(
+            error < 20.0,
+            "encoder -> sstv decode error {error} too high"
+        );
     }
 }

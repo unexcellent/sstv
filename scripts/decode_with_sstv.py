@@ -5,7 +5,7 @@ PySSTV is encode-only, so it cannot decode. This uses colaclanth's `sstv`
 decoder on the same fixture our Rust decoder reads, to help tell whether a
 timing offset originates in PySSTV's generated signal or in our decoder.
 
-Requires:  pip install sstv
+Requires:  pip install --no-deps -r scripts/requirements.txt
 Usage:     python3 scripts/decode_with_sstv.py [output.png]
 """
 
