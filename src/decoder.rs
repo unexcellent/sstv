@@ -1,3 +1,5 @@
+use alloc::vec::Vec;
+
 use crate::modes::Mode;
 use crate::units::Duration;
 use crate::{Demodulator, Error, Frequency, Result, RgbPixel, YuvPixel};
@@ -35,6 +37,13 @@ const SYNC_TOLERANCE_HZ: u32 = 150;
 /// ```
 pub struct Decoder<I: Iterator<Item = i16>> {
     demodulator: Demodulator<I>,
+    sample_rate: u32,
+
+    // Frequencies consumed while locking onto the first line sync, replayed
+    // before pulling live samples so the header search is not lost. Empty when
+    // decoding starts at the image data.
+    prefix: Vec<Frequency>,
+    prefix_position: usize,
 
     // Timing, in (fractional) samples, derived from the sample rate.
     pixel_luma: f64,
@@ -66,21 +75,31 @@ pub struct Decoder<I: Iterator<Item = i16>> {
 }
 
 impl<I: Iterator<Item = i16>> Decoder<I> {
-    /// Decode a transmission that begins with a Robot36 header.
+    /// Decode a transmission that begins with a header.
     ///
-    /// The leading calibration and VIS header is skipped before decoding the
-    /// image. Returns [`Error::EmptyImage`] if no scanlines could be recovered.
-    pub fn new(mut samples: I, sample_rate: u32) -> Result<Self> {
-        let sample_rate = sample_rate.max(1);
-        for _ in 0..header_sample_count(sample_rate) {
-            if samples.next().is_none() {
-                return Err(Error::EmptyImage);
-            }
-        }
-
+    /// Rather than assuming a fixed header length, this locks onto the first
+    /// line sync pulse (verified by a second sync one line later, which rejects
+    /// the header's stray sync-frequency tones), so it tolerates headers from
+    /// other encoders. Returns [`Error::EmptyImage`] if no scanline could be
+    /// located.
+    ///
+    /// While locking on it buffers the frequencies it consumes; the buffer is
+    /// bounded by the header plus about two scanlines, then trimmed to the image
+    /// start. Decoding after that is streaming.
+    pub fn new(samples: I, sample_rate: u32) -> Result<Self> {
         let mut decoder = Self::without_header(samples, sample_rate);
-        // Decode the first pair eagerly so header-less / truncated input is
-        // reported as an error rather than an empty iterator.
+
+        let luma_start = decoder.lock_onto_first_row().ok_or(Error::EmptyImage)?;
+
+        // Drop the buffered header so only the image data is replayed.
+        let trim = (luma_start.max(0.0) as usize).min(decoder.prefix.len());
+        decoder.prefix.drain(0..trim);
+        decoder.luma_start = luma_start - trim as f64;
+        decoder.position = 0;
+        decoder.prefix_position = 0;
+
+        // Decode the first pair eagerly so truncated input is reported as an
+        // error rather than an empty iterator.
         if decoder.decode_pair().is_none() {
             return Err(Error::EmptyImage);
         }
@@ -100,6 +119,9 @@ impl<I: Iterator<Item = i16>> Decoder<I> {
 
         Self {
             demodulator: Demodulator::new(samples, sample_rate),
+            sample_rate,
+            prefix: Vec::new(),
+            prefix_position: 0,
             pixel_luma,
             pixel_chroma,
             luma_len: WIDTH as f64 * pixel_luma,
@@ -168,18 +190,31 @@ impl<I: Iterator<Item = i16>> Decoder<I> {
             *value = self.value_at(center)?;
         }
 
-        // Advance to the end of the chroma scan, then consume the sync pulse and
-        // set the next row's luma start just past the following back porch.
-        self.advance_to(chroma_start + self.chroma_len)?;
-        while !self.is_sync(self.current) {
-            self.pull()?;
+        // The pixels are read; consume the trailing sync to align the next row.
+        // If the stream ends here (e.g. the final line carries no trailing
+        // sync), keep the row we just decoded rather than discarding it.
+        if self.advance_to(chroma_start + self.chroma_len).is_none() || !self.consume_sync() {
+            self.luma_start = self.position as f64;
         }
-        while self.is_sync(self.current) {
-            self.pull()?;
-        }
-        self.luma_start = self.position as f64 + self.back_porch_len;
 
         Some((luma, chroma))
+    }
+
+    /// Consume the current sync pulse and set the next row's luma start just
+    /// past the following back porch. Returns `false` if the stream ends first.
+    fn consume_sync(&mut self) -> bool {
+        while !self.is_sync(self.current) {
+            if self.pull().is_none() {
+                return false;
+            }
+        }
+        while self.is_sync(self.current) {
+            if self.pull().is_none() {
+                return false;
+            }
+        }
+        self.luma_start = self.position as f64 + self.back_porch_len;
+        true
     }
 
     /// The pixel value sampled at a fractional sample position.
@@ -200,13 +235,77 @@ impl<I: Iterator<Item = i16>> Decoder<I> {
     }
 
     fn pull(&mut self) -> Option<()> {
-        self.current = self.demodulator.next()?;
+        self.current = if self.prefix_position < self.prefix.len() {
+            let frequency = self.prefix[self.prefix_position];
+            self.prefix_position += 1;
+            frequency
+        } else {
+            self.demodulator.next()?
+        };
         self.position += 1;
         Some(())
     }
 
     fn is_sync(&self, frequency: Frequency) -> bool {
         frequency.hz().abs_diff(self.sync_hz) <= SYNC_TOLERANCE_HZ
+    }
+
+    /// Buffer frequencies from the demodulator until the first line sync is
+    /// located, and return the sample position at which the first row's luma
+    /// begins.
+    ///
+    /// A candidate sync is a run near the sync frequency lasting roughly one
+    /// sync duration (long enough to exclude glitches, short enough to exclude
+    /// the header's longer VIS tones). The first candidate that is followed by
+    /// another candidate about one line later is the first row's trailing sync;
+    /// the row's data is the luma, blank and chroma scans preceding it.
+    fn lock_onto_first_row(&mut self) -> Option<f64> {
+        let mode = Mode::Robot36;
+        let sync_len = duration_to_samples(mode.sync_duration(), self.sample_rate);
+        let line_len = duration_to_samples(mode.line_duration(), self.sample_rate);
+        let row_data_len = self.luma_len + self.blank_len + self.chroma_len;
+
+        let min_run = (sync_len * 0.5) as usize;
+        let max_run = (sync_len * 2.0) as usize;
+        let spacing_tolerance = line_len * 0.15;
+
+        let mut previous_sync: Option<usize> = None;
+        let mut index = 0usize;
+        loop {
+            if !self.buffered_is_sync(index)? {
+                index += 1;
+                continue;
+            }
+
+            // Measure the length of this sync run.
+            let start = index;
+            while self.buffered_is_sync(index)? {
+                index += 1;
+            }
+            let run = index - start;
+            if run < min_run || run > max_run {
+                continue;
+            }
+
+            match previous_sync {
+                Some(previous)
+                    if ((start - previous) as f64 - line_len).abs() <= spacing_tolerance =>
+                {
+                    return Some(previous as f64 - row_data_len);
+                }
+                _ => previous_sync = Some(start),
+            }
+        }
+    }
+
+    /// Whether the buffered frequency at `index` is a sync, extending the buffer
+    /// from the demodulator as needed.
+    fn buffered_is_sync(&mut self, index: usize) -> Option<bool> {
+        while self.prefix.len() <= index {
+            let frequency = self.demodulator.next()?;
+            self.prefix.push(frequency);
+        }
+        Some(self.is_sync(self.prefix[index]))
     }
 }
 
@@ -227,16 +326,6 @@ fn duration_to_samples(duration: Duration, sample_rate: u32) -> f64 {
     duration.ns() as f64 * sample_rate as f64 / 1_000_000_000.0
 }
 
-/// The number of samples occupied by the Robot36 header at a given sample rate.
-fn header_sample_count(sample_rate: u32) -> usize {
-    let total_ns: u64 = Mode::Robot36
-        .header_sequence()
-        .iter()
-        .map(|tone| tone.duration.ns())
-        .sum();
-    (total_ns * sample_rate as u64 / 1_000_000_000) as usize
-}
-
 #[cfg(test)]
 mod tests {
     extern crate std;
@@ -244,6 +333,21 @@ mod tests {
 
     use super::*;
     use crate::{Encoder, Synthesizer};
+    use image::GenericImageView;
+    use std::io::Read;
+
+    // Not committed (large, reproducible); regenerate with the encode script.
+    const INTEROP_FIXTURE: &str = "local/patch-robot36-pysstv.wav.gz";
+
+    /// The number of samples occupied by our encoder's header at a sample rate.
+    fn header_sample_count(sample_rate: u32) -> usize {
+        let total_ns: u64 = Mode::Robot36
+            .header_sequence()
+            .iter()
+            .map(|tone| tone.duration.ns())
+            .sum();
+        (total_ns * sample_rate as u64 / 1_000_000_000) as usize
+    }
 
     /// A 320x240 test image with variation in all three channels.
     fn test_image() -> Vec<RgbPixel> {
@@ -260,6 +364,9 @@ mod tests {
     }
 
     fn encode(image: &[RgbPixel], sample_rate: u32) -> Vec<i16> {
+        // `to_vec` is required: `Encoder::new` needs an owned (`'static`)
+        // iterator, so borrowing with `iter().copied()` would not compile.
+        #[allow(clippy::unnecessary_to_owned)]
         let encoder = Encoder::new(Mode::Robot36, image.to_vec().into_iter()).unwrap();
         Synthesizer::new(encoder, sample_rate).collect()
     }
@@ -321,5 +428,69 @@ mod tests {
             Decoder::new(samples.into_iter(), 48_000),
             Err(Error::EmptyImage)
         ));
+    }
+
+    /// Load `examples/patch.png` as a row-major `RgbPixel` buffer.
+    fn reference_image() -> Vec<RgbPixel> {
+        let image = image::open("examples/patch.png").expect("open patch.png");
+        let (width, height) = image.dimensions();
+        assert_eq!((width, height), (WIDTH as u32, HEIGHT as u32));
+
+        let mut pixels = std::vec![RgbPixel::new(0, 0, 0); (width * height) as usize];
+        for (x, y, rgba) in image.pixels() {
+            pixels[(y * width + x) as usize] = RgbPixel::new(rgba[0], rgba[1], rgba[2]);
+        }
+        pixels
+    }
+
+    /// Read a gzipped WAV fixture, returning its samples (first channel) and rate.
+    fn read_gzipped_wav(path: &str) -> (Vec<i16>, u32) {
+        let file = std::fs::File::open(path).expect("open fixture");
+        let mut wav_bytes = Vec::new();
+        flate2::read::GzDecoder::new(file)
+            .read_to_end(&mut wav_bytes)
+            .expect("gunzip fixture");
+
+        let reader = hound::WavReader::new(std::io::Cursor::new(wav_bytes)).expect("parse wav");
+        let channels = reader.spec().channels as usize;
+        let sample_rate = reader.spec().sample_rate;
+        let samples = reader
+            .into_samples::<i16>()
+            .map(|sample| sample.expect("read sample"))
+            .step_by(channels)
+            .collect();
+        (samples, sample_rate)
+    }
+
+    /// Decode a Robot36 signal produced by PySSTV (an independent implementation)
+    /// and check it resembles the source image.
+    ///
+    /// Requires the fixture (not committed); generate it with
+    /// `python3 scripts/encode_with_pysstv.py`.
+    #[test]
+    fn interop_decodes_pysstv_robot36() {
+        assert!(
+            std::path::Path::new(INTEROP_FIXTURE).exists(),
+            "{INTEROP_FIXTURE} not found. Generate it with `python3 scripts/encode_with_pysstv.py`",
+        );
+
+        let (samples, sample_rate) = read_gzipped_wav(INTEROP_FIXTURE);
+        let reference = reference_image();
+
+        let decoded: Vec<RgbPixel> = Decoder::new(samples.into_iter(), sample_rate)
+            .expect("decode fixture")
+            .collect();
+
+        // A real transmission may not carry the last line or two all the way to
+        // the end; require nearly the full image.
+        let rows = decoded.len() / WIDTH;
+        assert!(rows >= HEIGHT - 2, "only decoded {rows} of {HEIGHT} rows");
+
+        let error = mean_abs_error(&reference[..decoded.len()], &decoded);
+        std::eprintln!("interop: {rows} rows, mean abs error {error}");
+        // Looser than the self round-trip (~3.5): PySSTV uses different YUV
+        // coefficients, so some colour drift is expected. A misaligned decode
+        // would be far higher (40+).
+        assert!(error < 15.0, "interop mean abs error {error} too high");
     }
 }

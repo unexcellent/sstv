@@ -22,6 +22,7 @@ target
 
 local/
 .claude/
+.venv/
 
 # Added by cargo
 
