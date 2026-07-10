@@ -194,6 +194,43 @@ fn image_tones_with_noise_prefixed_by_pure_noise() {
     assert_matches(&decoded[0], &image, NOISY_ERROR);
 }
 
+/// Real-world reception: a loud startup transient (a receiver click) would
+/// latch naive all-time min/max extremes, the transmission carries a DC bias
+/// that keeps it entirely on one side of that stale midline, and it fades in
+/// rather than starting at full amplitude. The adaptive envelope must recover
+/// and still decode the image.
+#[test]
+fn dc_biased_faded_in_transmission() {
+    let image = test_image();
+
+    // Attenuate for DC headroom and bias the whole transmission positive so it
+    // never crosses zero, then fade it in over the first 200 ms.
+    const DC_BIAS: i16 = 11_000;
+    let fade_in = SAMPLE_RATE as usize / 5;
+    let biased: Vec<i16> = encode(&image)
+        .iter()
+        .enumerate()
+        .map(|(i, &sample)| {
+            let gain = (i as f64 / fade_in as f64).min(1.0);
+            ((sample / 3) as f64 * gain) as i16 + DC_BIAS
+        })
+        .collect();
+
+    // Prepend a brief full-scale transient that latches a global min/max at
+    // ±full-scale (midline 0) — which the biased signal never crosses.
+    let mut samples = vec![i16::MAX, i16::MIN, i16::MAX, i16::MIN];
+    samples.extend(biased);
+
+    let decoded = decode_images(samples);
+
+    assert_eq!(
+        decoded.len(),
+        1,
+        "biased, faded-in transmission should decode"
+    );
+    assert_matches(&decoded[0], &image, NOISY_ERROR);
+}
+
 /// Two noisy images separated by a stretch of pure noise decode to two images.
 #[test]
 fn two_images_with_noise_and_noise_gap() {

@@ -188,6 +188,23 @@ impl<I: Iterator<Item = i16>> RowDecoder<I> {
         }
     }
 
+    /// Create a `RowDecoder` for a stream whose samples begin at the image
+    /// data, with no header to search for.
+    ///
+    /// Decoding starts immediately at the first scanline: the first event is an
+    /// [`Event::ImageStart`], followed by the image's rows. Use this when the
+    /// signal carries no detectable header, or when acquisition has already been
+    /// performed upstream and the samples are aligned to the first row's luma.
+    /// After the image completes, the decoder resumes searching for further
+    /// images exactly as [`new`](Self::new) does.
+    pub fn without_header(samples: I, sample_rate: u32) -> Self {
+        let mut decoder = Self::new(samples, sample_rate);
+        let info = decoder.image_info();
+        decoder.events.push_back(Event::ImageStart(info));
+        decoder.state = State::Decoding;
+        decoder
+    }
+
     /// Metadata for the mode currently being decoded.
     fn image_info(&self) -> ImageInfo {
         ImageInfo {
@@ -494,12 +511,22 @@ mod tests {
         }
     }
 
-    /// Drive the decoder to completion, grouping its events into images.
-    fn decode_images(samples: Vec<i16>, sample_rate: u32) -> Vec<DecodedImage> {
+    /// The number of samples occupied by our encoder's header at a sample rate.
+    fn header_sample_count(sample_rate: u32) -> usize {
+        let total_ns: u64 = Mode::Robot36
+            .header_sequence()
+            .iter()
+            .map(|tone| tone.duration.ns())
+            .sum();
+        (total_ns * sample_rate as u64 / 1_000_000_000) as usize
+    }
+
+    /// Drive a decoder to completion, grouping its events into images.
+    fn collect_images<I: Iterator<Item = i16>>(decoder: RowDecoder<I>) -> Vec<DecodedImage> {
         let mut images = Vec::new();
         let mut current: Option<(ImageInfo, Vec<RgbRow>)> = None;
 
-        for event in RowDecoder::new(samples.into_iter(), sample_rate) {
+        for event in decoder {
             match event {
                 Event::ImageStart(info) => current = Some((info, Vec::new())),
                 Event::Row(row) => {
@@ -528,7 +555,7 @@ mod tests {
         let mut samples = encode(&image, 48_000);
         samples.extend(encode(&image, 48_000));
 
-        let decoded = decode_images(samples, 48_000);
+        let decoded = collect_images(RowDecoder::new(samples.into_iter(), 48_000));
 
         assert_eq!(decoded.len(), 2, "expected two images");
         for decoded_image in &decoded {
@@ -547,7 +574,7 @@ mod tests {
         samples.extend(std::vec![0i16; 24_000]);
         samples.extend(encode(&image, 48_000));
 
-        let decoded = decode_images(samples, 48_000);
+        let decoded = collect_images(RowDecoder::new(samples.into_iter(), 48_000));
 
         assert_eq!(decoded.len(), 2, "expected two images across the gap");
         for decoded_image in &decoded {
@@ -559,8 +586,33 @@ mod tests {
     }
 
     #[test]
+    fn round_trip_without_header() {
+        let image = test_image();
+        // Drop the header so the samples begin at the first scanline's data.
+        let full = encode(&image, 48_000);
+        let header = header_sample_count(48_000);
+        let image_samples: Vec<i16> = full.into_iter().skip(header).collect();
+
+        let decoded = collect_images(RowDecoder::without_header(
+            image_samples.into_iter(),
+            48_000,
+        ));
+
+        assert_eq!(decoded.len(), 1, "expected exactly one image");
+        let decoded_image = &decoded[0];
+        assert!(decoded_image.complete, "image should decode completely");
+        assert_eq!(decoded_image.rows.len(), HEIGHT, "should decode all rows");
+        // Rows arrive top to bottom.
+        for (y, row) in decoded_image.rows.iter().enumerate() {
+            assert_eq!(row.index(), y, "row {y} out of order");
+        }
+        let error = mean_abs_error(&image, &decoded_image.pixels());
+        assert!(error < 12.0, "mean abs error {error} too high");
+    }
+
+    #[test]
     fn silence_yields_no_images() {
-        let decoded = decode_images(std::vec![0i16; 48_000], 48_000);
+        let decoded = collect_images(RowDecoder::new(std::vec![0i16; 48_000].into_iter(), 48_000));
         assert!(decoded.is_empty(), "silence should not produce an image");
     }
 }

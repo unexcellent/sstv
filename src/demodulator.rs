@@ -10,19 +10,21 @@ use crate::units::Frequency;
 /// This is a deliberately simple *midline-crossing* estimator. It measures the
 /// number of samples between successive crossings of the waveform's midline and
 /// holds that estimate until the next crossing is seen. The midline is the
-/// midpoint of the running minimum and maximum, so a constant DC offset (an
-/// input that never reaches zero) does not fool the estimator. The crossing
-/// position is linearly interpolated between the two straddling samples for
-/// sub-sample accuracy. The approach is cheap and allocation-free, but only
-/// moderately noise resistant and less accurate when there are few samples per
-/// cycle.
+/// midpoint of a running minimum and maximum that continuously relax toward it,
+/// forming an adaptive envelope: the midline tracks a changing DC offset or
+/// signal level, and an early transient (a click, a burst of static) cannot
+/// latch it away from the signal — which would otherwise stop the crossings the
+/// estimator depends on. The crossing position is linearly interpolated between
+/// the two straddling samples for sub-sample accuracy. The approach is cheap and
+/// allocation-free, but only moderately noise resistant and less accurate when
+/// there are few samples per cycle.
 ///
 /// The iterator yields *nothing* during an initial warm-up rather than a
 /// placeholder value: it needs a pair of crossings to measure a period, and it
-/// waits until the min/max have spanned a full cycle so the midline is settled.
-/// Once the first estimate is available it yields one estimate per input sample.
-/// The dropped warm-up is bounded to roughly one period and, for SSTV, always
-/// falls inside the leader tone.
+/// drops the first few crossings while the envelope grows to span a full cycle
+/// and its midline is still biased. Once the first estimate is available it
+/// yields one estimate per input sample. The dropped warm-up is bounded to a
+/// few periods and, for SSTV, always falls inside the leader tone.
 ///
 /// ```rust
 /// use sstv::{Demodulator, Synthesizer, Tone, Hz, ms};
@@ -37,46 +39,69 @@ pub struct Demodulator<I: Iterator<Item = i16>> {
     samples: I,
     sample_rate: u32,
     previous_sample: i16,
-    minimum: i16,
-    maximum: i16,
+    minimum: f64,
+    maximum: f64,
+    /// Per-sample factor by which the envelope relaxes toward the midline.
+    envelope_decay: f64,
     index: u64,
     last_crossing: Option<f64>,
-    range_grew_this_half_period: bool,
+    crossings_seen: u32,
     frequency: Option<Frequency>,
 }
 
 impl<I: Iterator<Item = i16>> Demodulator<I> {
+    /// Crossings dropped before the first estimate, while the envelope grows to
+    /// span a full cycle and its midline is still biased.
+    const WARM_UP_CROSSINGS: u32 = 4;
+
     /// Create a new `Demodulator` from a sample iterator and a sample rate in Hz.
     ///
     /// `sample_rate` must be greater than zero.
     pub fn new(mut samples: I, sample_rate: u32) -> Self {
+        let sample_rate = sample_rate.max(1);
         let first_sample = samples.next().unwrap_or_default();
+
+        // Relax the envelope toward the midline with roughly a 100 ms time
+        // constant: slow enough that it barely moves within one cycle (so the
+        // midline stays put and does not manufacture crossings, and noise near
+        // the peaks does not jitter it), fast enough to follow DC drift and
+        // level changes and to recover from a transient well within the SSTV
+        // header (~900 ms before the first line sync).
+        let time_constant = (sample_rate as f64 * 0.1).max(1.0);
+        let envelope_decay = libm::exp(-1.0 / time_constant);
+
         Self {
             samples,
-            sample_rate: sample_rate.max(1),
+            sample_rate,
             previous_sample: first_sample,
-            minimum: first_sample,
-            maximum: first_sample,
+            minimum: first_sample as f64,
+            maximum: first_sample as f64,
+            envelope_decay,
             index: 0,
             last_crossing: None,
-            range_grew_this_half_period: false,
+            crossings_seen: 0,
             frequency: None,
         }
     }
 
     fn calculate_frequency(&mut self, current_sample: i16, index: u64) -> Option<Frequency> {
-        if current_sample > self.maximum || current_sample < self.minimum {
-            self.range_grew_this_half_period = true;
-        }
-        self.maximum = self.maximum.max(current_sample);
-        self.minimum = self.minimum.min(current_sample);
-        let midline = (self.minimum as f64 + self.maximum as f64) / 2.0;
+        // Relax the running extremes toward the midline, then re-expand to
+        // include the new sample. This adaptive envelope keeps the midline
+        // centred on the *current* waveform, so a DC offset, a level change, or
+        // an early transient cannot latch it away from the signal.
+        let sample = current_sample as f64;
+        let midline = (self.minimum + self.maximum) / 2.0;
+        self.maximum = midline + (self.maximum - midline) * self.envelope_decay;
+        self.minimum = midline + (self.minimum - midline) * self.envelope_decay;
+        self.maximum = self.maximum.max(sample);
+        self.minimum = self.minimum.min(sample);
+        let midline = (self.minimum + self.maximum) / 2.0;
 
         let previous_sample = self.previous_sample;
         self.previous_sample = current_sample;
 
         let previous_offset = previous_sample as f64 - midline;
-        let current_offset = current_sample as f64 - midline;
+        let current_offset = sample - midline;
         let samples_crossed_the_midline = (previous_offset >= 0.0) != (current_offset >= 0.0);
         if !samples_crossed_the_midline {
             return None;
@@ -86,13 +111,10 @@ impl<I: Iterator<Item = i16>> Demodulator<I> {
             (index as f64 - 1.0) + previous_offset / (previous_offset - current_offset);
         let last_crossing = self.last_crossing.replace(midline_crossing);
 
-        // The midline is derived from the running min/max, so it only stops
-        // drifting once the waveform has swung across its full range. Trust a
-        // half-period only if the range held steady throughout it; a growing
-        // range means we are still in the warm-up swing.
-        let range_was_stable = !self.range_grew_this_half_period;
-        self.range_grew_this_half_period = false;
-        if !range_was_stable {
+        // Drop the first few crossings: until the envelope has spanned a full
+        // cycle its midline is still biased, so those half-periods are mistimed.
+        self.crossings_seen = self.crossings_seen.saturating_add(1);
+        if self.crossings_seen <= Self::WARM_UP_CROSSINGS {
             return None;
         }
 
