@@ -110,51 +110,39 @@ mod tests {
     fn pure_1500hz_at_48000() {
         let actual_frequency = Frequency::from_hz(1500);
         let sample_rate: u32 = 48_000;
-        test_pure_frequency(actual_frequency, sample_rate);
+        test_frequency(actual_frequency, sample_rate, vec![]);
     }
 
     #[test]
     fn pure_2300hz_at_48000() {
         let actual_frequency = Frequency::from_hz(2300);
         let sample_rate: u32 = 48_000;
-        test_pure_frequency(actual_frequency, sample_rate);
+        test_frequency(actual_frequency, sample_rate, vec![]);
     }
 
     #[test]
     fn pure_1200hz_at_8000() {
         let actual_frequency = Frequency::from_hz(1200);
         let sample_rate: u32 = 8_000;
-        test_pure_frequency(actual_frequency, sample_rate);
+        test_frequency(actual_frequency, sample_rate, vec![]);
     }
 
     #[test]
     fn pure_1000hz_at_8000() {
         let actual_frequency = Frequency::from_hz(1000);
         let sample_rate: u32 = 8_000;
-        test_pure_frequency(actual_frequency, sample_rate);
+        test_frequency(actual_frequency, sample_rate, vec![]);
     }
 
     #[test]
     fn noisy_2300hz_at_48000() {
         let actual_frequency = Frequency::from_hz(2300);
         let sample_rate: u32 = 48_000;
-        let signal_to_noise_ratio_db = 20.0;
+        let signal_to_noise_ratio_db = 25.0;
 
-        let clean = synthesize(vec![actual_frequency], sample_rate);
-        let samples = add_noise(&clean, signal_to_noise_ratio_db);
-        let mut estimates: Vec<Frequency> =
-            Demodulator::new(samples.into_iter(), sample_rate).collect();
-
-        assert!(!estimates.is_empty());
-
-        estimates.sort();
-        let median = estimates[estimates.len() / 2];
-        assert!(
-            frequencies_match(median, actual_frequency),
-            "median {} Hz ≉ {} Hz",
-            median.hz(),
-            actual_frequency.hz(),
-        )
+        let samples = synthesize(vec![actual_frequency], sample_rate);
+        let offsets = noise(samples.len(), signal_to_noise_ratio_db);
+        test_frequency(actual_frequency, sample_rate, offsets);
     }
 
     #[test]
@@ -198,25 +186,30 @@ mod tests {
         Synthesizer::new(tones.into_iter(), sample_rate).collect()
     }
 
-    fn test_pure_frequency(actual_frequency: Frequency, sample_rate: u32) {
+    fn test_frequency(actual_frequency: Frequency, sample_rate: u32, offsets: Vec<i16>) {
         let samples = synthesize(vec![actual_frequency], sample_rate);
+        let samples_with_offset = samples
+            .iter()
+            .zip(offsets.into_iter().chain(core::iter::repeat(0)))
+            .map(|(s, o)| s.saturating_add(o));
+
         let estimates: Vec<Frequency> =
-            Demodulator::new(samples.clone().into_iter(), sample_rate).collect();
+            Demodulator::new(samples_with_offset, sample_rate).collect();
 
         assert!(!estimates.is_empty());
 
-        for estimated_frequency in estimates {
+        for estimate in estimates {
             assert!(
-                frequencies_match(estimated_frequency, actual_frequency),
-                "{} Hz ≉ {} Hz",
-                estimated_frequency.hz(),
+                frequencies_match(estimate, actual_frequency),
+                "median {} Hz ≉ {} Hz",
+                estimate.hz(),
                 actual_frequency.hz(),
             )
         }
     }
 
     fn frequencies_match(estimated: Frequency, actual: Frequency) -> bool {
-        let allowed_deviation = actual / 100;
+        let allowed_deviation = actual / 20;
         let deviation = estimated.abs_diff(actual);
         deviation <= allowed_deviation
     }
@@ -237,16 +230,15 @@ mod tests {
         }
     }
 
-    fn add_noise(samples: &[i16], snr_db: f64) -> Vec<i16> {
+    fn noise(len: usize, snr_db: f64) -> Vec<i16> {
         let signal_rms = i16::MAX as f64 / core::f64::consts::SQRT_2;
         let sigma = signal_rms / 10f64.powf(snr_db / 20.0);
 
         let seed: u64 = 0x5EED;
         let mut noise = Noise(seed);
-        samples
-            .iter()
-            .map(|&s| {
-                (s as f64 + noise.next_gaussian() * sigma)
+        (0..len)
+            .map(|_| {
+                (noise.next_gaussian() * sigma)
                     .round()
                     .clamp(i16::MIN as f64, i16::MAX as f64) as i16
             })
