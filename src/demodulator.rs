@@ -105,6 +105,8 @@ mod tests {
     use super::*;
     use crate::synthesizer::{Synthesizer, Tone};
     use crate::units::Duration;
+    use rand::SeedableRng;
+    use rand_distr::{Distribution, Normal};
 
     #[test]
     fn pure_1500hz_at_48000() {
@@ -214,31 +216,16 @@ mod tests {
         deviation <= allowed_deviation
     }
 
-    struct Noise(u64);
-    impl Noise {
-        fn next_u64(&mut self) -> u64 {
-            self.0 = self.0.wrapping_add(0x9E3779B97F4A7C15);
-            let mut z = self.0;
-            z = (z ^ (z >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
-            z = (z ^ (z >> 27)).wrapping_mul(0x94D049BB133111EB);
-            z ^ (z >> 31)
-        }
-        fn next_gaussian(&mut self) -> f64 {
-            let u1 = (self.next_u64() >> 11) as f64 / (1u64 << 53) as f64 + f64::MIN_POSITIVE;
-            let u2 = (self.next_u64() >> 11) as f64 / (1u64 << 53) as f64;
-            (-2.0 * u1.ln()).sqrt() * (core::f64::consts::TAU * u2).cos()
-        }
-    }
-
     fn noise(len: usize, snr_db: f64) -> Vec<i16> {
         let signal_rms = i16::MAX as f64 / core::f64::consts::SQRT_2;
         let sigma = signal_rms / 10f64.powf(snr_db / 20.0);
 
-        let seed: u64 = 0x5EED;
-        let mut noise = Noise(seed);
+        let mut rng = rand::rngs::StdRng::seed_from_u64(0x5EED);
+        let normal = Normal::new(0.0, sigma).unwrap();
         (0..len)
             .map(|_| {
-                (noise.next_gaussian() * sigma)
+                normal
+                    .sample(&mut rng)
                     .round()
                     .clamp(i16::MIN as f64, i16::MAX as f64) as i16
             })
