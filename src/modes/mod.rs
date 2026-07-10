@@ -13,6 +13,7 @@ use core::array;
 pub mod robot36;
 
 /// A specific protocol for encoding an image as a tone-sequence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Mode {
     /// A mode using pulse-width modulation to encode a 320x240 pixel image into a 36s transmission.
     Robot36,

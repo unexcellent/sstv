@@ -14,7 +14,7 @@ use std::env;
 use std::fs::File;
 use std::io::{Cursor, Read};
 
-use sstv::{Decoder, RgbPixel};
+use sstv::{Event, RgbPixel, RowDecoder};
 
 const WIDTH: u32 = 320;
 const HEIGHT: u32 = 240;
@@ -31,9 +31,16 @@ fn main() {
     let (samples, sample_rate) = read_samples(&input);
     println!("read {} samples at {sample_rate} Hz", samples.len());
 
-    let decoded: Vec<RgbPixel> = Decoder::new(samples.into_iter(), sample_rate)
-        .expect("decoding failed: signal too short to contain an image")
-        .collect();
+    // Reconstruct the first image in the stream from the decoder's events.
+    let mut decoded: Vec<RgbPixel> = Vec::new();
+    for event in RowDecoder::new(samples.into_iter(), sample_rate) {
+        match event {
+            Event::ImageStart(_) if !decoded.is_empty() => break,
+            Event::ImageStart(_) => {}
+            Event::Row(row) => decoded.extend_from_slice(row.pixels()),
+            Event::ImageEnd { .. } => break,
+        }
+    }
     println!(
         "decoded {} pixels ({} of {HEIGHT} rows)",
         decoded.len(),

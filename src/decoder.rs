@@ -1,47 +1,119 @@
+use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 
 use crate::modes::Mode;
 use crate::units::Duration;
-use crate::{Demodulator, Error, Frequency, Result, RgbPixel, YuvPixel};
+use crate::{Demodulator, Frequency, RgbPixel, YuvPixel};
 
-/// The horizontal resolution of Robot36. Fixed while only one mode is supported.
+/// Robot36 horizontal resolution. Fixed while only one mode is supported.
 const WIDTH: usize = 320;
-/// The vertical resolution of Robot36.
+/// Robot36 vertical resolution.
 const HEIGHT: usize = 240;
 /// How far a frequency may stray from the sync frequency and still count as sync.
 const SYNC_TOLERANCE_HZ: u32 = 150;
 
-/// Decodes a Robot36 SSTV transmission back into an image.
+/// A single decoded scanline: `WIDTH` pixels in left-to-right order.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RgbRow {
+    index: usize,
+    pixels: [RgbPixel; WIDTH],
+}
+
+impl RgbRow {
+    /// The row's vertical position within its image; `0` is the top row.
+    pub fn index(&self) -> usize {
+        self.index
+    }
+
+    /// The row's pixels, left to right.
+    pub fn pixels(&self) -> &[RgbPixel] {
+        &self.pixels
+    }
+}
+
+/// Metadata describing an image, reported when its decoding begins.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ImageInfo {
+    mode: Mode,
+    width: usize,
+    height: usize,
+}
+
+impl ImageInfo {
+    /// The SSTV mode the image is encoded in.
+    pub fn mode(&self) -> Mode {
+        self.mode
+    }
+
+    /// The image width in pixels.
+    pub fn width(&self) -> usize {
+        self.width
+    }
+
+    /// The image height in pixels.
+    pub fn height(&self) -> usize {
+        self.height
+    }
+}
+
+/// An event produced by [`RowDecoder`] while scanning a sample stream.
 ///
-/// `Decoder` is the inverse of [`Encoder`](crate::Encoder): it consumes 16-bit
-/// PCM samples and yields [`RgbPixel`]s in raster order (top-left first, row by
-/// row). Internally it runs a [`Demodulator`] over the samples, and pulls from
-/// it lazily — it never holds the whole frequency track or the whole image,
-/// only about one row-pair at a time.
+/// A single image is reported as an [`ImageStart`](Event::ImageStart), followed
+/// by one [`Row`](Event::Row) per decoded scanline in top-to-bottom order,
+/// followed by an [`ImageEnd`](Event::ImageEnd). A stream that contains several
+/// images — with or without gaps between them — yields these groups back to
+/// back, one per image.
+// `Row` carries a full scanline inline; that dwarfs the other variants, but the
+// decoder emits events one at a time, so boxing it would only add an allocation.
+#[allow(clippy::large_enum_variant)]
+#[derive(Debug, Clone, PartialEq)]
+pub enum Event {
+    /// A new image has been acquired; its rows follow.
+    ImageStart(ImageInfo),
+    /// One decoded scanline of the current image.
+    Row(RgbRow),
+    /// The current image finished.
+    ImageEnd {
+        /// Whether every scanline was decoded. `false` if the image was
+        /// truncated before completion (for example, the signal faded out).
+        complete: bool,
+    },
+}
+
+/// Decodes a continuous stream of PCM samples into a stream of [`Event`]s.
 ///
-/// A full image cannot be produced sample-by-sample: Robot36 sends the two rows
-/// of a pair with a shared chroma (the even row's red difference and the odd
-/// row's blue difference), so both rows are reconstructed together once the odd
-/// row arrives. This mirrors [`Encoder`](crate::Encoder), which likewise buffers
-/// a row-pair while remaining a lazy iterator.
+/// `RowDecoder` is the streaming inverse of [`Encoder`](crate::Encoder): it
+/// consumes 16-bit PCM samples and reports whole scanlines as it recovers them,
+/// grouped into images by [`ImageStart`](Event::ImageStart) /
+/// [`ImageEnd`](Event::ImageEnd) markers. Internally it runs a [`Demodulator`]
+/// over the samples and pulls from it lazily, holding at most about one
+/// row-pair at a time — never the whole frequency track or image.
 ///
-/// ```rust
-/// use sstv::{Decoder, Encoder, Mode, RgbPixel, Synthesizer};
+/// Unlike a one-shot decoder it keeps scanning after an image completes, so a
+/// signal that carries images only part of the time, or several images one
+/// after another, is decoded as a sequence of image event-groups. Acquisition
+/// happens lazily as the iterator is polled; a stream that never contains an
+/// image simply yields no events.
 ///
-/// let image = [RgbPixel::new(0, 0, 0); 320 * 240];
-/// let encoder = Encoder::new(Mode::Robot36, image.into_iter()).unwrap();
-/// let samples = Synthesizer::new(encoder, 48000);
+/// ```no_run
+/// use sstv::{Event, RowDecoder};
 ///
-/// let decoded: Vec<RgbPixel> = Decoder::new(samples, 48000).unwrap().collect();
-/// assert_eq!(decoded.len(), 320 * 240);
+/// # let samples = std::vec::Vec::<i16>::new().into_iter();
+/// for event in RowDecoder::new(samples, 48000) {
+///     match event {
+///         Event::ImageStart(info) => { let _ = info.width(); }
+///         Event::Row(row) => { let _ = row.pixels(); }
+///         Event::ImageEnd { complete } => { let _ = complete; }
+///     }
+/// }
 /// ```
-pub struct Decoder<I: Iterator<Item = i16>> {
+pub struct RowDecoder<I: Iterator<Item = i16>> {
     demodulator: Demodulator<I>,
     sample_rate: u32,
 
-    // Frequencies consumed while locking onto the first line sync, replayed
-    // before pulling live samples so the header search is not lost. Empty when
-    // decoding starts at the image data.
+    // Frequencies buffered while locking onto a line sync, replayed before
+    // pulling live samples so the header search is not lost. Cleared at the
+    // start of each acquisition.
     prefix: Vec<Frequency>,
     prefix_position: usize,
 
@@ -58,60 +130,36 @@ pub struct Decoder<I: Iterator<Item = i16>> {
     black_hz: i64,
     white_hz: i64,
 
-    // Streaming position: `position` counts samples pulled from the demodulator,
-    // `current` is the most recently pulled frequency.
+    // Streaming position: `position` counts samples pulled from the current
+    // acquisition, `current` is the most recently pulled frequency.
     position: usize,
     current: Frequency,
     /// Sample position at which the current row's luma scan begins.
     luma_start: f64,
-    /// Index of the next scanline to decode.
+    /// Index of the next scanline to decode within the current image.
     row_index: usize,
 
-    // The two reconstructed rows of the most recent pair, drained one pixel at a
-    // time before the next pair is decoded.
-    queue: [RgbPixel; 2 * WIDTH],
-    queue_len: usize,
-    queue_position: usize,
+    state: State,
+    /// Decoded events waiting to be handed out, oldest first.
+    events: VecDeque<Event>,
 }
 
-impl<I: Iterator<Item = i16>> Decoder<I> {
-    /// Decode a transmission that begins with a header.
+/// Where the decoder is in the acquire → decode → acquire cycle.
+enum State {
+    /// Scanning for the next image's first line sync.
+    Searching,
+    /// Emitting the rows of the image currently being decoded.
+    Decoding,
+    /// The sample stream is exhausted; no more events will be produced.
+    Done,
+}
+
+impl<I: Iterator<Item = i16>> RowDecoder<I> {
+    /// Create a `RowDecoder` over a stream of PCM samples.
     ///
-    /// Rather than assuming a fixed header length, this locks onto the first
-    /// line sync pulse (verified by a second sync one line later, which rejects
-    /// the header's stray sync-frequency tones), so it tolerates headers from
-    /// other encoders. Returns [`Error::EmptyImage`] if no scanline could be
-    /// located.
-    ///
-    /// While locking on it buffers the frequencies it consumes; the buffer is
-    /// bounded by the header plus about two scanlines, then trimmed to the image
-    /// start. Decoding after that is streaming.
-    pub fn new(samples: I, sample_rate: u32) -> Result<Self> {
-        let mut decoder = Self::without_header(samples, sample_rate);
-
-        let luma_start = decoder.lock_onto_first_row().ok_or(Error::EmptyImage)?;
-
-        // Drop the buffered header so only the image data is replayed.
-        let trim = (luma_start.max(0.0) as usize).min(decoder.prefix.len());
-        decoder.prefix.drain(0..trim);
-        decoder.luma_start = luma_start - trim as f64;
-        decoder.position = 0;
-        decoder.prefix_position = 0;
-
-        // Decode the first pair eagerly so truncated input is reported as an
-        // error rather than an empty iterator.
-        if decoder.decode_pair().is_none() {
-            return Err(Error::EmptyImage);
-        }
-        Ok(decoder)
-    }
-
-    /// Decode a transmission whose samples start at the image data, with no
-    /// header present.
-    ///
-    /// Useful for decoding a signal already aligned to the first scanline, and
-    /// as a testing entry point.
-    pub fn without_header(samples: I, sample_rate: u32) -> Self {
+    /// `sample_rate` must be greater than zero. Construction never fails:
+    /// finding images is deferred to iteration.
+    pub fn new(samples: I, sample_rate: u32) -> Self {
         let sample_rate = sample_rate.max(1);
         let mode = Mode::Robot36;
         let pixel_luma = duration_to_samples(mode.pixel_luma_duration(), sample_rate);
@@ -135,40 +183,94 @@ impl<I: Iterator<Item = i16>> Decoder<I> {
             current: Frequency::from_hz(0),
             luma_start: 0.0,
             row_index: 0,
-            queue: [RgbPixel::new(0, 0, 0); 2 * WIDTH],
-            queue_len: 0,
-            queue_position: 0,
+            state: State::Searching,
+            events: VecDeque::new(),
         }
     }
 
-    /// Decode the next even/odd row pair into `queue`. Returns `None` once the
-    /// image is complete or the signal runs out mid-pair.
-    fn decode_pair(&mut self) -> Option<()> {
+    /// Metadata for the mode currently being decoded.
+    fn image_info(&self) -> ImageInfo {
+        ImageInfo {
+            mode: Mode::Robot36,
+            width: WIDTH,
+            height: HEIGHT,
+        }
+    }
+
+    /// Scan for the next image's first line sync. On success, queue an
+    /// [`Event::ImageStart`] and begin decoding; on stream exhaustion, finish.
+    fn search(&mut self) {
+        // Start a fresh acquisition buffer for this image.
+        self.prefix.clear();
+        self.prefix_position = 0;
+
+        match self.lock_onto_first_row() {
+            Some(luma_start) => {
+                // Drop the buffered header so only the image data is replayed.
+                let trim = (luma_start.max(0.0) as usize).min(self.prefix.len());
+                self.prefix.drain(0..trim);
+                self.luma_start = luma_start - trim as f64;
+                self.position = 0;
+                self.prefix_position = 0;
+                self.row_index = 0;
+                self.events.push_back(Event::ImageStart(self.image_info()));
+                self.state = State::Decoding;
+            }
+            None => self.state = State::Done,
+        }
+    }
+
+    /// Decode the next row-pair, queueing its [`Event::Row`]s. Ends the image
+    /// with an [`Event::ImageEnd`] once every row is decoded, or if the signal
+    /// runs out mid-image.
+    fn decode_step(&mut self) {
         if self.row_index >= HEIGHT {
-            return None;
+            self.events.push_back(Event::ImageEnd { complete: true });
+            self.state = State::Searching;
+            return;
         }
 
+        if self.decode_pair().is_none() {
+            self.events.push_back(Event::ImageEnd { complete: false });
+            self.state = State::Done;
+        }
+    }
+
+    /// Decode one even/odd row pair and queue both rows. Returns `None` if the
+    /// signal runs out before the pair is complete.
+    fn decode_pair(&mut self) -> Option<()> {
+        let even_index = self.row_index;
         let (even_luma, even_chroma) = self.read_row()?; // even row carries R-Y
         self.row_index += 1;
+        let odd_index = self.row_index;
         let (odd_luma, odd_chroma) = self.read_row()?; // odd row carries B-Y
         self.row_index += 1;
 
         // Both rows share the pair's chroma: the even row's red difference and
         // the odd row's blue difference.
+        let mut even_pixels = [RgbPixel::new(0, 0, 0); WIDTH];
+        let mut odd_pixels = [RgbPixel::new(0, 0, 0); WIDTH];
         for pixel in 0..WIDTH {
-            self.queue[pixel] = RgbPixel::from(YuvPixel::new(
+            even_pixels[pixel] = RgbPixel::from(YuvPixel::new(
                 even_luma[pixel],
                 even_chroma[pixel],
                 odd_chroma[pixel],
             ));
-            self.queue[WIDTH + pixel] = RgbPixel::from(YuvPixel::new(
+            odd_pixels[pixel] = RgbPixel::from(YuvPixel::new(
                 odd_luma[pixel],
                 even_chroma[pixel],
                 odd_chroma[pixel],
             ));
         }
-        self.queue_len = 2 * WIDTH;
-        self.queue_position = 0;
+
+        self.events.push_back(Event::Row(RgbRow {
+            index: even_index,
+            pixels: even_pixels,
+        }));
+        self.events.push_back(Event::Row(RgbRow {
+            index: odd_index,
+            pixels: odd_pixels,
+        }));
         Some(())
     }
 
@@ -250,15 +352,14 @@ impl<I: Iterator<Item = i16>> Decoder<I> {
         frequency.hz().abs_diff(self.sync_hz) <= SYNC_TOLERANCE_HZ
     }
 
-    /// Buffer frequencies from the demodulator until the first line sync is
-    /// located, and return the sample position at which the first row's luma
-    /// begins.
+    /// Buffer frequencies from the demodulator until a line sync is located, and
+    /// return the sample position at which that row's luma begins.
     ///
     /// A candidate sync is a run near the sync frequency lasting roughly one
     /// sync duration (long enough to exclude glitches, short enough to exclude
     /// the header's longer VIS tones). The first candidate that is followed by
-    /// another candidate about one line later is the first row's trailing sync;
-    /// the row's data is the luma, blank and chroma scans preceding it.
+    /// another candidate about one line later is a row's trailing sync; the
+    /// row's data is the luma, blank and chroma scans preceding it.
     fn lock_onto_first_row(&mut self) -> Option<f64> {
         let mode = Mode::Robot36;
         let sync_len = duration_to_samples(mode.sync_duration(), self.sample_rate);
@@ -309,16 +410,20 @@ impl<I: Iterator<Item = i16>> Decoder<I> {
     }
 }
 
-impl<I: Iterator<Item = i16>> Iterator for Decoder<I> {
-    type Item = RgbPixel;
+impl<I: Iterator<Item = i16>> Iterator for RowDecoder<I> {
+    type Item = Event;
 
-    fn next(&mut self) -> Option<RgbPixel> {
-        if self.queue_position >= self.queue_len {
-            self.decode_pair()?;
+    fn next(&mut self) -> Option<Event> {
+        loop {
+            if let Some(event) = self.events.pop_front() {
+                return Some(event);
+            }
+            match self.state {
+                State::Done => return None,
+                State::Searching => self.search(),
+                State::Decoding => self.decode_step(),
+            }
         }
-        let pixel = self.queue[self.queue_position];
-        self.queue_position += 1;
-        Some(pixel)
     }
 }
 
@@ -333,16 +438,6 @@ mod tests {
 
     use super::*;
     use crate::{Encoder, Synthesizer};
-
-    /// The number of samples occupied by our encoder's header at a sample rate.
-    fn header_sample_count(sample_rate: u32) -> usize {
-        let total_ns: u64 = Mode::Robot36
-            .header_sequence()
-            .iter()
-            .map(|tone| tone.duration.ns())
-            .sum();
-        (total_ns * sample_rate as u64 / 1_000_000_000) as usize
-    }
 
     /// A 320x240 test image with variation in all three channels.
     fn test_image() -> Vec<RgbPixel> {
@@ -380,48 +475,92 @@ mod tests {
         total as f64 / (a.len() as f64 * 3.0)
     }
 
-    #[test]
-    fn round_trip_with_header() {
-        let image = test_image();
-        let samples = encode(&image, 48_000);
+    /// One image reassembled from the decoder's event stream.
+    struct DecodedImage {
+        #[allow(dead_code)]
+        info: ImageInfo,
+        rows: Vec<RgbRow>,
+        complete: bool,
+    }
 
-        let decoded: Vec<RgbPixel> = Decoder::new(samples.into_iter(), 48_000).unwrap().collect();
+    impl DecodedImage {
+        /// Flatten the rows into a single raster-order pixel buffer.
+        fn pixels(&self) -> Vec<RgbPixel> {
+            let mut pixels = Vec::with_capacity(self.rows.len() * WIDTH);
+            for row in &self.rows {
+                pixels.extend_from_slice(row.pixels());
+            }
+            pixels
+        }
+    }
 
-        assert_eq!(decoded.len(), WIDTH * HEIGHT);
-        let error = mean_abs_error(&image, &decoded);
-        assert!(error < 12.0, "mean abs error {error} too high");
+    /// Drive the decoder to completion, grouping its events into images.
+    fn decode_images(samples: Vec<i16>, sample_rate: u32) -> Vec<DecodedImage> {
+        let mut images = Vec::new();
+        let mut current: Option<(ImageInfo, Vec<RgbRow>)> = None;
+
+        for event in RowDecoder::new(samples.into_iter(), sample_rate) {
+            match event {
+                Event::ImageStart(info) => current = Some((info, Vec::new())),
+                Event::Row(row) => {
+                    let (_, rows) = current
+                        .as_mut()
+                        .expect("Row without a preceding ImageStart");
+                    rows.push(row);
+                }
+                Event::ImageEnd { complete } => {
+                    let (info, rows) = current.take().expect("ImageEnd without an ImageStart");
+                    images.push(DecodedImage {
+                        info,
+                        rows,
+                        complete,
+                    });
+                }
+            }
+        }
+
+        images
     }
 
     #[test]
-    fn round_trip_without_header() {
+    fn round_trip_two_images_back_to_back() {
         let image = test_image();
-        // Drop the header so the samples begin at the image data.
-        let full = encode(&image, 48_000);
-        let header = header_sample_count(48_000);
-        let image_samples: Vec<i16> = full.into_iter().skip(header).collect();
+        let mut samples = encode(&image, 48_000);
+        samples.extend(encode(&image, 48_000));
 
-        let decoded: Vec<RgbPixel> =
-            Decoder::without_header(image_samples.into_iter(), 48_000).collect();
+        let decoded = decode_images(samples, 48_000);
 
-        assert_eq!(decoded.len(), WIDTH * HEIGHT);
-        let error = mean_abs_error(&image, &decoded);
-        assert!(error < 12.0, "mean abs error {error} too high");
+        assert_eq!(decoded.len(), 2, "expected two images");
+        for decoded_image in &decoded {
+            assert!(decoded_image.complete);
+            assert_eq!(decoded_image.rows.len(), HEIGHT);
+            let error = mean_abs_error(&image, &decoded_image.pixels());
+            assert!(error < 12.0, "mean abs error {error} too high");
+        }
     }
 
     #[test]
-    fn decodes_all_scanlines() {
+    fn round_trip_two_images_with_gap() {
         let image = test_image();
-        let samples = encode(&image, 48_000);
-        let count = Decoder::new(samples.into_iter(), 48_000).unwrap().count();
-        assert_eq!(count, WIDTH * HEIGHT);
+        let mut samples = encode(&image, 48_000);
+        // Half a second of silence between the two transmissions.
+        samples.extend(std::vec![0i16; 24_000]);
+        samples.extend(encode(&image, 48_000));
+
+        let decoded = decode_images(samples, 48_000);
+
+        assert_eq!(decoded.len(), 2, "expected two images across the gap");
+        for decoded_image in &decoded {
+            assert!(decoded_image.complete);
+            assert_eq!(decoded_image.rows.len(), HEIGHT);
+            let error = mean_abs_error(&image, &decoded_image.pixels());
+            assert!(error < 12.0, "mean abs error {error} too high");
+        }
     }
 
     #[test]
-    fn too_short_signal_errors() {
-        let samples = std::vec![0i16; 100];
-        assert!(matches!(
-            Decoder::new(samples.into_iter(), 48_000),
-            Err(Error::EmptyImage)
-        ));
+    fn silence_yields_no_images() {
+        let decoded = decode_images(std::vec![0i16; 48_000], 48_000);
+        assert!(decoded.is_empty(), "silence should not produce an image");
     }
 }

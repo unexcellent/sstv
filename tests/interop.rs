@@ -12,7 +12,7 @@
 
 use std::path::Path;
 
-use sstv::{Decoder, RgbPixel};
+use sstv::{Event, RgbPixel, RowDecoder};
 
 /// Robot36 resolution.
 const WIDTH: usize = 320;
@@ -81,9 +81,17 @@ fn decoder_matches_pysstv_reference() {
     );
 
     let (samples, sample_rate) = read_wav(PYSSTV_FIXTURE);
-    let decoded: Vec<RgbPixel> = Decoder::new(samples.into_iter(), sample_rate)
-        .expect("decode fixture")
-        .collect();
+
+    // Reconstruct the first image in the stream from the decoder's events.
+    let mut decoded: Vec<RgbPixel> = Vec::new();
+    for event in RowDecoder::new(samples.into_iter(), sample_rate) {
+        match event {
+            Event::ImageStart(_) if !decoded.is_empty() => break,
+            Event::ImageStart(_) => {}
+            Event::Row(row) => decoded.extend_from_slice(row.pixels()),
+            Event::ImageEnd { .. } => break,
+        }
+    }
 
     // A real transmission may not carry the last line or two to the very end.
     let rows = decoded.len() / WIDTH;
