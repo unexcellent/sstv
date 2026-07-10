@@ -256,44 +256,54 @@ impl<I: Iterator<Item = i16>> RowDecoder<I> {
     /// Decode one even/odd row pair and queue both rows. Returns `None` if the
     /// signal runs out before the pair is complete.
     fn decode_pair(&mut self) -> Option<()> {
-        let even_index = self.row_index;
-        let (even_luma, even_chroma) = self.read_row()?; // even row carries R-Y
+        let first_index = self.row_index;
+        let (first_luma, first_chroma, first_porch) = self.read_row()?;
         self.row_index += 1;
-        let odd_index = self.row_index;
-        let (odd_luma, odd_chroma) = self.read_row()?; // odd row carries B-Y
+        let second_index = self.row_index;
+        let (second_luma, second_chroma, second_porch) = self.read_row()?;
         self.row_index += 1;
 
-        // Both rows share the pair's chroma: the even row's red difference and
-        // the odd row's blue difference.
-        let mut even_pixels = [RgbPixel::new(0, 0, 0); WIDTH];
-        let mut odd_pixels = [RgbPixel::new(0, 0, 0); WIDTH];
+        // A pair is one even (R-Y) and one odd (B-Y) line; both are reconstructed
+        // from the shared red and blue differences. Which line carries which is
+        // read from the porch (black on even, white on odd) rather than assumed
+        // from read order — so a decode that began on an odd line doesn't swap
+        // red and blue. The even line's chroma is the red difference.
+        let first_is_even = first_porch <= second_porch;
+        let (red_chroma, blue_chroma) = if first_is_even {
+            (&first_chroma, &second_chroma)
+        } else {
+            (&second_chroma, &first_chroma)
+        };
+
+        let mut first_pixels = [RgbPixel::new(0, 0, 0); WIDTH];
+        let mut second_pixels = [RgbPixel::new(0, 0, 0); WIDTH];
         for pixel in 0..WIDTH {
-            even_pixels[pixel] = RgbPixel::from(YuvPixel::new(
-                even_luma[pixel],
-                even_chroma[pixel],
-                odd_chroma[pixel],
+            first_pixels[pixel] = RgbPixel::from(YuvPixel::new(
+                first_luma[pixel],
+                red_chroma[pixel],
+                blue_chroma[pixel],
             ));
-            odd_pixels[pixel] = RgbPixel::from(YuvPixel::new(
-                odd_luma[pixel],
-                even_chroma[pixel],
-                odd_chroma[pixel],
+            second_pixels[pixel] = RgbPixel::from(YuvPixel::new(
+                second_luma[pixel],
+                red_chroma[pixel],
+                blue_chroma[pixel],
             ));
         }
 
         self.events.push_back(Event::Row(RgbRow {
-            index: even_index,
-            pixels: even_pixels,
+            index: first_index,
+            pixels: first_pixels,
         }));
         self.events.push_back(Event::Row(RgbRow {
-            index: odd_index,
-            pixels: odd_pixels,
+            index: second_index,
+            pixels: second_pixels,
         }));
         Some(())
     }
 
     /// Read one scanline's luma and chroma, then consume its trailing sync so
     /// the next row is aligned to the actual pulse.
-    fn read_row(&mut self) -> Option<([u8; WIDTH], [u8; WIDTH])> {
+    fn read_row(&mut self) -> Option<([u8; WIDTH], [u8; WIDTH], u8)> {
         let start = self.luma_start;
 
         let mut luma = [0u8; WIDTH];
@@ -301,6 +311,11 @@ impl<I: Iterator<Item = i16>> RowDecoder<I> {
             let center = start + (pixel as f64 + 0.5) * self.pixel_luma;
             *value = self.value_at(center)?;
         }
+
+        // Sample the porch — the first part of the blank between luma and chroma.
+        // It's black on even (R-Y) rows and white on odd (B-Y) rows, so it marks
+        // this line's parity independently of where decoding started.
+        let porch = self.value_at(start + self.luma_len + self.blank_len / 3.0)?;
 
         let chroma_start = start + self.luma_len + self.blank_len;
         let mut chroma = [0u8; WIDTH];
@@ -316,7 +331,7 @@ impl<I: Iterator<Item = i16>> RowDecoder<I> {
             self.luma_start = self.position as f64;
         }
 
-        Some((luma, chroma))
+        Some((luma, chroma, porch))
     }
 
     /// Consume the current sync pulse and set the next row's luma start just

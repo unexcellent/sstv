@@ -8,8 +8,12 @@ use crate::units::Frequency;
 /// scanlines is the decoder's job.
 ///
 /// This is a deliberately simple *midline-crossing* estimator. It measures the
-/// number of samples between successive crossings of the waveform's midline and
-/// holds that estimate until the next crossing is seen. The midline is the
+/// number of samples between every *other* crossing of the waveform's midline —
+/// a full period — and holds that estimate until the next crossing is seen.
+/// Measuring a full period rather than a single half-period cancels the
+/// alternating long/short bias that appears when the midline is not perfectly
+/// centred, which would otherwise make the estimate swing above and below the
+/// true frequency every half cycle. The midline is the
 /// midpoint of a running minimum and maximum that continuously relax toward it,
 /// forming an adaptive envelope: the midline tracks a changing DC offset or
 /// signal level, and an early transient (a click, a burst of static) cannot
@@ -45,6 +49,7 @@ pub struct Demodulator<I: Iterator<Item = i16>> {
     envelope_decay: f64,
     index: u64,
     last_crossing: Option<f64>,
+    earlier_crossing: Option<f64>,
     crossings_seen: u32,
     frequency: Option<Frequency>,
 }
@@ -79,6 +84,7 @@ impl<I: Iterator<Item = i16>> Demodulator<I> {
             envelope_decay,
             index: 0,
             last_crossing: None,
+            earlier_crossing: None,
             crossings_seen: 0,
             frequency: None,
         }
@@ -109,17 +115,23 @@ impl<I: Iterator<Item = i16>> Demodulator<I> {
 
         let midline_crossing =
             (index as f64 - 1.0) + previous_offset / (previous_offset - current_offset);
-        let last_crossing = self.last_crossing.replace(midline_crossing);
+
+        // Keep the last two crossings so we can measure a full period (from the
+        // crossing two ago to this one). Summing a long and a short half-period
+        // cancels the alternating bias of an off-centre midline.
+        let earlier_crossing = self.earlier_crossing;
+        self.earlier_crossing = self.last_crossing;
+        self.last_crossing = Some(midline_crossing);
 
         // Drop the first few crossings: until the envelope has spanned a full
-        // cycle its midline is still biased, so those half-periods are mistimed.
+        // cycle its midline is still biased, so those periods are mistimed.
         self.crossings_seen = self.crossings_seen.saturating_add(1);
         if self.crossings_seen <= Self::WARM_UP_CROSSINGS {
             return None;
         }
 
-        let half_period = midline_crossing - last_crossing?;
-        let frequency_float = self.sample_rate as f64 / (2.0 * half_period);
+        let period = midline_crossing - earlier_crossing?;
+        let frequency_float = self.sample_rate as f64 / period;
 
         Some(Frequency::from_hz(frequency_float as u32))
     }
@@ -223,20 +235,22 @@ mod tests {
 
         let samples = synthesize(vec![first_actual, second_actual], sample_rate);
         let estimates: Vec<Frequency> =
-            Demodulator::new(samples.clone().into_iter(), sample_rate).collect();
+            Demodulator::new(samples.into_iter(), sample_rate).collect();
 
+        // Every estimate should fall within the band spanned by the two tones
+        // (plus tolerance). At the switch a single full-period measurement
+        // straddles both frequencies and lands between them, which is fine; a
+        // wild excursion outside the band is not.
+        let low = first_actual.hz() - first_actual.hz() / 20;
+        let high = second_actual.hz() + second_actual.hz() / 20;
         for estimated in estimates {
-            if !frequencies_match(estimated, first_actual)
-                && !frequencies_match(estimated, second_actual)
-            {
-                assert!(
-                    false,
-                    "{} not in [{}, {}]",
-                    estimated.hz(),
-                    first_actual.hz(),
-                    second_actual.hz()
-                )
-            }
+            assert!(
+                (low..=high).contains(&estimated.hz()),
+                "{} Hz outside [{}, {}]",
+                estimated.hz(),
+                low,
+                high,
+            );
         }
     }
 
