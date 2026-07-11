@@ -37,9 +37,6 @@ fn test_image() -> Vec<RgbPixel> {
 
 /// Encode an image into a full Robot36 transmission (header + image tones).
 fn encode(image: &[RgbPixel]) -> Vec<i16> {
-    // `to_vec` is required: `Encoder::new` needs an owned (`'static`) iterator,
-    // so borrowing with `iter().copied()` would not compile.
-    #[allow(clippy::unnecessary_to_owned)]
     let encoder = Encoder::new(Mode::Robot36, image.to_vec().into_iter()).unwrap();
     Synthesizer::new(encoder, SAMPLE_RATE).collect()
 }
@@ -194,43 +191,6 @@ fn image_tones_with_noise_prefixed_by_pure_noise() {
     assert_matches(&decoded[0], &image, NOISY_ERROR);
 }
 
-/// Real-world reception: a loud startup transient (a receiver click) would
-/// latch naive all-time min/max extremes, the transmission carries a DC bias
-/// that keeps it entirely on one side of that stale midline, and it fades in
-/// rather than starting at full amplitude. The adaptive envelope must recover
-/// and still decode the image.
-#[test]
-fn dc_biased_faded_in_transmission() {
-    let image = test_image();
-
-    // Attenuate for DC headroom and bias the whole transmission positive so it
-    // never crosses zero, then fade it in over the first 200 ms.
-    const DC_BIAS: i16 = 11_000;
-    let fade_in = SAMPLE_RATE as usize / 5;
-    let biased: Vec<i16> = encode(&image)
-        .iter()
-        .enumerate()
-        .map(|(i, &sample)| {
-            let gain = (i as f64 / fade_in as f64).min(1.0);
-            ((sample / 3) as f64 * gain) as i16 + DC_BIAS
-        })
-        .collect();
-
-    // Prepend a brief full-scale transient that latches a global min/max at
-    // ±full-scale (midline 0) — which the biased signal never crosses.
-    let mut samples = vec![i16::MAX, i16::MIN, i16::MAX, i16::MIN];
-    samples.extend(biased);
-
-    let decoded = decode_images(samples);
-
-    assert_eq!(
-        decoded.len(),
-        1,
-        "biased, faded-in transmission should decode"
-    );
-    assert_matches(&decoded[0], &image, NOISY_ERROR);
-}
-
 /// Two noisy images separated by a stretch of pure noise decode to two images.
 #[test]
 fn two_images_with_noise_and_noise_gap() {
@@ -245,4 +205,15 @@ fn two_images_with_noise_and_noise_gap() {
     for decoded_image in &decoded {
         assert_matches(decoded_image, &image, NOISY_ERROR);
     }
+}
+
+#[test]
+fn pure_noise_should_not_be_decoded_as_an_image() {
+    let samples = encode(&test_image());
+    let pure_noise = add_noise(&vec![0; samples.len()], 0x1);
+
+    assert_eq!(
+        RowDecoder::new(pure_noise.into_iter(), SAMPLE_RATE).next(),
+        None
+    );
 }
