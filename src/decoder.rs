@@ -200,9 +200,6 @@ impl<I: Iterator<Item = i16>> RowDecoder<I> {
     /// does.
     pub fn without_header(mode: Mode, samples: I, sample_rate: u32) -> Self {
         let mut decoder = Self::new(mode, samples, sample_rate);
-        // Skip tones sent once before the first line (Scottie's starting
-        // sync); the walker re-aligns on the actual sync pulses from there.
-        decoder.sequence_start = decoder.samples_in(decoder.layout.start_duration());
         decoder
             .events
             .push_back(Event::ImageStart(decoder.image_info()));

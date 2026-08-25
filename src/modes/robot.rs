@@ -37,7 +37,6 @@ const ROBOT_36_ODD_SEQUENCE: [Step; 6] = [
 pub(crate) const ROBOT_36: Layout = Layout {
     width: 320,
     height: 240,
-    start: &[],
     sequences: &[&ROBOT_36_EVEN_SEQUENCE, &ROBOT_36_ODD_SEQUENCE],
     lines_per_sequence: 1,
     color: ColorMode::YuvAveragedPair,

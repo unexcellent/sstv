@@ -93,9 +93,18 @@ impl Mode {
         self.layout().height as u32
     }
 
-    /// The tones sent before the image: the VOX tuning tones followed by the
-    /// calibration header carrying the VIS code. The image data begins
-    /// immediately after the last header tone.
+    /// Whether the mode transmits one extra sync pulse between the header and
+    /// the first line. Only Scottie modes do.
+    const fn has_starting_sync_pulse(&self) -> bool {
+        match self {
+            Mode::Robot36 => false,
+        }
+    }
+
+    /// The tones sent before the image: the VOX tuning tones, the calibration
+    /// header carrying the VIS code, and the starting sync pulse for modes
+    /// that transmit one. The image data begins immediately after the last
+    /// header tone.
     pub fn header_tones(&self) -> impl Iterator<Item = Tone> + '_ {
         (0..).map_while(move |index| self.header_tone(index))
     }
@@ -120,6 +129,9 @@ impl Mode {
             12..=18 => Some(bit((code >> (index - 12)) & 1 == 1)), // code bits, least significant first
             19 => Some(bit(code.count_ones() % 2 == 1)),           // even parity
             20 => Some(Tone::new(SYNC_FREQUENCY, VIS_BIT_DURATION)), // stop bit
+            21 if self.has_starting_sync_pulse() => {
+                Some(Tone::new(SYNC_FREQUENCY, self.layout().sync_pulse().1))
+            }
             _ => None,
         }
     }

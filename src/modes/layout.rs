@@ -76,9 +76,6 @@ pub(crate) struct Layout {
     pub width: usize,
     /// The number of image lines in a full transmission.
     pub height: usize,
-    /// Tones sent once between the header and the first line. Only Scottie
-    /// has one: an extra sync pulse ahead of its first line.
-    pub start: &'static [Step],
     /// The repeating timing sequences; lines cycle through them in order.
     /// All sequences of a mode are equally long. Most modes have exactly one;
     /// Robot 36 alternates an even-line and an odd-line sequence.
@@ -98,11 +95,6 @@ impl Layout {
     /// The duration of one timing sequence — the spacing of the sync pulses.
     pub(crate) fn sequence_duration(&self) -> Duration {
         Self::steps_duration(self.sequences[0])
-    }
-
-    /// The duration of the tones sent once before the first line.
-    pub(crate) fn start_duration(&self) -> Duration {
-        Self::steps_duration(self.start)
     }
 
     fn steps_duration(steps: &[Step]) -> Duration {

@@ -50,8 +50,6 @@ impl Iterator for Encoder {
 enum Phase {
     /// Emitting the mode's header tones.
     Header(usize),
-    /// Emitting the tones sent once between the header and the first line.
-    Start(usize),
     /// Emitting the repeating timing sequences. `line` is the index of the
     /// first image line buffered for the current pass through the sequences.
     Line {
@@ -171,15 +169,6 @@ where
                         self.phase = Phase::Header(index + 1);
                         return Some(tone);
                     }
-                    None => self.phase = Phase::Start(0),
-                },
-                Phase::Start(index) => match self.layout.start.get(index) {
-                    Some(Step::Tone(tone)) => {
-                        self.phase = Phase::Start(index + 1);
-                        return Some(*tone);
-                    }
-                    // Start steps are tones only; skip anything else.
-                    Some(Step::Scan(..)) => self.phase = Phase::Start(index + 1),
                     None => {
                         self.phase = Phase::Line {
                             line: 0,
