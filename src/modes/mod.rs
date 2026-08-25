@@ -50,14 +50,10 @@ const VOX_TONES: [Tone; 8] = [
 ];
 
 /// A specific protocol for encoding an image as a tone sequence.
-///
-/// Naming follows the Dayton paper. Every mode transmits the shared
-/// "Calibration header with VIS code" followed by its own repeating per-line
-/// timing sequence; see [`Mode::header_tones`] and the `modes` submodules.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum Mode {
-    /// "ROBOT 36 COLOR": Y, R-Y, B-Y encoded 320x240 in a 36s transmission.
+    /// "ROBOT 36 COLOR".
     Robot36,
 }
 
@@ -66,11 +62,10 @@ impl Mode {
     pub const ALL: [Mode; 1] = [Mode::Robot36];
 
     /// The mode's 7-bit VIS code ("VIS CODE" in the paper), identifying it to
-    /// a receiving system. `None` for modes transmitted without a VIS code
-    /// (the paper's FAX480 uses its own header instead).
-    pub const fn vis_code(&self) -> Option<u8> {
+    /// a receiving system.
+    pub const fn vis_code(&self) -> u8 {
         match self {
-            Mode::Robot36 => Some(8),
+            Mode::Robot36 => 8,
         }
     }
 
@@ -101,8 +96,7 @@ impl Mode {
     }
 
     /// The tones sent before the image: the VOX tuning tones followed by the
-    /// paper's "Calibration header with VIS code". Modes without a VIS code
-    /// supply their own header here instead.
+    /// paper's "Calibration header with VIS code".
     ///
     /// "Note that all mode specifications begin immediately after the VIS
     /// stop bit."
@@ -112,9 +106,7 @@ impl Mode {
 
     /// The `index`-th header tone, or `None` past the end of the header.
     pub(crate) fn header_tone(&self, index: usize) -> Option<Tone> {
-        let code = self
-            .vis_code()
-            .expect("every current mode transmits a VIS code");
+        let code = self.vis_code();
         let bit = |one: bool| {
             let frequency = if one {
                 VIS_ONE_FREQUENCY
@@ -182,10 +174,9 @@ mod tests {
     #[test]
     fn vis_codes_round_trip() {
         for mode in Mode::ALL {
-            if let Some(code) = mode.vis_code() {
-                assert_eq!(Mode::from_vis_code(code), Some(mode));
-                assert!(code < 128, "VIS codes are 7 bit");
-            }
+            let code = mode.vis_code();
+            assert_eq!(Mode::from_vis_code(code), Some(mode));
+            assert!(code < 128, "VIS codes are 7 bit");
         }
     }
 

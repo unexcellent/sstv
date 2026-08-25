@@ -8,6 +8,8 @@ It is still far from maturity. Currently, only Robot 36 is supported.
 
 All mode timings follow the "Dayton paper": JL Barber (N7CXI), *Proposal for SSTV Mode Specifications*, presented at the Dayton SSTV forum, 20 May 2000. The code is structured to mirror the paper: each mode family lives in its own module under `src/modes/`, transcribing the paper's per-line "TIMING SEQUENCE" tables (sync pulses, porches, separator pulses and channel scans) verbatim. The encoder and decoder are generic over these timing sequences, so adding another mode from the paper only means transcribing its table.
 
+The paper's FAX480 is deliberately out of scope: it is a monochrome fax format rather than a true SSTV mode, is essentially unused on air, and is the only mode without the shared calibration header and VIS code. AVT is likewise excluded (as it is from the paper itself).
+
 # Usage
 
 Encoding in `sstv` works iterator based. You need to supply an iterator over `sstv::RgbPixel` to receive an iterator over `sstv::Tone`. These tones contain information about frequency and duration and can then be converted into 16 bit sound samples using `sstv::Synthesizer`.
@@ -40,5 +42,5 @@ for event in RowDecoder::new(Mode::Robot36, samples, 48000) {
 # Planned Features
 
 - using rust features to optionally allow std crates (like image and hound)
-- the remaining modes from the Dayton paper (Scottie, Martin, Robot 72, Wrasse, Pasokon, PD, FAX480)
+- the remaining modes from the Dayton paper (Scottie, Martin, Robot 72, Wrasse, Pasokon, PD)
 - upload to crates.io

@@ -458,14 +458,6 @@ impl<I: Iterator<Item = i16>> RowDecoder<I> {
                     scan(Channel::BY),
                 ));
             }
-            ColorMode::Monochrome => {
-                rows.push(
-                    scan(Channel::Y)
-                        .iter()
-                        .map(|&value| RgbPixel::new(value, value, value))
-                        .collect(),
-                );
-            }
             ColorMode::YuvSharedPair => {
                 let (ry, by) = (scan(Channel::RY), scan(Channel::BY));
                 rows.push(yuv_row(scan(Channel::Y), ry, by));

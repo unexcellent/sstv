@@ -10,11 +10,8 @@
 use super::layout::{Channel, ColorMode, Layout, Step};
 use crate::{Hz, ms, us};
 
-/// "(1) Sync pulse: 9.0ms 1200hz".
 const SYNC_PULSE: Step = Step::tone(Hz!(1200), ms!(9));
-/// "(2) Sync porch: 3.0ms 1500hz".
 const SYNC_PORCH: Step = Step::tone(Hz!(1500), ms!(3));
-/// "(5)/(11) Porch: 1.5ms 1900hz".
 const PORCH: Step = Step::tone(Hz!(1900), us!(1_500));
 
 /// TIMING SEQUENCE, steps (1)-(6): the even line of a pair.

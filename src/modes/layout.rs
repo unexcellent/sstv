@@ -74,8 +74,6 @@ pub(crate) enum ColorMode {
     /// Y scans of two consecutive lines around shared, pair-averaged R-Y and
     /// B-Y scans (PD modes).
     YuvSharedPair,
-    /// A single luminance scan (FAX480).
-    Monochrome,
 }
 
 /// A mode's scanline structure: the paper's timing sequences plus the image
