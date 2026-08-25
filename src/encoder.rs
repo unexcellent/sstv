@@ -126,8 +126,8 @@ where
         let base = sequence * self.layout.lines_per_sequence;
         let rgb = |line: usize| self.lines[line][x];
         let yuv = |line: usize| YuvPixel::from(rgb(line));
-        // "The R-Y color information is averaged for two lines" — colour
-        // difference scans average all buffered lines where the mode says so.
+        // Colour-difference scans average over all buffered lines where the
+        // mode calls for it (Robot 36 and PD modes).
         let chroma = |component: fn(YuvPixel) -> u8| match self.layout.color {
             ColorMode::YuvAveragedPair | ColorMode::YuvSharedPair => {
                 let sum: u16 = (0..self.lines.len())

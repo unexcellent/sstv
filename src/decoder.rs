@@ -227,7 +227,6 @@ impl<I: Iterator<Item = i16>> RowDecoder<I> {
     /// Scan for the next image's first line sync. On success, queue an
     /// [`Event::ImageStart`] and begin decoding; on stream exhaustion, finish.
     fn search(&mut self) {
-        // Start a fresh acquisition buffer for this image.
         self.prefix.clear();
         self.prefix_position = 0;
         self.position = 0;
@@ -284,7 +283,6 @@ impl<I: Iterator<Item = i16>> RowDecoder<I> {
                 continue;
             }
 
-            // Measure the length of this sync run.
             let start = index;
             while self.buffered_is_sync(index)? {
                 index += 1;
@@ -373,7 +371,7 @@ impl<I: Iterator<Item = i16>> RowDecoder<I> {
         'steps: for step in sequence {
             match step {
                 // Re-align on the actual sync pulse rather than trusting the
-                // nominal timing: skip to the pulse and through it.
+                // nominal timing.
                 Step::Tone(tone) if tone.frequency == SYNC_FREQUENCY => {
                     if self.advance_to(t).is_none() || self.consume_sync().is_none() {
                         stream_ended = true;

@@ -6,7 +6,7 @@ It is still far from maturity. Currently, only Robot 36 is supported.
 
 # Mode specifications
 
-All mode timings follow the "Dayton paper": JL Barber (N7CXI), *Proposal for SSTV Mode Specifications*, presented at the Dayton SSTV forum, 20 May 2000. The code is structured to mirror the paper: each mode family lives in its own module under `src/modes/`, transcribing the paper's per-line "TIMING SEQUENCE" tables (sync pulses, porches, separator pulses and channel scans) verbatim. The encoder and decoder are generic over these timing sequences, so adding another mode from the paper only means transcribing its table.
+All mode timings follow the "Dayton paper": JL Barber (N7CXI), *Proposal for SSTV Mode Specifications*, presented at the Dayton SSTV forum, 20 May 2000. The code is structured to mirror the paper: each mode family lives in its own module under `src/modes/`, transcribing the paper's per-line timing tables (sync pulses, porches, separator pulses and channel scans). The encoder and decoder are generic over these timing sequences, so adding another mode from the paper only means transcribing its table.
 
 The paper's FAX480 is deliberately out of scope: it is a monochrome fax format rather than a true SSTV mode, is essentially unused on air, and is the only mode without the shared calibration header and VIS code. AVT is likewise excluded (as it is from the paper itself).
 

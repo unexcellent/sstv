@@ -1,36 +1,30 @@
-//! Building blocks for describing a mode's transmission exactly as the Dayton
-//! paper does: each mode is a repeating per-line "TIMING SEQUENCE" of fixed
-//! tones (sync pulses, porches, separator pulses) and channel scans.
+//! Building blocks for describing a mode's transmission as the Dayton paper
+//! does: each mode is a repeating per-line timing sequence of fixed tones
+//! (sync pulses, porches, separator pulses) and channel scans.
 
 use crate::synthesizer::Tone;
 use crate::units::{Duration, Frequency};
 
-/// The image values carried by a scan step, named after the scans in the
-/// paper's timing sequences ("Green scan", "Y scan", "R-Y scan", ...).
-// Some variants are not constructed yet: they cover the scans of the
-// Dayton-paper modes still to be added, and the encoder/decoder already
-// handle them.
+/// The image values carried by a scan step.
+// dead_code: some variants belong to modes not transcribed yet.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Channel {
-    /// "Red scan".
     Red,
-    /// "Green scan".
     Green,
-    /// "Blue scan".
     Blue,
-    /// "Y scan" — luminance. In sequences carrying two lines (PD modes), the
-    /// first line's.
+    /// Luminance. In sequences carrying two lines (PD modes), the first
+    /// line's.
     Y,
-    /// "Y scan (from even line)" — the second line's luminance (PD modes).
+    /// The second line's luminance (PD modes).
     YSecond,
-    /// "R-Y scan" — the red colour difference.
+    /// The red colour difference.
     RY,
-    /// "B-Y scan" — the blue colour difference.
+    /// The blue colour difference.
     BY,
 }
 
-/// One entry of a mode's "TIMING SEQUENCE" table.
+/// One entry of a mode's timing sequence.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum Step {
     /// A fixed control tone: sync pulse, sync porch, separator pulse or porch.
@@ -57,9 +51,7 @@ impl Step {
 }
 
 /// How the scans of one timing sequence combine into image pixels.
-// Some variants are not constructed yet: they cover the colour systems of the
-// Dayton-paper modes still to be added, and the encoder/decoder already
-// handle them.
+// dead_code: some variants belong to modes not transcribed yet.
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ColorMode {
@@ -84,8 +76,8 @@ pub(crate) struct Layout {
     pub width: usize,
     /// The number of image lines in a full transmission.
     pub height: usize,
-    /// Tones sent once between the header and the first line (Scottie's
-    /// "starting" sync pulse).
+    /// Tones sent once between the header and the first line. Only Scottie
+    /// has one: an extra sync pulse ahead of its first line.
     pub start: &'static [Step],
     /// The repeating timing sequences; lines cycle through them in order.
     /// All sequences of a mode are equally long. Most modes have exactly one;

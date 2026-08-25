@@ -3,7 +3,7 @@
 //! forum, 20 May 2000.
 //!
 //! Each mode family lives in its own module mirroring a chapter of the paper,
-//! transcribing its "TIMING SEQUENCE" table into a [`Layout`]. Everything
+//! transcribing its timing table into a [`Layout`]. Everything
 //! shared between modes — the frequency range, the calibration header and the
 //! VIS code — is defined here, as in the paper's common sections.
 
@@ -16,27 +16,26 @@ use crate::units::{Duration, Frequency};
 use crate::{Hz, ms};
 use layout::Layout;
 
-/// The "Sync pulse" frequency, shared by every mode.
+/// The sync pulse frequency, shared by every mode.
 pub(crate) const SYNC_FREQUENCY: Frequency = Hz!(1200);
-/// Pure black. Appendix A: "SSTV systems use the frequency range of
-/// 1500-2300hz to represent the range of brightness values".
+/// Pure black — the lower end of the luminance range.
 pub(crate) const BLACK_FREQUENCY: Frequency = Hz!(1500);
-/// Pure white — the upper end of the 1500-2300hz luminance range.
+/// Pure white — the upper end of the luminance range.
 pub(crate) const WHITE_FREQUENCY: Frequency = Hz!(2300);
-/// The calibration header's "Leader tone".
+/// The leader tone of the calibration header.
 pub(crate) const LEADER_FREQUENCY: Frequency = Hz!(1900);
-/// VIS bits: "1100hz = '1', 1300hz = '0'".
 const VIS_ONE_FREQUENCY: Frequency = Hz!(1100);
 const VIS_ZERO_FREQUENCY: Frequency = Hz!(1300);
 /// Every VIS bit (start, data, parity, stop) lasts 30ms.
 const VIS_BIT_DURATION: Duration = ms!(30);
 
-/// Appendix A: "Frequency = 1500 + (ColorByte * 3.1372549)".
+/// The frequency representing a pixel value, mapped linearly onto the
+/// luminance range.
 pub(crate) fn value_frequency(value: u8) -> Frequency {
     BLACK_FREQUENCY + (WHITE_FREQUENCY - BLACK_FREQUENCY) * value as u32 / 255
 }
 
-/// Tuning ("VOX") tones customarily sent ahead of the calibration header to
+/// Tuning (VOX) tones customarily sent ahead of the calibration header to
 /// open receiver squelch. They are not part of the paper's specification.
 const VOX_TONES: [Tone; 8] = [
     Tone::new(Hz!(1900), ms!(100)),
@@ -53,7 +52,7 @@ const VOX_TONES: [Tone; 8] = [
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[non_exhaustive]
 pub enum Mode {
-    /// "ROBOT 36 COLOR".
+    /// A 320x240 colour image in a 36 second transmission.
     Robot36,
 }
 
@@ -61,8 +60,7 @@ impl Mode {
     /// Every supported mode, in the paper's order.
     pub const ALL: [Mode; 1] = [Mode::Robot36];
 
-    /// The mode's 7-bit VIS code ("VIS CODE" in the paper), identifying it to
-    /// a receiving system.
+    /// The mode's 7-bit VIS code, identifying it to a receiving system.
     pub const fn vis_code(&self) -> u8 {
         match self {
             Mode::Robot36 => 8,
@@ -96,10 +94,8 @@ impl Mode {
     }
 
     /// The tones sent before the image: the VOX tuning tones followed by the
-    /// paper's "Calibration header with VIS code".
-    ///
-    /// "Note that all mode specifications begin immediately after the VIS
-    /// stop bit."
+    /// calibration header carrying the VIS code. The image data begins
+    /// immediately after the last header tone.
     pub fn header_tones(&self) -> impl Iterator<Item = Tone> + '_ {
         (0..).map_while(move |index| self.header_tone(index))
     }
@@ -117,16 +113,13 @@ impl Mode {
         };
         match index {
             0..=7 => Some(VOX_TONES[index]),
-            // "Calibration header with VIS code":
-            8 => Some(Tone::new(LEADER_FREQUENCY, ms!(300))), // Leader tone
-            9 => Some(Tone::new(SYNC_FREQUENCY, ms!(10))),    // break
-            10 => Some(Tone::new(LEADER_FREQUENCY, ms!(300))), // Leader tone
-            11 => Some(Tone::new(SYNC_FREQUENCY, VIS_BIT_DURATION)), // VIS start bit
-            // "The seven-bit code is transmitted least-significant-bit first"
-            12..=18 => Some(bit((code >> (index - 12)) & 1 == 1)),
-            // "and uses 'even' parity."
-            19 => Some(bit(code.count_ones() % 2 == 1)),
-            20 => Some(Tone::new(SYNC_FREQUENCY, VIS_BIT_DURATION)), // VIS stop bit
+            8 => Some(Tone::new(LEADER_FREQUENCY, ms!(300))),
+            9 => Some(Tone::new(SYNC_FREQUENCY, ms!(10))), // break
+            10 => Some(Tone::new(LEADER_FREQUENCY, ms!(300))),
+            11 => Some(Tone::new(SYNC_FREQUENCY, VIS_BIT_DURATION)), // start bit
+            12..=18 => Some(bit((code >> (index - 12)) & 1 == 1)), // code bits, least significant first
+            19 => Some(bit(code.count_ones() % 2 == 1)),           // even parity
+            20 => Some(Tone::new(SYNC_FREQUENCY, VIS_BIT_DURATION)), // stop bit
             _ => None,
         }
     }
