@@ -53,7 +53,7 @@ impl ImageInfo {
     }
 }
 
-/// An event produced by [`RowDecoder`] while scanning a sample stream.
+/// An event produced by a [`Decoder`] while scanning a sample stream.
 ///
 /// A single image is reported as an [`ImageStart`](Event::ImageStart), followed
 /// by one [`Row`](Event::Row) per decoded scanline in top-to-bottom order,
@@ -74,36 +74,83 @@ pub enum Event {
     },
 }
 
-/// Decodes a continuous stream of PCM samples into a stream of [`Event`]s.
+/// Decodes SSTV transmissions from an audio sample stream.
 ///
-/// `RowDecoder` is the streaming inverse of [`Encoder`](crate::Encoder): it
-/// consumes 16-bit PCM samples and reports whole scanlines as it recovers them,
-/// grouped into images by [`ImageStart`](Event::ImageStart) /
-/// [`ImageEnd`](Event::ImageEnd) markers. Internally it runs a [`Demodulator`]
-/// over the samples and walks the mode's timing sequence as specified in the
-/// Dayton paper, re-aligning on every sync pulse. It pulls from the stream
-/// lazily, holding at most about one line group at a time — never the whole
-/// frequency track or image.
+/// `Decoder` is the streaming inverse of [`Encoder`](crate::Encoder). It runs
+/// a [`Demodulator`] over 16-bit PCM samples and walks the mode's timing
+/// sequence as specified in the Dayton paper, re-aligning on every sync
+/// pulse. Acquisition happens lazily as the output is polled: a stream that
+/// never contains an image simply yields nothing, and a stream carrying
+/// several images — with or without gaps between them — yields all of them.
 ///
-/// Unlike a one-shot decoder it keeps scanning after an image completes, so a
-/// signal that carries images only part of the time, or several images one
-/// after another, is decoded as a sequence of image event-groups. Acquisition
-/// happens lazily as the iterator is polled; a stream that never contains an
-/// image simply yields no events.
+/// Construct it from a sample stream ([`from_samples`](Self::from_samples))
+/// or an existing demodulator ([`from_demodulator`](Self::from_demodulator)),
+/// then choose how to consume it: [`events`](Self::events) streams scanlines
+/// as they are recovered, holding only about one line group in memory, while
+/// [`images`](Self::images) assembles and yields whole images.
 ///
 /// ```no_run
-/// use sstv::{Event, Mode, RowDecoder};
+/// use sstv::{Decoder, Mode};
 ///
 /// # let samples = std::vec::Vec::<i16>::new().into_iter();
-/// for event in RowDecoder::new(Mode::Robot36, samples, 48000) {
-///     match event {
-///         Event::ImageStart(info) => { let _ = info.width(); }
-///         Event::Row(row) => { let _ = row.pixels(); }
-///         Event::ImageEnd { complete } => { let _ = complete; }
-///     }
+/// for image in Decoder::from_samples(Mode::Auto, samples, 48000).images() {
+///     let _ = (image.mode(), image.pixels());
 /// }
 /// ```
-pub struct RowDecoder<I: Iterator<Item = i16>> {
+pub struct Decoder<I: Iterator<Item = i16>> {
+    events: Events<I>,
+}
+
+impl<I: Iterator<Item = i16>> Decoder<I> {
+    /// Decode a stream of PCM samples.
+    ///
+    /// With [`Mode::Auto`], each image's mode is detected from its header's
+    /// VIS code. `sample_rate` must be greater than zero. Construction never
+    /// fails: finding images is deferred to iteration.
+    pub fn from_samples(mode: Mode, samples: I, sample_rate: u32) -> Self {
+        let sample_rate = sample_rate.max(1);
+        Self::from_demodulator(mode, Demodulator::new(samples, sample_rate))
+    }
+
+    /// Decode the frequency stream of an existing demodulator.
+    pub fn from_demodulator(mode: Mode, demodulator: Demodulator<I>) -> Self {
+        Self {
+            events: Events::new(mode, demodulator),
+        }
+    }
+
+    /// Assume the samples begin directly at the image data and skip searching
+    /// for a header.
+    ///
+    /// Decoding starts immediately at the first line's timing sequence. Use
+    /// this when the signal carries no detectable header, or when acquisition
+    /// has already been performed upstream. After the first image completes,
+    /// the decoder searches for further images as usual. [`Mode::Auto`]
+    /// cannot be detected without a header and decodes as [`Mode::Robot36`].
+    pub fn without_header(mut self) -> Self {
+        self.events.skip_header();
+        self
+    }
+
+    /// Stream scanlines as they are recovered, grouped into images by
+    /// [`Event::ImageStart`] and [`Event::ImageEnd`] markers.
+    pub fn events(self) -> Events<I> {
+        self.events
+    }
+
+    /// Assemble and stream whole images, one at a time.
+    pub fn images(self) -> Images<I> {
+        Images {
+            events: self.events,
+        }
+    }
+}
+
+/// The event stream of a [`Decoder`]: scanlines as they are recovered,
+/// grouped into images by [`Event::ImageStart`] and [`Event::ImageEnd`]
+/// markers. It holds at most about one line group at a time — never the
+/// whole frequency track or image.
+pub struct Events<I: Iterator<Item = i16>> {
     demodulator: Demodulator<I>,
     sample_rate: u32,
     /// The mode requested at construction, possibly [`Mode::Auto`].
@@ -165,24 +212,15 @@ struct SequenceData {
     tone_hz: Vec<u32>,
 }
 
-impl<I: Iterator<Item = i16>> RowDecoder<I> {
-    /// Create a `RowDecoder` that scans a stream of PCM samples for images in
-    /// the given mode.
-    ///
-    /// With [`Mode::Auto`], the mode of each image is detected from its
-    /// header's VIS code, and [`ImageInfo`] reports the detected mode.
-    ///
-    /// `sample_rate` must be greater than zero. Construction never fails:
-    /// finding images is deferred to iteration.
-    pub fn new(mode: Mode, samples: I, sample_rate: u32) -> Self {
-        let sample_rate = sample_rate.max(1);
+impl<I: Iterator<Item = i16>> Events<I> {
+    fn new(mode: Mode, demodulator: Demodulator<I>) -> Self {
         let active = match mode {
             Mode::Auto => Mode::Robot36,
             mode => mode,
         };
         Self {
-            demodulator: Demodulator::new(samples, sample_rate),
-            sample_rate,
+            sample_rate: demodulator.sample_rate(),
+            demodulator,
             requested_mode: mode,
             mode: active,
             layout: active.layout(),
@@ -199,26 +237,13 @@ impl<I: Iterator<Item = i16>> RowDecoder<I> {
         }
     }
 
-    /// Create a `RowDecoder` for a stream whose samples begin at the image
-    /// data, with no header to skip.
-    ///
-    /// Decoding starts immediately at the first line's timing sequence: the
-    /// first event is an [`Event::ImageStart`], followed by the image's rows.
-    /// Use this when the signal carries no detectable header, or when
-    /// acquisition has already been performed upstream and the samples are
-    /// aligned to the first line. After the image completes, the decoder
-    /// resumes searching for further images exactly as [`new`](Self::new)
-    /// does.
-    ///
-    /// [`Mode::Auto`] cannot be detected without a header and decodes as
-    /// [`Mode::Robot36`].
-    pub fn without_header(mode: Mode, samples: I, sample_rate: u32) -> Self {
-        let mut decoder = Self::new(mode, samples, sample_rate);
-        decoder
-            .events
-            .push_back(Event::ImageStart(decoder.image_info()));
-        decoder.state = State::Decoding;
-        decoder
+    /// Begin decoding at the first line's timing sequence instead of
+    /// searching for a header.
+    fn skip_header(&mut self) {
+        if matches!(self.state, State::Searching) {
+            self.events.push_back(Event::ImageStart(self.image_info()));
+            self.state = State::Decoding;
+        }
     }
 
     /// Metadata for the mode being decoded.
@@ -703,7 +728,7 @@ fn yuv_row(luma: &[u8], chroma_red: &[u8], chroma_blue: &[u8]) -> Vec<RgbPixel> 
         .collect()
 }
 
-impl<I: Iterator<Item = i16>> Iterator for RowDecoder<I> {
+impl<I: Iterator<Item = i16>> Iterator for Events<I> {
     type Item = Event;
 
     fn next(&mut self) -> Option<Event> {
@@ -717,6 +742,87 @@ impl<I: Iterator<Item = i16>> Iterator for RowDecoder<I> {
                 State::Decoding => self.decode_step(),
             }
         }
+    }
+}
+
+/// Whole images assembled from a [`Decoder`]'s event stream, yielded one at
+/// a time. Unlike [`Events`], this buffers a full image in memory.
+pub struct Images<I: Iterator<Item = i16>> {
+    events: Events<I>,
+}
+
+impl<I: Iterator<Item = i16>> Iterator for Images<I> {
+    type Item = DecodedImage;
+
+    fn next(&mut self) -> Option<DecodedImage> {
+        let info = loop {
+            if let Event::ImageStart(info) = self.events.next()? {
+                break info;
+            }
+        };
+
+        let mut pixels = vec![RgbPixel::new(0, 0, 0); info.width() * info.height()];
+        let mut complete = false;
+        loop {
+            match self.events.next() {
+                Some(Event::Row(row)) => {
+                    let start = row.index() * info.width();
+                    pixels[start..start + info.width()].copy_from_slice(row.pixels());
+                }
+                Some(Event::ImageEnd { complete: flag }) => {
+                    complete = flag;
+                    break;
+                }
+                Some(Event::ImageStart(_)) | None => break,
+            }
+        }
+
+        Some(DecodedImage {
+            mode: info.mode(),
+            width: info.width(),
+            height: info.height(),
+            complete,
+            pixels,
+        })
+    }
+}
+
+/// One whole image assembled from a [`Decoder`]'s event stream.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DecodedImage {
+    mode: Mode,
+    width: usize,
+    height: usize,
+    complete: bool,
+    pixels: Vec<RgbPixel>,
+}
+
+impl DecodedImage {
+    /// The SSTV mode the image was transmitted in.
+    pub fn mode(&self) -> Mode {
+        self.mode
+    }
+
+    /// The image width in pixels.
+    pub fn width(&self) -> usize {
+        self.width
+    }
+
+    /// The image height in pixels.
+    pub fn height(&self) -> usize {
+        self.height
+    }
+
+    /// Whether every scanline was decoded. `false` if the image was truncated
+    /// before completion (for example, the signal faded out).
+    pub fn complete(&self) -> bool {
+        self.complete
+    }
+
+    /// The pixels in row-major order, always `width() * height()` of them.
+    /// Rows the signal did not carry are black.
+    pub fn pixels(&self) -> &[RgbPixel] {
+        &self.pixels
     }
 }
 
@@ -771,25 +877,6 @@ mod tests {
         total as f64 / (a.len() as f64 * 3.0)
     }
 
-    /// One image reassembled from the decoder's event stream.
-    struct DecodedImage {
-        #[allow(dead_code)]
-        info: ImageInfo,
-        rows: Vec<RgbRow>,
-        complete: bool,
-    }
-
-    impl DecodedImage {
-        /// Flatten the rows into a single raster-order pixel buffer.
-        fn pixels(&self) -> Vec<RgbPixel> {
-            let mut pixels = Vec::with_capacity(self.rows.len() * WIDTH);
-            for row in &self.rows {
-                pixels.extend_from_slice(row.pixels());
-            }
-            pixels
-        }
-    }
-
     /// The number of samples occupied by our encoder's header at a sample rate.
     fn header_sample_count(sample_rate: u32) -> usize {
         let total_ns: u64 = Mode::Robot36
@@ -799,32 +886,11 @@ mod tests {
         (total_ns * sample_rate as u64 / 1_000_000_000) as usize
     }
 
-    /// Drive a decoder to completion, grouping its events into images.
-    fn collect_images<I: Iterator<Item = i16>>(decoder: RowDecoder<I>) -> Vec<DecodedImage> {
-        let mut images = Vec::new();
-        let mut current: Option<(ImageInfo, Vec<RgbRow>)> = None;
-
-        for event in decoder {
-            match event {
-                Event::ImageStart(info) => current = Some((info, Vec::new())),
-                Event::Row(row) => {
-                    let (_, rows) = current
-                        .as_mut()
-                        .expect("Row without a preceding ImageStart");
-                    rows.push(row);
-                }
-                Event::ImageEnd { complete } => {
-                    let (info, rows) = current.take().expect("ImageEnd without an ImageStart");
-                    images.push(DecodedImage {
-                        info,
-                        rows,
-                        complete,
-                    });
-                }
-            }
-        }
-
-        images
+    fn assert_matches(decoded: &DecodedImage, image: &[RgbPixel]) {
+        assert!(decoded.complete(), "image should decode completely");
+        assert_eq!(decoded.pixels().len(), WIDTH * HEIGHT);
+        let error = mean_abs_error(image, decoded.pixels());
+        assert!(error < 12.0, "mean abs error {error} too high");
     }
 
     #[test]
@@ -833,14 +899,14 @@ mod tests {
         let mut samples = encode(&image, 48_000);
         samples.extend(encode(&image, 48_000));
 
-        let decoded = collect_images(RowDecoder::new(Mode::Robot36, samples.into_iter(), 48_000));
+        let decoded: Vec<DecodedImage> =
+            Decoder::from_samples(Mode::Robot36, samples.into_iter(), 48_000)
+                .images()
+                .collect();
 
         assert_eq!(decoded.len(), 2, "expected two images");
         for decoded_image in &decoded {
-            assert!(decoded_image.complete);
-            assert_eq!(decoded_image.rows.len(), HEIGHT);
-            let error = mean_abs_error(&image, &decoded_image.pixels());
-            assert!(error < 12.0, "mean abs error {error} too high");
+            assert_matches(decoded_image, &image);
         }
     }
 
@@ -852,14 +918,14 @@ mod tests {
         samples.extend(std::vec![0i16; 24_000]);
         samples.extend(encode(&image, 48_000));
 
-        let decoded = collect_images(RowDecoder::new(Mode::Robot36, samples.into_iter(), 48_000));
+        let decoded: Vec<DecodedImage> =
+            Decoder::from_samples(Mode::Robot36, samples.into_iter(), 48_000)
+                .images()
+                .collect();
 
         assert_eq!(decoded.len(), 2, "expected two images across the gap");
         for decoded_image in &decoded {
-            assert!(decoded_image.complete);
-            assert_eq!(decoded_image.rows.len(), HEIGHT);
-            let error = mean_abs_error(&image, &decoded_image.pixels());
-            assert!(error < 12.0, "mean abs error {error} too high");
+            assert_matches(decoded_image, &image);
         }
     }
 
@@ -871,31 +937,53 @@ mod tests {
         let header = header_sample_count(48_000);
         let image_samples: Vec<i16> = full.into_iter().skip(header).collect();
 
-        let decoded = collect_images(RowDecoder::without_header(
-            Mode::Robot36,
-            image_samples.into_iter(),
-            48_000,
-        ));
-
-        assert_eq!(decoded.len(), 1, "expected exactly one image");
-        let decoded_image = &decoded[0];
-        assert!(decoded_image.complete, "image should decode completely");
-        assert_eq!(decoded_image.rows.len(), HEIGHT, "should decode all rows");
-        // Rows arrive top to bottom.
-        for (y, row) in decoded_image.rows.iter().enumerate() {
-            assert_eq!(row.index(), y, "row {y} out of order");
+        let mut rows = 0;
+        let mut complete = None;
+        let mut decoded: Vec<RgbPixel> = Vec::new();
+        let events = Decoder::from_samples(Mode::Robot36, image_samples.into_iter(), 48_000)
+            .without_header()
+            .events();
+        for event in events {
+            match event {
+                Event::ImageStart(info) => assert_eq!(info.mode(), Mode::Robot36),
+                Event::Row(row) => {
+                    assert_eq!(row.index(), rows, "row out of order");
+                    rows += 1;
+                    decoded.extend_from_slice(row.pixels());
+                }
+                Event::ImageEnd { complete: flag } => complete = Some(flag),
+            }
         }
-        let error = mean_abs_error(&image, &decoded_image.pixels());
+
+        assert_eq!(complete, Some(true), "image should decode completely");
+        assert_eq!(rows, HEIGHT, "should decode all rows");
+        let error = mean_abs_error(&image, &decoded);
         assert!(error < 12.0, "mean abs error {error} too high");
     }
 
     #[test]
+    fn decoding_from_a_demodulator_matches_decoding_from_samples() {
+        let image = test_image();
+        let samples = encode(&image, 48_000);
+
+        let demodulator = crate::Demodulator::new(samples.clone().into_iter(), 48_000);
+        let from_demodulator: Vec<Event> = Decoder::from_demodulator(Mode::Robot36, demodulator)
+            .events()
+            .collect();
+        let from_samples: Vec<Event> =
+            Decoder::from_samples(Mode::Robot36, samples.into_iter(), 48_000)
+                .events()
+                .collect();
+
+        assert_eq!(from_demodulator, from_samples);
+    }
+
+    #[test]
     fn silence_yields_no_images() {
-        let decoded = collect_images(RowDecoder::new(
-            Mode::Robot36,
-            std::vec![0i16; 48_000].into_iter(),
-            48_000,
-        ));
-        assert!(decoded.is_empty(), "silence should not produce an image");
+        let decoded =
+            Decoder::from_samples(Mode::Robot36, std::vec![0i16; 48_000].into_iter(), 48_000)
+                .images()
+                .next();
+        assert!(decoded.is_none(), "silence should not produce an image");
     }
 }

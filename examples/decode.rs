@@ -14,7 +14,7 @@ use std::env;
 use std::fs::File;
 use std::io::{Cursor, Read};
 
-use sstv::{Event, Mode, RgbPixel, RowDecoder};
+use sstv::{Decoder, Mode, RgbPixel};
 
 fn parse_mode(name: &str) -> Mode {
     Mode::ALL
@@ -37,29 +37,26 @@ fn main() {
     let (samples, sample_rate) = read_samples(&input);
     println!("read {} samples at {sample_rate} Hz", samples.len());
 
-    // Reconstruct the first image in the stream from the decoder's events.
-    let mut decoded: Vec<RgbPixel> = Vec::new();
-    let mut info = None;
-    for event in RowDecoder::new(mode, samples.into_iter(), sample_rate) {
-        match event {
-            Event::ImageStart(_) if !decoded.is_empty() => break,
-            Event::ImageStart(image_info) => info = Some(image_info),
-            Event::Row(row) => decoded.extend_from_slice(row.pixels()),
-            Event::ImageEnd { .. } => break,
-        }
-    }
-    let Some(info) = info else {
+    let Some(image) = Decoder::from_samples(mode, samples.into_iter(), sample_rate)
+        .images()
+        .next()
+    else {
         panic!("no image found in {input}");
     };
-    let (width, height) = (info.width() as u32, info.height() as u32);
     println!(
-        "decoded {} pixels ({} of {height} rows, {:?})",
-        decoded.len(),
-        decoded.len() / width as usize,
-        info.mode(),
+        "decoded a {}x{} {:?} image (complete: {})",
+        image.width(),
+        image.height(),
+        image.mode(),
+        image.complete(),
     );
 
-    save_image(&decoded, width, height, &output);
+    save_image(
+        image.pixels(),
+        image.width() as u32,
+        image.height() as u32,
+        &output,
+    );
     println!("wrote {output}");
 }
 

@@ -1,7 +1,7 @@
 //! Round-trip test for every mode: encode a test image, decode the samples
 //! back, and compare against the original.
 
-use sstv::{Encoder, Event, Mode, RgbPixel, RowDecoder, Synthesizer};
+use sstv::{Decoder, Encoder, Event, Mode, RgbPixel, Synthesizer};
 
 const SAMPLE_RATE: u32 = 24_000;
 
@@ -44,7 +44,8 @@ fn assert_decodes(decoder_mode: Mode, samples: &[i16], mode: Mode, image: &[RgbP
 
     let mut decoded: Vec<RgbPixel> = Vec::new();
     let mut complete = None;
-    for event in RowDecoder::new(decoder_mode, samples.iter().copied(), SAMPLE_RATE) {
+    for event in Decoder::from_samples(decoder_mode, samples.iter().copied(), SAMPLE_RATE).events()
+    {
         match event {
             Event::ImageStart(info) => {
                 assert_eq!(info.mode(), mode);

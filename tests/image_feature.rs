@@ -1,6 +1,6 @@
 //! Tests for the `image` feature: encoding images loaded from disk.
 
-use sstv::{Encoder, Error, Event, Mode, RowDecoder, Synthesizer};
+use sstv::{Decoder, Encoder, Error, Event, Mode, Synthesizer};
 
 const SAMPLE_RATE: u32 = 24_000;
 
@@ -8,7 +8,7 @@ const SAMPLE_RATE: u32 = 24_000;
 fn decode(mode: Mode, samples: Vec<i16>) -> Vec<sstv::RgbPixel> {
     let mut decoded = Vec::new();
     let mut complete = None;
-    for event in RowDecoder::new(mode, samples.into_iter(), SAMPLE_RATE) {
+    for event in Decoder::from_samples(mode, samples.into_iter(), SAMPLE_RATE).events() {
         match event {
             Event::ImageStart(_) => {}
             Event::Row(row) => decoded.extend_from_slice(row.pixels()),

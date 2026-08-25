@@ -90,6 +90,11 @@ impl<I: Iterator<Item = i16>> Demodulator<I> {
         }
     }
 
+    /// The sample rate the demodulator was constructed with, in Hz.
+    pub fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+
     fn calculate_frequency(&mut self, current_sample: i16, index: u64) -> Option<Frequency> {
         // Relax the running extremes toward the midline, then re-expand to
         // include the new sample. This adaptive envelope keeps the midline
