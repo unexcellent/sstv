@@ -13,7 +13,7 @@ pub struct Tone {
 
 impl Tone {
     /// Create a new Tone
-    pub fn new(frequency: Frequency, duration: Duration) -> Self {
+    pub const fn new(frequency: Frequency, duration: Duration) -> Self {
         Self {
             frequency,
             duration,
@@ -134,7 +134,7 @@ mod tests {
         assert_eq!(dds.len(), reference.len(), "sample counts differ");
 
         for (i, (&dds_sample, &ref_sample)) in dds.iter().zip(reference.iter()).enumerate() {
-            let deviation = (dds_sample - ref_sample as i16).abs();
+            let deviation = (dds_sample - ref_sample).abs();
             assert!(
                 deviation <= MAX_SAMPLE_DEVIATION,
                 "sample {i}: DDS={dds_sample}, reference={ref_sample}, deviation={deviation} > {MAX_SAMPLE_DEVIATION}",

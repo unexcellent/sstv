@@ -1,10 +1,10 @@
-//! Decode a Robot36 WAV back into an image.
+//! Decode an SSTV WAV back into an image.
 //!
 //! Accepts a plain `.wav` or a gzipped `.wav.gz` and writes the decoded image
 //! to the given path (format inferred from its extension).
 //!
 //! ```text
-//! cargo run --example decode -- examples/patch-robot36-pysstv.wav.gz local/decoded.png
+//! cargo run --example decode -- tests/assets/real_recording.wav.gz local/decoded.png [mode]
 //! ```
 //!
 //! Rows that could not be decoded are left black, so a misaligned or truncated
@@ -14,40 +14,52 @@ use std::env;
 use std::fs::File;
 use std::io::{Cursor, Read};
 
-use sstv::{Event, RgbPixel, RowDecoder};
+use sstv::{Event, Mode, RgbPixel, RowDecoder};
 
-const WIDTH: u32 = 320;
-const HEIGHT: u32 = 240;
+fn parse_mode(name: &str) -> Mode {
+    Mode::ALL
+        .into_iter()
+        .chain([Mode::Auto])
+        .find(|mode| format!("{mode:?}").eq_ignore_ascii_case(name))
+        .unwrap_or_else(|| panic!("unknown mode {name}, expected one of {:?}", Mode::ALL))
+}
 
 fn main() {
     let mut args = env::args().skip(1);
-    let input = args
+    let usage = "usage: decode <input.wav|input.wav.gz> <output image> [mode]";
+    let input = args.next().expect(usage);
+    let output = args.next().expect(usage);
+    let mode = args
         .next()
-        .expect("usage: decode <input.wav|input.wav.gz> <output image>");
-    let output = args
-        .next()
-        .expect("usage: decode <input.wav|input.wav.gz> <output image>");
+        .map(|name| parse_mode(&name))
+        .unwrap_or(Mode::Auto);
 
     let (samples, sample_rate) = read_samples(&input);
     println!("read {} samples at {sample_rate} Hz", samples.len());
 
     // Reconstruct the first image in the stream from the decoder's events.
     let mut decoded: Vec<RgbPixel> = Vec::new();
-    for event in RowDecoder::new(samples.into_iter(), sample_rate) {
+    let mut info = None;
+    for event in RowDecoder::new(mode, samples.into_iter(), sample_rate) {
         match event {
             Event::ImageStart(_) if !decoded.is_empty() => break,
-            Event::ImageStart(_) => {}
+            Event::ImageStart(image_info) => info = Some(image_info),
             Event::Row(row) => decoded.extend_from_slice(row.pixels()),
             Event::ImageEnd { .. } => break,
         }
     }
+    let Some(info) = info else {
+        panic!("no image found in {input}");
+    };
+    let (width, height) = (info.width() as u32, info.height() as u32);
     println!(
-        "decoded {} pixels ({} of {HEIGHT} rows)",
+        "decoded {} pixels ({} of {height} rows, {:?})",
         decoded.len(),
-        decoded.len() / WIDTH as usize
+        decoded.len() / width as usize,
+        info.mode(),
     );
 
-    save_image(&decoded, &output);
+    save_image(&decoded, width, height, &output);
     println!("wrote {output}");
 }
 
@@ -77,11 +89,11 @@ fn read_samples(path: &str) -> (Vec<i16>, u32) {
     (samples, sample_rate)
 }
 
-fn save_image(pixels: &[RgbPixel], path: &str) {
-    let mut image = image::RgbImage::new(WIDTH, HEIGHT);
-    for (index, pixel) in pixels.iter().take((WIDTH * HEIGHT) as usize).enumerate() {
-        let x = index as u32 % WIDTH;
-        let y = index as u32 / WIDTH;
+fn save_image(pixels: &[RgbPixel], width: u32, height: u32, path: &str) {
+    let mut image = image::RgbImage::new(width, height);
+    for (index, pixel) in pixels.iter().take((width * height) as usize).enumerate() {
+        let x = index as u32 % width;
+        let y = index as u32 / width;
         image.put_pixel(x, y, image::Rgb([pixel.red(), pixel.green(), pixel.blue()]));
     }
     image.save(path).expect("save output image");

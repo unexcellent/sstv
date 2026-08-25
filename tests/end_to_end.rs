@@ -37,6 +37,9 @@ fn test_image() -> Vec<RgbPixel> {
 
 /// Encode an image into a full Robot36 transmission (header + image tones).
 fn encode(image: &[RgbPixel]) -> Vec<i16> {
+    // `to_vec` is required: `Encoder::new` needs an owned (`'static`)
+    // iterator, so borrowing with `iter().copied()` would not compile.
+    #[allow(clippy::unnecessary_to_owned)]
     let encoder = Encoder::new(Mode::Robot36, image.to_vec().into_iter()).unwrap();
     Synthesizer::new(encoder, SAMPLE_RATE).collect()
 }
@@ -110,7 +113,7 @@ fn decode_images(samples: Vec<i16>) -> Vec<DecodedImage> {
     let mut images = Vec::new();
     let mut current: Option<(ImageInfo, Vec<RgbRow>)> = None;
 
-    for event in RowDecoder::new(samples.into_iter(), SAMPLE_RATE) {
+    for event in RowDecoder::new(Mode::Robot36, samples.into_iter(), SAMPLE_RATE) {
         match event {
             Event::ImageStart(info) => current = Some((info, Vec::new())),
             Event::Row(row) => {
@@ -213,7 +216,7 @@ fn pure_noise_should_not_be_decoded_as_an_image() {
     let pure_noise = add_noise(&vec![0; samples.len()], 0x1);
 
     assert_eq!(
-        RowDecoder::new(pure_noise.into_iter(), SAMPLE_RATE).next(),
+        RowDecoder::new(Mode::Robot36, pure_noise.into_iter(), SAMPLE_RATE).next(),
         None
     );
 }
