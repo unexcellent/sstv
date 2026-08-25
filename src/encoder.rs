@@ -37,6 +37,40 @@ impl Encoder {
     }
 }
 
+#[cfg(feature = "image")]
+impl Encoder {
+    /// Encode an image loaded with the `image` crate.
+    ///
+    /// The image is resized to the mode's resolution if it does not match,
+    /// stretching it to fit.
+    pub fn from_image(mode: Mode, image: &image::DynamicImage) -> Result<Self> {
+        let (width, height) = (mode.image_width(), mode.image_height());
+        let image = if (image.width(), image.height()) == (width, height) {
+            image.to_rgb8()
+        } else {
+            image
+                .resize_exact(width, height, image::imageops::FilterType::Triangle)
+                .to_rgb8()
+        };
+        let pixels: Vec<RgbPixel> = image
+            .pixels()
+            .map(|pixel| RgbPixel::new(pixel[0], pixel[1], pixel[2]))
+            .collect();
+        Self::new(mode, pixels.into_iter())
+    }
+
+    /// Encode an image file in any format the `image` crate can read.
+    ///
+    /// ```no_run
+    /// use sstv::{Encoder, Mode};
+    ///
+    /// let encoder = Encoder::from_image_path(Mode::Robot36, "image.png").expect("load image");
+    /// ```
+    pub fn from_image_path(mode: Mode, path: impl AsRef<std::path::Path>) -> Result<Self> {
+        Self::from_image(mode, &image::open(path)?)
+    }
+}
+
 impl Iterator for Encoder {
     type Item = Tone;
 

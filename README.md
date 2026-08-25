@@ -4,6 +4,21 @@ This crate can be used to encode images into slow-scan television signals (and d
 
 Supported modes (encoding and decoding): Scottie 1/2/DX, Martin 1/2, Robot 36/72, Wrasse SC2-180, Pasokon P3/P5/P7 and PD-50/90/120/160/180/240/290.
 
+# Features
+
+The core encoder and decoder are `no_std` (plus `alloc`) and stay that way. Optional features add conveniences on top:
+
+- `std` (default): APIs that need the Rust standard library.
+- `image` (implies `std`): encode images straight from disk via the `image` crate — `Encoder::from_image_path(Mode::Pd120, "photo.png")`. Images are resized to the mode's resolution.
+
+Embedded users disable the defaults:
+
+```toml
+sstv = { version = "0.1", default-features = false }
+```
+
+The minimal build is checked with `cargo build --no-default-features --target thumbv7em-none-eabihf`.
+
 # Mode specifications
 
 All mode timings follow the "Dayton paper": JL Barber (N7CXI), *Proposal for SSTV Mode Specifications*, presented at the Dayton SSTV forum, 20 May 2000. The code is structured to mirror the paper: each mode family lives in its own module under `src/modes/`, transcribing the paper's per-line timing tables (sync pulses, porches, separator pulses and channel scans). The encoder and decoder are generic over these timing sequences, so adding another mode from the paper only means transcribing its table.
@@ -41,5 +56,5 @@ for event in RowDecoder::new(Mode::Auto, samples, 48000) {
 
 # Planned Features
 
-- using rust features to optionally allow std crates (like image and hound)
+- reading and writing WAV files behind a `wav` feature
 - upload to crates.io

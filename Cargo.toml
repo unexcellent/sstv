@@ -3,8 +3,17 @@ name = "sstv"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = ["std"]
+# APIs that need the Rust standard library. Disable for no_std targets:
+# sstv = { version = "...", default-features = false }
+std = []
+# Encoding images loaded from disk via the `image` crate. Implies `std`.
+image = ["std", "dep:image"]
+
 [dependencies]
 libm = "0.2.8"
+image = { version = "0.25.1", optional = true }
 
 [dev-dependencies]
 image = "0.25.1"
@@ -13,3 +22,14 @@ mp3lame-encoder = "0.2.2"
 flate2 = "1.0.28"
 rand = "0.9"
 rand_distr = "0.5"
+
+[[example]]
+name = "encode"
+required-features = ["image"]
+
+[[test]]
+name = "image_feature"
+required-features = ["image"]
+
+[package.metadata.docs.rs]
+all-features = true
