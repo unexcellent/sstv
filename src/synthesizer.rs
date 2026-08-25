@@ -57,13 +57,9 @@ impl<I: Iterator<Item = Tone>> Synthesizer<I> {
     ///
     /// `sample_rate` must be greater than zero.
     pub fn new(tones: I, sample_rate: u32) -> Self {
-        let samp_rate = match sample_rate {
-            0 => 1,
-            _ => sample_rate,
-        };
         Self {
             tones,
-            sample_rate: samp_rate,
+            sample_rate: sample_rate.max(1),
             phase: 0,
             phase_increment: 0,
             samples_remaining: 0,

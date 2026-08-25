@@ -16,6 +16,11 @@ impl Frequency {
     pub const fn hz(self) -> u32 {
         self.hertz
     }
+
+    /// Return the absolute difference between this and another Frequency.
+    pub const fn abs_diff(self, other: Self) -> Self {
+        Self::from_hz(self.hz().abs_diff(other.hz()))
+    }
 }
 
 impl Add for Frequency {
