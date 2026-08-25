@@ -122,30 +122,37 @@ where
 
     /// The pixel value a scan step transmits at horizontal position `x`.
     fn value(&self, sequence: usize, channel: Channel, x: usize) -> u8 {
-        // The first buffered line the running sequence scans from.
         let base = sequence * self.layout.lines_per_sequence;
-        let rgb = |line: usize| self.lines[line][x];
-        let yuv = |line: usize| YuvPixel::from(rgb(line));
-        // Colour-difference scans average over all buffered lines where the
-        // mode calls for it (Robot 36 and PD modes).
-        let chroma = |component: fn(YuvPixel) -> u8| match self.layout.color {
+        match channel {
+            Channel::Red => self.rgb(base, x).red(),
+            Channel::Green => self.rgb(base, x).green(),
+            Channel::Blue => self.rgb(base, x).blue(),
+            Channel::Y => self.yuv(base, x).luma(),
+            Channel::YSecond => self.yuv(base + 1, x).luma(),
+            Channel::RY => self.chroma(base, x, YuvPixel::chroma_red),
+            Channel::BY => self.chroma(base, x, YuvPixel::chroma_blue),
+        }
+    }
+
+    fn rgb(&self, line: usize, x: usize) -> RgbPixel {
+        self.lines[line][x]
+    }
+
+    fn yuv(&self, line: usize, x: usize) -> YuvPixel {
+        YuvPixel::from(self.rgb(line, x))
+    }
+
+    /// One colour-difference component, averaged over all buffered lines
+    /// where the mode calls for it (Robot 36 and PD modes).
+    fn chroma(&self, line: usize, x: usize, component: fn(YuvPixel) -> u8) -> u8 {
+        match self.layout.color {
             ColorMode::YuvAveragedPair | ColorMode::YuvSharedPair => {
                 let sum: u16 = (0..self.lines.len())
-                    .map(|line| component(yuv(line)) as u16)
+                    .map(|buffered| component(self.yuv(buffered, x)) as u16)
                     .sum();
                 (sum / self.lines.len() as u16) as u8
             }
-            _ => component(yuv(base)),
-        };
-
-        match channel {
-            Channel::Red => rgb(base).red(),
-            Channel::Green => rgb(base).green(),
-            Channel::Blue => rgb(base).blue(),
-            Channel::Y => yuv(base).luma(),
-            Channel::YSecond => yuv(base + 1).luma(),
-            Channel::RY => chroma(YuvPixel::chroma_red),
-            Channel::BY => chroma(YuvPixel::chroma_blue),
+            _ => component(self.yuv(line, x)),
         }
     }
 }
