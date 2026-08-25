@@ -46,8 +46,9 @@ impl Iterator for Encoder {
 }
 
 /// Where the encoder is within the transmission.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum Phase {
+    NotStarted,
     /// Emitting the mode's header tones.
     Header(usize),
     /// Emitting the repeating timing sequences. `line` is the index of the
@@ -59,6 +60,68 @@ enum Phase {
         pixel: usize,
     },
     Finished,
+}
+
+impl Phase {
+    /// Step to the phase that emits the next tone.
+    fn advance(&mut self, mode: Mode, layout: &Layout) {
+        match *self {
+            Self::NotStarted => *self = Self::Header(0),
+            Self::Header(index) => {
+                *self = if mode.header_tone(index + 1).is_some() {
+                    Self::Header(index + 1)
+                } else {
+                    Self::Line {
+                        line: 0,
+                        sequence: 0,
+                        step: 0,
+                        pixel: 0,
+                    }
+                };
+            }
+            Self::Line {
+                line,
+                sequence,
+                step,
+                pixel,
+            } => {
+                let steps = layout.sequences[sequence];
+                let mid_scan = matches!(steps[step], Step::Scan(..)) && pixel + 1 < layout.width;
+                *self = if mid_scan {
+                    Self::Line {
+                        line,
+                        sequence,
+                        step,
+                        pixel: pixel + 1,
+                    }
+                } else if step + 1 < steps.len() {
+                    Self::Line {
+                        line,
+                        sequence,
+                        step: step + 1,
+                        pixel: 0,
+                    }
+                } else if sequence + 1 < layout.sequences.len() {
+                    Self::Line {
+                        line,
+                        sequence: sequence + 1,
+                        step: 0,
+                        pixel: 0,
+                    }
+                } else if line + layout.lines_per_cycle() < layout.height {
+                    Self::Line {
+                        line: line + layout.lines_per_cycle(),
+                        sequence: 0,
+                        step: 0,
+                        pixel: 0,
+                    }
+                } else {
+                    Self::Finished
+                };
+            }
+            Self::Finished => (),
+        }
+    }
 }
 
 /// Encodes any mode by walking its [`Layout`]: the header, then for each
@@ -96,7 +159,7 @@ where
             layout,
             pixels,
             lines,
-            phase: Phase::Header(0),
+            phase: Phase::NotStarted,
         })
     }
 
@@ -120,15 +183,15 @@ where
 
     /// The pixel value a scan step transmits at horizontal position `x`.
     fn value(&self, sequence: usize, channel: Channel, x: usize) -> u8 {
-        let base = sequence * self.layout.lines_per_sequence;
+        let first_line = sequence * self.layout.lines_per_sequence;
         match channel {
-            Channel::Red => self.rgb(base, x).red(),
-            Channel::Green => self.rgb(base, x).green(),
-            Channel::Blue => self.rgb(base, x).blue(),
-            Channel::Y => self.yuv(base, x).luma(),
-            Channel::YSecond => self.yuv(base + 1, x).luma(),
-            Channel::RY => self.chroma(base, x, YuvPixel::chroma_red),
-            Channel::BY => self.chroma(base, x, YuvPixel::chroma_blue),
+            Channel::Red => self.rgb(first_line, x).red(),
+            Channel::Green => self.rgb(first_line, x).green(),
+            Channel::Blue => self.rgb(first_line, x).blue(),
+            Channel::Y => self.yuv(first_line, x).luma(),
+            Channel::YSecond => self.yuv(first_line + 1, x).luma(),
+            Channel::RY => self.chroma(first_line, x, YuvPixel::chroma_red),
+            Channel::BY => self.chroma(first_line, x, YuvPixel::chroma_blue),
         }
     }
 
@@ -153,6 +216,44 @@ where
             _ => component(self.yuv(line, x)),
         }
     }
+
+    /// Whether the phase just moved onto the first tone of a line cycle whose
+    /// lines are not buffered yet. The first cycle's lines are already
+    /// buffered at construction.
+    fn needs_next_lines(&self) -> bool {
+        matches!(
+            self.phase,
+            Phase::Line {
+                line,
+                sequence: 0,
+                step: 0,
+                pixel: 0,
+            } if line > 0
+        )
+    }
+
+    /// The tone belonging to the current phase.
+    fn emit(&self) -> Option<Tone> {
+        match self.phase {
+            Phase::NotStarted | Phase::Finished => None,
+            Phase::Header(index) => self.mode.header_tone(index),
+            Phase::Line {
+                sequence,
+                step,
+                pixel,
+                ..
+            } => match self.layout.sequences[sequence][step] {
+                Step::Tone(tone) => Some(tone),
+                Step::Scan(channel, duration) => {
+                    let value = self.value(sequence, channel, pixel);
+                    Some(Tone::new(
+                        value_frequency(value),
+                        duration / self.layout.width as u32,
+                    ))
+                }
+            },
+        }
+    }
 }
 
 impl<I> Iterator for LineEncoder<I>
@@ -162,81 +263,13 @@ where
     type Item = Tone;
 
     fn next(&mut self) -> Option<Tone> {
-        loop {
-            match self.phase {
-                Phase::Header(index) => match self.mode.header_tone(index) {
-                    Some(tone) => {
-                        self.phase = Phase::Header(index + 1);
-                        return Some(tone);
-                    }
-                    None => {
-                        self.phase = Phase::Line {
-                            line: 0,
-                            sequence: 0,
-                            step: 0,
-                            pixel: 0,
-                        }
-                    }
-                },
-                Phase::Line {
-                    line,
-                    sequence,
-                    step,
-                    pixel,
-                } => match self.layout.sequences[sequence].get(step) {
-                    Some(Step::Tone(tone)) => {
-                        self.phase = Phase::Line {
-                            line,
-                            sequence,
-                            step: step + 1,
-                            pixel: 0,
-                        };
-                        return Some(*tone);
-                    }
-                    Some(Step::Scan(channel, duration)) if pixel < self.layout.width => {
-                        let value = self.value(sequence, *channel, pixel);
-                        let tone =
-                            Tone::new(value_frequency(value), *duration / self.layout.width as u32);
-                        self.phase = Phase::Line {
-                            line,
-                            sequence,
-                            step,
-                            pixel: pixel + 1,
-                        };
-                        return Some(tone);
-                    }
-                    Some(Step::Scan(..)) => {
-                        self.phase = Phase::Line {
-                            line,
-                            sequence,
-                            step: step + 1,
-                            pixel: 0,
-                        }
-                    }
-                    None if sequence + 1 < self.layout.sequences.len() => {
-                        self.phase = Phase::Line {
-                            line,
-                            sequence: sequence + 1,
-                            step: 0,
-                            pixel: 0,
-                        }
-                    }
-                    None => {
-                        let next_line = line + self.layout.lines_per_cycle();
-                        if next_line >= self.layout.height || self.buffer_next_lines().is_none() {
-                            self.phase = Phase::Finished;
-                        } else {
-                            self.phase = Phase::Line {
-                                line: next_line,
-                                sequence: 0,
-                                step: 0,
-                                pixel: 0,
-                            };
-                        }
-                    }
-                },
-                Phase::Finished => return None,
-            }
+        self.phase.advance(self.mode, &self.layout);
+
+        let pixel_iterator_is_empty = self.needs_next_lines() && self.buffer_next_lines().is_none();
+        if pixel_iterator_is_empty {
+            self.phase = Phase::Finished;
         }
+
+        self.emit()
     }
 }
