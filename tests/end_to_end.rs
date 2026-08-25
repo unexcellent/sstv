@@ -37,6 +37,9 @@ fn test_image() -> Vec<RgbPixel> {
 
 /// Encode an image into a full Robot36 transmission (header + image tones).
 fn encode(image: &[RgbPixel]) -> Vec<i16> {
+    // `to_vec` is required: `Encoder::new` needs an owned (`'static`)
+    // iterator, so borrowing with `iter().copied()` would not compile.
+    #[allow(clippy::unnecessary_to_owned)]
     let encoder = Encoder::new(Mode::Robot36, image.to_vec().into_iter()).unwrap();
     Synthesizer::new(encoder, SAMPLE_RATE).collect()
 }

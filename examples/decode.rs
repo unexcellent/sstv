@@ -19,6 +19,7 @@ use sstv::{Event, Mode, RgbPixel, RowDecoder};
 fn parse_mode(name: &str) -> Mode {
     Mode::ALL
         .into_iter()
+        .chain([Mode::Auto])
         .find(|mode| format!("{mode:?}").eq_ignore_ascii_case(name))
         .unwrap_or_else(|| panic!("unknown mode {name}, expected one of {:?}", Mode::ALL))
 }
@@ -31,26 +32,31 @@ fn main() {
     let mode = args
         .next()
         .map(|name| parse_mode(&name))
-        .unwrap_or(Mode::Robot36);
+        .unwrap_or(Mode::Auto);
 
     let (samples, sample_rate) = read_samples(&input);
     println!("read {} samples at {sample_rate} Hz", samples.len());
 
     // Reconstruct the first image in the stream from the decoder's events.
     let mut decoded: Vec<RgbPixel> = Vec::new();
+    let mut info = None;
     for event in RowDecoder::new(mode, samples.into_iter(), sample_rate) {
         match event {
             Event::ImageStart(_) if !decoded.is_empty() => break,
-            Event::ImageStart(_) => {}
+            Event::ImageStart(image_info) => info = Some(image_info),
             Event::Row(row) => decoded.extend_from_slice(row.pixels()),
             Event::ImageEnd { .. } => break,
         }
     }
-    let (width, height) = (mode.image_width(), mode.image_height());
+    let Some(info) = info else {
+        panic!("no image found in {input}");
+    };
+    let (width, height) = (info.width() as u32, info.height() as u32);
     println!(
-        "decoded {} pixels ({} of {height} rows)",
+        "decoded {} pixels ({} of {height} rows, {:?})",
         decoded.len(),
-        decoded.len() / width as usize
+        decoded.len() / width as usize,
+        info.mode(),
     );
 
     save_image(&decoded, width, height, &output);

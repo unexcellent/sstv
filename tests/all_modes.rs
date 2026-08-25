@@ -36,17 +36,15 @@ fn mean_abs_error(a: &[RgbPixel], b: &[RgbPixel]) -> f64 {
     total as f64 / (a.len() as f64 * 3.0)
 }
 
-fn round_trip(mode: Mode) {
+/// Decode `samples` with the given decoder mode and check the result against
+/// `image`, whose actual mode must be reported in the image info.
+fn assert_decodes(decoder_mode: Mode, samples: &[i16], mode: Mode, image: &[RgbPixel]) {
     let width = mode.image_width() as usize;
     let height = mode.image_height() as usize;
-    let image = test_image(width, height);
-
-    let encoder = Encoder::new(mode, image.clone().into_iter()).expect("construct encoder");
-    let samples: Vec<i16> = Synthesizer::new(encoder, SAMPLE_RATE).collect();
 
     let mut decoded: Vec<RgbPixel> = Vec::new();
     let mut complete = None;
-    for event in RowDecoder::new(mode, samples.into_iter(), SAMPLE_RATE) {
+    for event in RowDecoder::new(decoder_mode, samples.iter().copied(), SAMPLE_RATE) {
         match event {
             Event::ImageStart(info) => {
                 assert_eq!(info.mode(), mode);
@@ -63,8 +61,38 @@ fn round_trip(mode: Mode) {
 
     assert_eq!(complete, Some(true), "image should decode completely");
     assert_eq!(decoded.len(), width * height, "should decode every row");
-    let error = mean_abs_error(&image, &decoded);
+    let error = mean_abs_error(image, &decoded);
     assert!(error < MAX_ERROR, "mean abs error {error} too high");
+}
+
+/// Encode an image, then decode it back — once with the mode given explicitly
+/// and once detecting it from the header.
+fn round_trip(mode: Mode) {
+    let width = mode.image_width() as usize;
+    let height = mode.image_height() as usize;
+    let image = test_image(width, height);
+
+    let encoder = Encoder::new(mode, image.clone().into_iter()).expect("construct encoder");
+    let samples: Vec<i16> = Synthesizer::new(encoder, SAMPLE_RATE).collect();
+
+    assert_decodes(mode, &samples, mode, &image);
+    assert_decodes(Mode::Auto, &samples, mode, &image);
+}
+
+/// Encoding with `Auto` produces exactly the Robot 36 transmission.
+#[test]
+fn auto_encodes_as_robot36() {
+    let image = test_image(
+        Mode::Robot36.image_width() as usize,
+        Mode::Robot36.image_height() as usize,
+    );
+    let auto: Vec<_> = Encoder::new(Mode::Auto, image.clone().into_iter())
+        .expect("construct encoder")
+        .collect();
+    let robot36: Vec<_> = Encoder::new(Mode::Robot36, image.into_iter())
+        .expect("construct encoder")
+        .collect();
+    assert_eq!(auto, robot36);
 }
 
 #[test]

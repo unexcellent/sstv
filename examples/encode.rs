@@ -11,6 +11,7 @@ use std::env;
 fn parse_mode(name: &str) -> Mode {
     Mode::ALL
         .into_iter()
+        .chain([Mode::Auto])
         .find(|mode| format!("{mode:?}").eq_ignore_ascii_case(name))
         .unwrap_or_else(|| panic!("unknown mode {name}, expected one of {:?}", Mode::ALL))
 }

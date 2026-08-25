@@ -2,12 +2,12 @@ use alloc::collections::VecDeque;
 use alloc::{vec, vec::Vec};
 
 use crate::modes::layout::{Channel, ColorMode, Layout, Step};
-use crate::modes::{BLACK_FREQUENCY, Mode, SYNC_FREQUENCY, WHITE_FREQUENCY};
+use crate::modes::{BLACK_FREQUENCY, LEADER_FREQUENCY, Mode, SYNC_FREQUENCY, WHITE_FREQUENCY};
 use crate::units::Duration;
 use crate::{Demodulator, Frequency, RgbPixel, YuvPixel};
 
-/// How far a frequency may stray from the sync frequency and still count as sync.
-const SYNC_TOLERANCE_HZ: u32 = 150;
+/// How far a frequency may stray from a nominal tone and still count as it.
+const TONE_TOLERANCE_HZ: u32 = 150;
 
 /// A single decoded scanline: [`ImageInfo::width`] pixels in left-to-right order.
 #[derive(Debug, Clone, PartialEq)]
@@ -106,6 +106,9 @@ pub enum Event {
 pub struct RowDecoder<I: Iterator<Item = i16>> {
     demodulator: Demodulator<I>,
     sample_rate: u32,
+    /// The mode requested at construction, possibly [`Mode::Auto`].
+    requested_mode: Mode,
+    /// The mode of the image currently being decoded.
     mode: Mode,
     layout: Layout,
 
@@ -166,15 +169,23 @@ impl<I: Iterator<Item = i16>> RowDecoder<I> {
     /// Create a `RowDecoder` that scans a stream of PCM samples for images in
     /// the given mode.
     ///
+    /// With [`Mode::Auto`], the mode of each image is detected from its
+    /// header's VIS code, and [`ImageInfo`] reports the detected mode.
+    ///
     /// `sample_rate` must be greater than zero. Construction never fails:
     /// finding images is deferred to iteration.
     pub fn new(mode: Mode, samples: I, sample_rate: u32) -> Self {
         let sample_rate = sample_rate.max(1);
+        let active = match mode {
+            Mode::Auto => Mode::Robot36,
+            mode => mode,
+        };
         Self {
             demodulator: Demodulator::new(samples, sample_rate),
             sample_rate,
-            mode,
-            layout: mode.layout(),
+            requested_mode: mode,
+            mode: active,
+            layout: active.layout(),
             prefix: Vec::new(),
             prefix_position: 0,
             position: 0,
@@ -198,6 +209,9 @@ impl<I: Iterator<Item = i16>> RowDecoder<I> {
     /// aligned to the first line. After the image completes, the decoder
     /// resumes searching for further images exactly as [`new`](Self::new)
     /// does.
+    ///
+    /// [`Mode::Auto`] cannot be detected without a header and decodes as
+    /// [`Mode::Robot36`].
     pub fn without_header(mode: Mode, samples: I, sample_rate: u32) -> Self {
         let mut decoder = Self::new(mode, samples, sample_rate);
         decoder
@@ -228,8 +242,17 @@ impl<I: Iterator<Item = i16>> RowDecoder<I> {
         self.prefix_position = 0;
         self.position = 0;
 
-        match self.lock_onto_first_line() {
-            Some(sequence_start) => {
+        let acquired = if self.requested_mode == Mode::Auto {
+            self.detect_mode()
+        } else {
+            self.lock_onto_first_line()
+                .map(|sequence_start| (self.requested_mode, sequence_start))
+        };
+
+        match acquired {
+            Some((mode, sequence_start)) => {
+                self.mode = mode;
+                self.layout = mode.layout();
                 // Drop everything before the first line so only image data is
                 // replayed.
                 let trim = (sequence_start.max(0.0) as usize).min(self.prefix.len());
@@ -245,6 +268,117 @@ impl<I: Iterator<Item = i16>> RowDecoder<I> {
             }
             None => self.state = State::Done,
         }
+    }
+
+    /// Buffer frequencies from the demodulator until a calibration header is
+    /// found, returning the detected mode and the sample position at which
+    /// its first timing sequence begins.
+    ///
+    /// The header is located by its break: a short burst of the sync
+    /// frequency splitting the two leader tones. From there the VIS bits lie
+    /// at fixed offsets and are sampled near their centres; the mode is
+    /// accepted once the start, stop and parity bits check out and the code
+    /// is known.
+    fn detect_mode(&mut self) -> Option<(Mode, f64)> {
+        let sample_rate = self.sample_rate as f64;
+        let samples = move |milliseconds: f64| milliseconds / 1000.0 * sample_rate;
+        let min_leader = samples(150.0) as usize;
+        let min_break = samples(4.0) as usize;
+        let max_break = samples(25.0) as usize;
+        let max_gap = samples(3.0) as usize;
+
+        // The most recently completed run of leader-tone frequencies, as
+        // (end, length); a break qualifies only right after a long one.
+        let mut leader: Option<(usize, usize)> = None;
+        let mut leader_start: Option<usize> = None;
+        let mut break_start: Option<usize> = None;
+        let mut index = 0usize;
+        loop {
+            let frequency = self.buffered_frequency(index)?;
+
+            if self.is_leader(frequency) {
+                leader_start.get_or_insert(index);
+            } else if let Some(start) = leader_start.take() {
+                leader = Some((index, index - start));
+            }
+
+            if self.is_sync(frequency) {
+                break_start.get_or_insert(index);
+            } else if let Some(start) = break_start.take() {
+                let run = index - start;
+                let after_leader = matches!(
+                    leader,
+                    Some((end, length))
+                        if start.saturating_sub(end) <= max_gap && length >= min_leader
+                );
+                if after_leader
+                    && (min_break..=max_break).contains(&run)
+                    && let Some(found) = self.read_vis(index)
+                {
+                    return Some(found);
+                }
+            }
+
+            index += 1;
+        }
+    }
+
+    /// Read the VIS code whose break ended at `break_end`, returning the mode
+    /// and the position where its image data begins. `None` if anything about
+    /// the bits is off — the search then simply continues.
+    fn read_vis(&mut self, break_end: usize) -> Option<(Mode, f64)> {
+        let sample_rate = self.sample_rate as f64;
+        let samples = move |milliseconds: f64| milliseconds / 1000.0 * sample_rate;
+
+        // The second leader tone fills the 300ms between break and start bit.
+        for probe in [100.0, 200.0] {
+            let frequency = self.buffered_frequency(break_end + samples(probe) as usize)?;
+            if !self.is_leader(frequency) {
+                return None;
+            }
+        }
+
+        // Ten 30ms bits follow the leader: start, seven code bits
+        // (least-significant first), parity and stop. Each is judged by the
+        // median of three samples around its centre.
+        let mut bits = [0u32; 10];
+        for (slot, bit) in bits.iter_mut().enumerate() {
+            let mut medians = [0u32; 3];
+            for (sample, offset) in medians.iter_mut().zip([8.0, 15.0, 22.0]) {
+                let position = break_end + samples(300.0 + slot as f64 * 30.0 + offset) as usize;
+                *sample = self.buffered_frequency(position)?.hz();
+            }
+            medians.sort_unstable();
+            *bit = medians[1];
+        }
+
+        let is_sync_bit = |hz: u32| hz.abs_diff(SYNC_FREQUENCY.hz()) <= TONE_TOLERANCE_HZ;
+        if !is_sync_bit(bits[0]) || !is_sync_bit(bits[9]) {
+            return None;
+        }
+        let mut code = 0u8;
+        let mut ones = 0u32;
+        for (bit, hz) in bits[1..=8].iter().enumerate() {
+            if !(950..=1450).contains(hz) {
+                return None;
+            }
+            if *hz < 1200 {
+                ones += 1;
+                if bit < 7 {
+                    code |= 1 << bit;
+                }
+            }
+        }
+        if !ones.is_multiple_of(2) {
+            return None;
+        }
+
+        let mode = Mode::from_vis_code(code)?;
+        let mut sequence_start = break_end as f64 + samples(600.0);
+        if mode.has_starting_sync_pulse() {
+            sequence_start += self.samples_in(mode.layout().sync_pulse().1);
+        }
+        Some((mode, sequence_start))
     }
 
     /// Buffer frequencies from the demodulator until a line sync is located,
@@ -315,14 +449,19 @@ impl<I: Iterator<Item = i16>> RowDecoder<I> {
         }
     }
 
-    /// Whether the buffered frequency at `index` is a sync, extending the
-    /// buffer from the demodulator as needed.
-    fn buffered_is_sync(&mut self, index: usize) -> Option<bool> {
+    /// The buffered frequency at `index`, extending the buffer from the
+    /// demodulator as needed.
+    fn buffered_frequency(&mut self, index: usize) -> Option<Frequency> {
         while self.prefix.len() <= index {
             let frequency = self.demodulator.next()?;
             self.prefix.push(frequency);
         }
-        Some(self.is_sync(self.prefix[index]))
+        Some(self.prefix[index])
+    }
+
+    fn buffered_is_sync(&mut self, index: usize) -> Option<bool> {
+        self.buffered_frequency(index)
+            .map(|frequency| self.is_sync(frequency))
     }
 
     /// Decode the next timing sequence, queueing its rows. Ends the image with
@@ -547,8 +686,12 @@ impl<I: Iterator<Item = i16>> RowDecoder<I> {
         Some(())
     }
 
+    fn is_leader(&self, frequency: Frequency) -> bool {
+        frequency.hz().abs_diff(LEADER_FREQUENCY.hz()) <= TONE_TOLERANCE_HZ
+    }
+
     fn is_sync(&self, frequency: Frequency) -> bool {
-        frequency.hz().abs_diff(SYNC_FREQUENCY.hz()) <= SYNC_TOLERANCE_HZ
+        frequency.hz().abs_diff(SYNC_FREQUENCY.hz()) <= TONE_TOLERANCE_HZ
     }
 }
 

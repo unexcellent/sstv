@@ -24,13 +24,13 @@ for sample in Synthesizer::new(encoder, 8000) {
 }
 ```
 
-Decoding is the streaming inverse: feed 16 bit samples into `sstv::RowDecoder` and receive `sstv::Event`s grouping decoded scanlines into images.
+Decoding is the streaming inverse: feed 16 bit samples into `sstv::RowDecoder` and receive `sstv::Event`s grouping decoded scanlines into images. Pass a specific mode, or `Mode::Auto` to detect each image's mode from its header.
 
 ```rust,no_run
 use sstv::{Event, Mode, RowDecoder};
 
 # let samples = std::vec::Vec::<i16>::new().into_iter();
-for event in RowDecoder::new(Mode::Robot36, samples, 48000) {
+for event in RowDecoder::new(Mode::Auto, samples, 48000) {
     match event {
         Event::ImageStart(info) => { /* a new image begins */ }
         Event::Row(row) => { /* one decoded scanline */ }

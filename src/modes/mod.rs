@@ -93,10 +93,13 @@ pub enum Mode {
     Pd240,
     /// An 800x616 colour image in a 289 second transmission.
     Pd290,
+    /// When decoding, detect the transmission's mode from its header. When
+    /// encoding, behaves as [`Robot36`](Mode::Robot36).
+    Auto,
 }
 
 impl Mode {
-    /// Every supported mode, in the paper's order.
+    /// Every transmission mode, in the paper's order. Excludes [`Auto`](Mode::Auto).
     pub const ALL: [Mode; 18] = [
         Mode::Scottie1,
         Mode::Scottie2,
@@ -121,6 +124,7 @@ impl Mode {
     /// The mode's 7-bit VIS code, identifying it to a receiving system.
     pub const fn vis_code(&self) -> u8 {
         match self {
+            Mode::Auto => Mode::Robot36.vis_code(),
             Mode::Scottie1 => 60,
             Mode::Scottie2 => 56,
             Mode::ScottieDx => 76,
@@ -171,6 +175,7 @@ impl Mode {
     /// table in the paper.
     pub(crate) const fn layout(&self) -> Layout {
         match self {
+            Mode::Auto => Mode::Robot36.layout(),
             Mode::Scottie1 => scottie::SCOTTIE_1,
             Mode::Scottie2 => scottie::SCOTTIE_2,
             Mode::ScottieDx => scottie::SCOTTIE_DX,
@@ -204,7 +209,7 @@ impl Mode {
 
     /// Whether the mode transmits one extra sync pulse between the header and
     /// the first line. Only Scottie modes do.
-    const fn has_starting_sync_pulse(&self) -> bool {
+    pub(crate) const fn has_starting_sync_pulse(&self) -> bool {
         matches!(self, Mode::Scottie1 | Mode::Scottie2 | Mode::ScottieDx)
     }
 
