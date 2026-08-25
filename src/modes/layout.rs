@@ -6,8 +6,6 @@ use crate::synthesizer::Tone;
 use crate::units::{Duration, Frequency};
 
 /// The image values carried by a scan step.
-// dead_code: some variants belong to modes not transcribed yet.
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Channel {
     Red,
@@ -51,8 +49,6 @@ impl Step {
 }
 
 /// How the scans of one timing sequence combine into image pixels.
-// dead_code: some variants belong to modes not transcribed yet.
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ColorMode {
     /// Red, Green and Blue scans of a single line (Martin, Scottie, Wrasse,

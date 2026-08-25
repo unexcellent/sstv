@@ -1,33 +1,46 @@
-//! Encode examples/patch.png into a Robot36 WAV using this crate's encoder.
+//! Encode examples/patch.png into an SSTV WAV using this crate's encoder.
 //!
 //! ```text
-//! cargo run --example encode -- local/encoded.wav [sample_rate]
+//! cargo run --example encode -- local/encoded.wav [mode] [sample_rate]
 //! ```
 
-use image::GenericImageView;
+use image::imageops::FilterType;
 use sstv::{Encoder, Mode, RgbPixel, Synthesizer};
 use std::env;
+
+fn parse_mode(name: &str) -> Mode {
+    Mode::ALL
+        .into_iter()
+        .find(|mode| format!("{mode:?}").eq_ignore_ascii_case(name))
+        .unwrap_or_else(|| panic!("unknown mode {name}, expected one of {:?}", Mode::ALL))
+}
 
 fn main() {
     let mut args = env::args().skip(1);
     let output = args
         .next()
-        .expect("usage: encode <output.wav> [sample_rate]");
+        .expect("usage: encode <output.wav> [mode] [sample_rate]");
+    let mode = args
+        .next()
+        .map(|name| parse_mode(&name))
+        .unwrap_or(Mode::Robot36);
     let sample_rate: u32 = args
         .next()
         .map(|s| s.parse().expect("sample rate must be an integer"))
         .unwrap_or(48_000);
 
-    let image = image::open("examples/patch.png").expect("open examples/patch.png");
-    let (width, height) = image.dimensions();
-    assert_eq!((width, height), (320, 240), "image must be 320x240");
+    let (width, height) = (mode.image_width(), mode.image_height());
+    let image = image::open("examples/patch.png")
+        .expect("open examples/patch.png")
+        .resize_exact(width, height, FilterType::Triangle)
+        .to_rgb8();
 
     let mut pixels = std::vec![RgbPixel::new(0, 0, 0); (width * height) as usize];
-    image.pixels().for_each(|(x, y, rgba)| {
-        pixels[(y * width + x) as usize] = RgbPixel::new(rgba[0], rgba[1], rgba[2]);
-    });
+    for (x, y, rgb) in image.enumerate_pixels() {
+        pixels[(y * width + x) as usize] = RgbPixel::new(rgb[0], rgb[1], rgb[2]);
+    }
 
-    let encoder = Encoder::new(Mode::Robot36, pixels.into_iter()).expect("encode");
+    let encoder = Encoder::new(mode, pixels.into_iter()).expect("encode");
 
     let spec = hound::WavSpec {
         channels: 1,
@@ -41,5 +54,5 @@ fn main() {
     }
     writer.finalize().expect("finalize wav");
 
-    println!("wrote {output} at {sample_rate} Hz");
+    println!("wrote {output} as {mode:?} at {sample_rate} Hz");
 }

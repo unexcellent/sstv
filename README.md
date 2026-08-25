@@ -2,7 +2,7 @@
 
 This crate can be used to encode images into slow-scan television signals (and decode them back) on platforms with low memory availability, like microcontrollers.
 
-It is still far from maturity. Currently, only Robot 36 is supported.
+Supported modes (encoding and decoding): Scottie 1/2/DX, Martin 1/2, Robot 36/72, Wrasse SC2-180, Pasokon P3/P5/P7 and PD-50/90/120/160/180/240/290.
 
 # Mode specifications
 
@@ -42,5 +42,4 @@ for event in RowDecoder::new(Mode::Robot36, samples, 48000) {
 # Planned Features
 
 - using rust features to optionally allow std crates (like image and hound)
-- the remaining modes from the Dayton paper (Scottie, Martin, Robot 72, Wrasse, Pasokon, PD)
 - upload to crates.io
