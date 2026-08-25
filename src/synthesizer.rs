@@ -13,7 +13,7 @@ pub struct Tone {
 
 impl Tone {
     /// Create a new Tone
-    pub fn new(frequency: Frequency, duration: Duration) -> Self {
+    pub const fn new(frequency: Frequency, duration: Duration) -> Self {
         Self {
             frequency,
             duration,

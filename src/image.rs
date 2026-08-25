@@ -1,8 +1,3 @@
-use crate::{
-    synthesizer::Tone,
-    units::{Duration, Frequency},
-};
-
 #[derive(Debug, Clone, Copy, PartialEq)]
 /// A single pixel in an image represented by red, green, blue components.
 pub struct RgbPixel {
@@ -69,30 +64,6 @@ impl YuvPixel {
     /// Return the blue color component.
     pub fn chroma_blue(self) -> u8 {
         self.chroma_blue
-    }
-    /// Return the frequency associated with the brightness.
-    pub fn luma_frequency(self, lower: Frequency, upper: Frequency) -> Frequency {
-        lower + (upper - lower) * self.luma as u32 / 255
-    }
-    /// Return the tone associated with the brightness.
-    pub fn luma_tone(self, black: Frequency, white: Frequency, duration: Duration) -> Tone {
-        Tone::new(self.luma_frequency(black, white), duration)
-    }
-    /// Return the frequency associated with the red chroma.
-    pub fn chroma_red_frequency(self, black: Frequency, white: Frequency) -> Frequency {
-        black + (white - black) * self.chroma_red as u32 / 255
-    }
-    /// Return the tone associated with the red chroma.
-    pub fn chroma_red_tone(self, black: Frequency, white: Frequency, duration: Duration) -> Tone {
-        Tone::new(self.chroma_red_frequency(black, white), duration)
-    }
-    /// Return the frequency associated with the blue chroma.
-    pub fn chroma_blue_frequency(self, black: Frequency, white: Frequency) -> Frequency {
-        black + (white - black) * self.chroma_blue as u32 / 255
-    }
-    /// Return the tone associated with the blue chroma.
-    pub fn chroma_blue_tone(self, black: Frequency, white: Frequency, duration: Duration) -> Tone {
-        Tone::new(self.chroma_blue_frequency(black, white), duration)
     }
 }
 

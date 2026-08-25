@@ -14,7 +14,7 @@ use std::env;
 use std::fs::File;
 use std::io::{Cursor, Read};
 
-use sstv::{Event, RgbPixel, RowDecoder};
+use sstv::{Event, Mode, RgbPixel, RowDecoder};
 
 const WIDTH: u32 = 320;
 const HEIGHT: u32 = 240;
@@ -33,7 +33,7 @@ fn main() {
 
     // Reconstruct the first image in the stream from the decoder's events.
     let mut decoded: Vec<RgbPixel> = Vec::new();
-    for event in RowDecoder::new(samples.into_iter(), sample_rate) {
+    for event in RowDecoder::new(Mode::Robot36, samples.into_iter(), sample_rate) {
         match event {
             Event::ImageStart(_) if !decoded.is_empty() => break,
             Event::ImageStart(_) => {}

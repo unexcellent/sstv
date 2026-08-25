@@ -1,165 +1,141 @@
-use crate::{
-    Hz, Result,
-    image::RgbPixel,
-    modes::robot36::Robot36Encoder,
-    ms, ns,
-    synthesizer::Tone,
-    units::{Duration, Frequency},
-    us,
-};
-use alloc::boxed::Box;
-use core::array;
+//! The SSTV modes specified in the Dayton paper — JL Barber (N7CXI),
+//! "Proposal for SSTV Mode Specifications", presented at the Dayton SSTV
+//! forum, 20 May 2000.
+//!
+//! Each mode family lives in its own module mirroring a chapter of the paper,
+//! transcribing its "TIMING SEQUENCE" table into a [`Layout`]. Everything
+//! shared between modes — the frequency range, the calibration header and the
+//! VIS code — is defined here, as in the paper's common sections.
 
-pub mod robot36;
+pub(crate) mod layout;
 
-/// A specific protocol for encoding an image as a tone-sequence.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+mod robot;
+
+use crate::synthesizer::Tone;
+use crate::units::{Duration, Frequency};
+use crate::{Hz, ms};
+use layout::Layout;
+
+/// The "Sync pulse" frequency, shared by every mode.
+pub(crate) const SYNC_FREQUENCY: Frequency = Hz!(1200);
+/// Pure black. Appendix A: "SSTV systems use the frequency range of
+/// 1500-2300hz to represent the range of brightness values".
+pub(crate) const BLACK_FREQUENCY: Frequency = Hz!(1500);
+/// Pure white — the upper end of the 1500-2300hz luminance range.
+pub(crate) const WHITE_FREQUENCY: Frequency = Hz!(2300);
+/// The calibration header's "Leader tone".
+pub(crate) const LEADER_FREQUENCY: Frequency = Hz!(1900);
+/// VIS bits: "1100hz = '1', 1300hz = '0'".
+const VIS_ONE_FREQUENCY: Frequency = Hz!(1100);
+const VIS_ZERO_FREQUENCY: Frequency = Hz!(1300);
+/// Every VIS bit (start, data, parity, stop) lasts 30ms.
+const VIS_BIT_DURATION: Duration = ms!(30);
+
+/// Appendix A: "Frequency = 1500 + (ColorByte * 3.1372549)".
+pub(crate) fn value_frequency(value: u8) -> Frequency {
+    BLACK_FREQUENCY + (WHITE_FREQUENCY - BLACK_FREQUENCY) * value as u32 / 255
+}
+
+/// Tuning ("VOX") tones customarily sent ahead of the calibration header to
+/// open receiver squelch. They are not part of the paper's specification.
+const VOX_TONES: [Tone; 8] = [
+    Tone::new(Hz!(1900), ms!(100)),
+    Tone::new(Hz!(1500), ms!(100)),
+    Tone::new(Hz!(1900), ms!(100)),
+    Tone::new(Hz!(1500), ms!(100)),
+    Tone::new(Hz!(2300), ms!(100)),
+    Tone::new(Hz!(1500), ms!(100)),
+    Tone::new(Hz!(2300), ms!(100)),
+    Tone::new(Hz!(1500), ms!(100)),
+];
+
+/// A specific protocol for encoding an image as a tone sequence.
+///
+/// Naming follows the Dayton paper. Every mode transmits the shared
+/// "Calibration header with VIS code" followed by its own repeating per-line
+/// timing sequence; see [`Mode::header_tones`] and the `modes` submodules.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum Mode {
-    /// A mode using pulse-width modulation to encode a 320x240 pixel image into a 36s transmission.
+    /// "ROBOT 36 COLOR": Y, R-Y, B-Y encoded 320x240 in a 36s transmission.
     Robot36,
 }
 
 impl Mode {
-    const HEADER_SEQUENCE_LENGTH: usize = 21;
+    /// Every supported mode, in the paper's order.
+    pub const ALL: [Mode; 1] = [Mode::Robot36];
 
-    /// The frequency representing the start of a new scanline.
-    pub const fn sync_frequency(&self) -> Frequency {
-        Hz!(1200)
-    }
-    /// The lower frequency bound of the analog image signal.
-    pub const fn black_frequency(&self) -> Frequency {
-        Hz!(1500)
-    }
-    /// The upper frequenyc bound of the analog image signal.
-    pub const fn white_frequency(&self) -> Frequency {
-        Hz!(2300)
-    }
-    /// The frequency used to separate calibration pulses in the header.
-    pub const fn break_frequency(&self) -> Frequency {
-        Hz!(1200)
-    }
-    /// The continuous frequency sent at the very beginning of a transmission to wake up receivers.
-    pub const fn leader_frequency(&self) -> Frequency {
-        Hz!(1900)
-    }
-    /// The frequency used between alternating color bands during the tuning sequence.
-    pub const fn separator_frequency(&self) -> Frequency {
-        Hz!(1900)
-    }
-    /// The frequency representing a digital '0' in the VIS code.
-    pub const fn zero_frequency(&self) -> Frequency {
-        Hz!(1300)
-    }
-    /// The frequency representing a digital '1' in the VIS code.
-    pub const fn one_frequency(&self) -> Frequency {
-        Hz!(1100)
+    /// The mode's 7-bit VIS code ("VIS CODE" in the paper), identifying it to
+    /// a receiving system. `None` for modes transmitted without a VIS code
+    /// (the paper's FAX480 uses its own header instead).
+    pub const fn vis_code(&self) -> Option<u8> {
+        match self {
+            Mode::Robot36 => Some(8),
+        }
     }
 
-    /// The length of the horizontal synchronization tone.
-    pub const fn sync_duration(&self) -> Duration {
-        ms!(9)
+    /// Look up a mode by its 7-bit VIS code.
+    pub const fn from_vis_code(code: u8) -> Option<Mode> {
+        match code {
+            8 => Some(Mode::Robot36),
+            _ => None,
+        }
     }
-    /// The quiet period immediately following the synchronization tone.
-    pub const fn back_porch_duration(&self) -> Duration {
-        ms!(3)
-    }
-    /// The horizontal blanking interval before pixel data begins.
-    pub const fn blank_duration(&self) -> Duration {
-        us!(5400)
-    }
-    /// The length of a single digital tone in the VIS header.
-    pub const fn bit_duration(&self) -> Duration {
-        ms!(30)
-    }
-    /// The total time required to transmit a single row of the image.
-    pub const fn line_duration(&self) -> Duration {
-        us!(150_008)
-    }
-    /// The dead time inserted between scanlines.
-    pub const fn line_gap_duration(&self) -> Duration {
-        ns!(320)
-    }
-    /// The total overhead time per row not used for visual data.
-    pub fn line_suffix_duration(&self) -> Duration {
-        self.back_porch_duration() + self.blank_duration() + self.sync_duration()
-    }
-    /// The time per row dedicated to actively transmitting visual data.
-    pub fn line_pixel_duration(&self) -> Duration {
-        self.line_duration() - self.line_suffix_duration()
-    }
-    /// The time per row dedicated to the grayscale intensity channel.
-    pub fn line_luma_duration(&self) -> Duration {
-        self.line_pixel_duration() - self.line_chroma_duration()
-    }
-    /// The time per row dedicated to the color difference channels.
-    pub fn line_chroma_duration(&self) -> Duration {
-        self.line_pixel_duration() / 3
-    }
-    /// The time allocated to a single grayscale pixel.
-    pub fn pixel_luma_duration(&self) -> Duration {
-        self.line_luma_duration() / self.image_width()
-    }
-    /// The time allocated to a single color difference pixel.
-    pub fn pixel_chroma_duration(&self) -> Duration {
-        self.line_chroma_duration() / self.image_width()
+
+    /// The mode's scanline structure as specified by its timing-sequence
+    /// table in the paper.
+    pub(crate) const fn layout(&self) -> Layout {
+        match self {
+            Mode::Robot36 => robot::ROBOT_36,
+        }
     }
 
     /// The horizontal resolution in pixels.
     pub const fn image_width(&self) -> u32 {
-        320
+        self.layout().width as u32
     }
+
     /// The vertical resolution in pixels.
     pub const fn image_height(&self) -> u32 {
-        240
+        self.layout().height as u32
     }
 
-    /// The unique VIS ID transmitted to inform the receiver of the encoding format.
-    pub const fn identification(&self) -> u8 {
-        136
+    /// The tones sent before the image: the VOX tuning tones followed by the
+    /// paper's "Calibration header with VIS code". Modes without a VIS code
+    /// supply their own header here instead.
+    ///
+    /// "Note that all mode specifications begin immediately after the VIS
+    /// stop bit."
+    pub fn header_tones(&self) -> impl Iterator<Item = Tone> + '_ {
+        (0..).map_while(move |index| self.header_tone(index))
     }
 
-    /// Construct the initial calibration and VIS digital tones sent before the image.
-    pub fn header_sequence(&self) -> [Tone; Self::HEADER_SEQUENCE_LENGTH] {
-        let tuning = [
-            Tone::new(self.separator_frequency(), ms!(100)),
-            Tone::new(self.black_frequency(), ms!(100)),
-            Tone::new(self.separator_frequency(), ms!(100)),
-            Tone::new(self.black_frequency(), ms!(100)),
-            Tone::new(self.white_frequency(), ms!(100)),
-            Tone::new(self.black_frequency(), ms!(100)),
-            Tone::new(self.white_frequency(), ms!(100)),
-            Tone::new(self.black_frequency(), ms!(100)),
-        ];
-        let calibration = [
-            Tone::new(self.leader_frequency(), ms!(300)),
-            Tone::new(self.break_frequency(), ms!(10)),
-            Tone::new(self.leader_frequency(), ms!(300)),
-            Tone::new(self.break_frequency(), self.bit_duration()),
-        ];
-        let identification: [Tone; 8] = array::from_fn(|i| {
-            let freq = if (self.identification() >> i) & 1 == 1 {
-                self.one_frequency()
+    /// The `index`-th header tone, or `None` past the end of the header.
+    pub(crate) fn header_tone(&self, index: usize) -> Option<Tone> {
+        let code = self
+            .vis_code()
+            .expect("every current mode transmits a VIS code");
+        let bit = |one: bool| {
+            let frequency = if one {
+                VIS_ONE_FREQUENCY
             } else {
-                self.zero_frequency()
+                VIS_ZERO_FREQUENCY
             };
-            Tone::new(freq, self.bit_duration())
-        });
-
-        array::from_fn(|i| match i {
-            0..=7 => tuning[i],
-            8..=11 => calibration[i - 8],
-            12..=19 => identification[i - 12],
-            _ => Tone::new(self.break_frequency(), self.bit_duration()),
-        })
-    }
-
-    /// Create an iterator that converts raw RGB data into audio tones.
-    pub fn encoder<I>(&self, pixels: I) -> Result<Box<dyn Iterator<Item = Tone>>>
-    where
-        I: Iterator<Item = RgbPixel> + 'static,
-    {
-        match self {
-            Mode::Robot36 => Ok(Box::new(Robot36Encoder::new(pixels)?)),
+            Tone::new(frequency, VIS_BIT_DURATION)
+        };
+        match index {
+            0..=7 => Some(VOX_TONES[index]),
+            // "Calibration header with VIS code":
+            8 => Some(Tone::new(LEADER_FREQUENCY, ms!(300))), // Leader tone
+            9 => Some(Tone::new(SYNC_FREQUENCY, ms!(10))),    // break
+            10 => Some(Tone::new(LEADER_FREQUENCY, ms!(300))), // Leader tone
+            11 => Some(Tone::new(SYNC_FREQUENCY, VIS_BIT_DURATION)), // VIS start bit
+            // "The seven-bit code is transmitted least-significant-bit first"
+            12..=18 => Some(bit((code >> (index - 12)) & 1 == 1)),
+            // "and uses 'even' parity."
+            19 => Some(bit(code.count_ones() % 2 == 1)),
+            20 => Some(Tone::new(SYNC_FREQUENCY, VIS_BIT_DURATION)), // VIS stop bit
+            _ => None,
         }
     }
 }
@@ -167,16 +143,17 @@ impl Mode {
 #[cfg(test)]
 mod tests {
     extern crate std;
+    use std::vec::Vec;
 
     use super::*;
     use crate::synthesizer::Tone;
-    use crate::{Hz, ms};
+    use crate::{Hz, ms, us};
 
     #[test]
-    fn test_header_tones_robot36() {
+    fn header_tones_robot36() {
         assert_eq!(
-            Mode::Robot36.header_sequence(),
-            [
+            Mode::Robot36.header_tones().collect::<Vec<_>>(),
+            std::vec![
                 Tone::new(Hz!(1900), ms!(100)),
                 Tone::new(Hz!(1500), ms!(100)),
                 Tone::new(Hz!(1900), ms!(100)),
@@ -200,5 +177,38 @@ mod tests {
                 Tone::new(Hz!(1200), ms!(30)),
             ]
         )
+    }
+
+    #[test]
+    fn vis_codes_round_trip() {
+        for mode in Mode::ALL {
+            if let Some(code) = mode.vis_code() {
+                assert_eq!(Mode::from_vis_code(code), Some(mode));
+                assert!(code < 128, "VIS codes are 7 bit");
+            }
+        }
+    }
+
+    /// Every sequence of a mode must be equally long — the decoder relies on
+    /// the sync pulses being evenly spaced.
+    #[test]
+    fn sequences_are_equally_long() {
+        for mode in Mode::ALL {
+            let layout = mode.layout();
+            let duration = layout.sequence_duration();
+            for sequence in layout.sequences {
+                let sum = sequence
+                    .iter()
+                    .fold(us!(0), |sum, step| sum + step.duration());
+                assert_eq!(sum, duration, "{mode:?}");
+            }
+        }
+    }
+
+    /// The per-line duration from the paper: Robot 36 transmits 240 lines in
+    /// 36 seconds — 150.0ms per line.
+    #[test]
+    fn robot36_line_duration_matches_paper() {
+        assert_eq!(Mode::Robot36.layout().sequence_duration(), ms!(150));
     }
 }
