@@ -78,6 +78,69 @@ impl<I: Iterator<Item = Tone>> Synthesizer<I> {
     }
 }
 
+#[cfg(feature = "wav")]
+impl<I: Iterator<Item = Tone>> Synthesizer<I> {
+    /// The remaining samples as a complete mono 16-bit PCM WAV, ready to be
+    /// written wherever the WAV should go.
+    ///
+    /// This buffers the entire transmission in memory (a few megabytes at
+    /// typical sample rates); on memory-constrained systems, emit the samples
+    /// one by one instead.
+    pub fn to_wav(mut self) -> alloc::vec::Vec<u8> {
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: self.sample_rate,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut cursor = std::io::Cursor::new(alloc::vec::Vec::new());
+        // Writing into an in-memory cursor cannot fail.
+        let mut writer = hound::WavWriter::new(&mut cursor, spec).expect("write to memory");
+        for sample in &mut self {
+            writer.write_sample(sample).expect("write to memory");
+        }
+        writer.finalize().expect("write to memory");
+        cursor.into_inner()
+    }
+}
+
+#[cfg(feature = "mp3")]
+impl<I: Iterator<Item = Tone>> Synthesizer<I> {
+    /// The remaining samples as a complete mono 128 kbps MP3, ready to be
+    /// written wherever the MP3 should go.
+    ///
+    /// This buffers the entire transmission in memory. Fails if LAME rejects
+    /// the sample rate.
+    pub fn to_mp3(mut self) -> Result<alloc::vec::Vec<u8>, mp3lame_encoder::BuildError> {
+        use mp3lame_encoder::{Builder, FlushNoGap, MonoPcm};
+
+        let sample_rate = self.sample_rate;
+        let samples: alloc::vec::Vec<i16> = self.by_ref().collect();
+
+        let mut builder = Builder::new().ok_or(mp3lame_encoder::BuildError::NoMem)?;
+        builder.set_num_channels(1)?;
+        builder.set_sample_rate(sample_rate)?;
+        builder.set_brate(mp3lame_encoder::Bitrate::Kbps128)?;
+        builder.set_quality(mp3lame_encoder::Quality::Best)?;
+        let mut encoder = builder.build()?;
+
+        let mut mp3 = alloc::vec::Vec::with_capacity(mp3lame_encoder::max_required_buffer_size(
+            samples.len(),
+        ));
+        let encoded = encoder
+            .encode(MonoPcm(&samples), mp3.spare_capacity_mut())
+            .expect("the buffer is sized to fit the whole encoding");
+        // The encoder wrote `encoded` bytes into the spare capacity.
+        unsafe { mp3.set_len(mp3.len() + encoded) };
+
+        let flushed = encoder
+            .flush::<FlushNoGap>(mp3.spare_capacity_mut())
+            .expect("the buffer is sized to fit the whole encoding");
+        unsafe { mp3.set_len(mp3.len() + flushed) };
+        Ok(mp3)
+    }
+}
+
 impl<I: Iterator<Item = Tone>> Iterator for Synthesizer<I> {
     type Item = i16;
 
@@ -117,6 +180,25 @@ mod tests {
             }
         }
         samples
+    }
+
+    #[cfg(feature = "wav")]
+    #[test]
+    fn to_wav_wraps_the_samples() {
+        let tones = [Tone::new(Frequency::from_hz(1500), Duration::from_ms(50))];
+        let samples: Vec<i16> = Synthesizer::new(tones.into_iter(), 8_000).collect();
+
+        let wav = Synthesizer::new(tones.into_iter(), 8_000).to_wav();
+
+        let reader = hound::WavReader::new(std::io::Cursor::new(wav)).expect("parse wav");
+        assert_eq!(reader.spec().channels, 1);
+        assert_eq!(reader.spec().sample_rate, 8_000);
+        assert_eq!(reader.spec().bits_per_sample, 16);
+        let unwrapped: Vec<i16> = reader
+            .into_samples()
+            .map(|sample| sample.expect("read sample"))
+            .collect();
+        assert_eq!(unwrapped, samples);
     }
 
     #[test]

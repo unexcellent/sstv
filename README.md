@@ -10,8 +10,10 @@ The core encoder and decoder are `no_std` (plus `alloc`) and stay that way. Opti
 
 - `std` (default): APIs that need the Rust standard library.
 - `image` (implies `std`): bridges to the `image` crate. Encode its buffers with `Encoder::from_image(mode, &image)` (resized to the mode's resolution), and decode straight into its buffers with `Decoder::rgb_images()` (or `image::RgbImage::from(&decoded)`).
+- `wav` (implies `std`): encode the synthesized audio into an in-memory WAV with `Synthesizer::to_wav()` or `Encoder::to_wav(sample_rate)`.
+- `mp3` (implies `std`): encode the synthesized audio into an in-memory MP3 with `Synthesizer::to_mp3()` or `Encoder::to_mp3(sample_rate)`.
 
-Reading and writing files is deliberately not this crate's job: load and save images (and audio) with the crates of your choice and exchange buffers, pixels and samples through the APIs above.
+Reading and writing files is deliberately not this crate's job: it hands you complete in-memory images, WAVs and MP3s, and writing them somewhere (or loading them from somewhere) is yours.
 
 Embedded users disable the defaults:
 

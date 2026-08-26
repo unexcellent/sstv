@@ -8,24 +8,29 @@ default = ["std"]
 # APIs that need the Rust standard library. Disable for no_std targets:
 # sstv = { version = "...", default-features = false }
 std = []
-# Encoding images loaded from disk via the `image` crate. Implies `std`.
+# Conversions from and to the `image` crate's buffers. Implies `std`.
 image = ["std", "dep:image"]
+# Encoding the synthesized audio into in-memory WAVs. Implies `std`.
+wav = ["std", "dep:hound"]
+# Encoding the synthesized audio into in-memory MP3s. Implies `std`.
+mp3 = ["std", "dep:mp3lame-encoder"]
 
 [dependencies]
 libm = "0.2.8"
 image = { version = "0.25.1", optional = true }
+hound = { version = "3.5.1", optional = true }
+mp3lame-encoder = { version = "0.2.2", optional = true }
 
 [dev-dependencies]
 image = "0.25.1"
 hound = "3.5.1"
-mp3lame-encoder = "0.2.2"
 flate2 = "1.0.28"
 rand = "0.9"
 rand_distr = "0.5"
 
 [[example]]
 name = "encode"
-required-features = ["image"]
+required-features = ["image", "wav"]
 
 [[example]]
 name = "decode"
@@ -34,6 +39,10 @@ required-features = ["image"]
 [[test]]
 name = "image_feature"
 required-features = ["image"]
+
+[[test]]
+name = "mp3_feature"
+required-features = ["mp3"]
 
 [package.metadata.docs.rs]
 all-features = true

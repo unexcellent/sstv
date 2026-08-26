@@ -35,6 +35,23 @@ impl Encoder {
             inner: Box::new(LineEncoder::new(mode, pixels)?),
         })
     }
+
+    /// The transmission as a complete mono 16-bit PCM WAV at the given sample
+    /// rate; see [`Synthesizer::to_wav`].
+    #[cfg(feature = "wav")]
+    pub fn to_wav(self, sample_rate: u32) -> Vec<u8> {
+        Synthesizer::new(self, sample_rate).to_wav()
+    }
+
+    /// The transmission as a complete mono 128 kbps MP3 at the given sample
+    /// rate; see [`Synthesizer::to_mp3`].
+    #[cfg(feature = "mp3")]
+    pub fn to_mp3(
+        self,
+        sample_rate: u32,
+    ) -> core::result::Result<Vec<u8>, mp3lame_encoder::BuildError> {
+        Synthesizer::new(self, sample_rate).to_mp3()
+    }
 }
 
 #[cfg(feature = "image")]
