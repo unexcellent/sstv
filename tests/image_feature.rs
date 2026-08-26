@@ -1,3 +1,7 @@
+// Test helpers outside #[test] functions are not covered by the clippy.toml
+// test allowances.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 //! Tests for the `image` feature: converting decoded images into `image`
 //! crate buffers.
 
@@ -27,12 +31,15 @@ fn encodes_image_buffers_resizing_them_to_the_mode_resolution() {
         image::Rgb([(x * 2) as u8, (y * 3) as u8, 128])
     }));
     let encoder = Encoder::from_image(Mode::Robot36, &small).expect("encode image");
-    let samples: Vec<i16> = Synthesizer::new(encoder, SAMPLE_RATE).collect();
 
-    let decoded = Decoder::from_samples(Mode::Robot36, samples.into_iter(), SAMPLE_RATE)
-        .images()
-        .next()
-        .expect("an image");
+    let decoded = Decoder::from_samples(
+        Mode::Robot36,
+        Synthesizer::new(encoder, SAMPLE_RATE),
+        SAMPLE_RATE,
+    )
+    .images()
+    .next()
+    .expect("an image");
     assert!(decoded.complete(), "image should decode completely");
     assert_eq!(decoded.width() as u32, Mode::Robot36.image_width());
     assert_eq!(decoded.height() as u32, Mode::Robot36.image_height());

@@ -7,7 +7,7 @@ use crate::units::{Duration, Frequency};
 
 /// The image values carried by a scan step.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Channel {
+pub enum Channel {
     Red,
     Green,
     Blue,
@@ -23,8 +23,8 @@ pub(crate) enum Channel {
 }
 
 /// One entry of a mode's timing sequence.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub(crate) enum Step {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Step {
     /// A fixed control tone: sync pulse, sync porch, separator pulse or porch.
     Tone(Tone),
     /// A channel scan: one line of pixels spread evenly over the duration.
@@ -50,7 +50,7 @@ impl Step {
 
 /// How the scans of one timing sequence combine into image pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ColorMode {
+pub enum ColorMode {
     /// Red, Green and Blue scans of a single line (Martin, Scottie, Wrasse,
     /// Pasokon).
     Rgb,
@@ -67,7 +67,7 @@ pub(crate) enum ColorMode {
 /// A mode's scanline structure: the paper's timing sequences plus the image
 /// geometry they carry.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct Layout {
+pub struct Layout {
     /// The horizontal resolution in pixels.
     pub width: usize,
     /// The number of image lines in a full transmission.
@@ -84,7 +84,7 @@ pub(crate) struct Layout {
 
 impl Layout {
     /// Image lines carried by one pass through *all* sequences.
-    pub(crate) fn lines_per_cycle(&self) -> usize {
+    pub(crate) const fn lines_per_cycle(&self) -> usize {
         self.lines_per_sequence * self.sequences.len()
     }
 
@@ -123,9 +123,8 @@ impl Layout {
     /// index — counting only non-sync tone steps, as a decoder samples them —
     /// of the tone whose frequency identifies the line parity.
     pub(crate) fn parity_tone(&self) -> Option<usize> {
-        let (first, second) = match self.sequences {
-            [first, second, ..] => (first, second),
-            _ => return None,
+        let [first, second, ..] = self.sequences else {
+            return None;
         };
         let mut tone_index = 0;
         for (a, b) in first.iter().zip(second.iter()) {

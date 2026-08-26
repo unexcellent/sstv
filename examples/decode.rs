@@ -1,3 +1,6 @@
+// Examples fail fast on bad input by design.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 //! Decode an SSTV WAV or MP3 back into an image.
 //!
 //! Accepts a `.wav`, an `.mp3` or a gzipped `.wav.gz` and writes the decoded
@@ -16,6 +19,12 @@ use std::io::Read;
 
 use sstv::{Decoder, Mode};
 
+fn has_extension(path: &str, extension: &str) -> bool {
+    std::path::Path::new(path)
+        .extension()
+        .is_some_and(|actual| actual.eq_ignore_ascii_case(extension))
+}
+
 fn parse_mode(name: &str) -> Mode {
     Mode::ALL
         .into_iter()
@@ -29,13 +38,10 @@ fn main() {
     let usage = "usage: decode <input.wav|input.mp3|input.wav.gz> <output image> [mode]";
     let input = args.next().expect(usage);
     let output = args.next().expect(usage);
-    let mode = args
-        .next()
-        .map(|name| parse_mode(&name))
-        .unwrap_or(Mode::Auto);
+    let mode = args.next().map_or(Mode::Auto, |name| parse_mode(&name));
 
     let audio = read_audio(&input);
-    let decoder = if input.ends_with(".mp3") {
+    let decoder = if has_extension(&input, "mp3") {
         Decoder::from_mp3(mode, &audio).expect("parse mp3")
     } else {
         Decoder::from_wav(mode, &audio).expect("parse wav")
@@ -63,7 +69,7 @@ fn read_audio(path: &str) -> Vec<u8> {
     let file = File::open(path).expect("open input file");
 
     let mut bytes = Vec::new();
-    if path.ends_with(".gz") {
+    if has_extension(path, "gz") {
         flate2::read::GzDecoder::new(file)
             .read_to_end(&mut bytes)
             .expect("gunzip input");

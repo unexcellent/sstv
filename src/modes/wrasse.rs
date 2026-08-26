@@ -15,7 +15,7 @@ const SC2_180_SEQUENCE: [Step; 5] = [
 ];
 
 /// 256 lines of 711.0225ms each: a 182 second transmission.
-pub(crate) const WRASSE_SC2_180: Layout = Layout {
+pub const WRASSE_SC2_180: Layout = Layout {
     width: 320,
     height: 256,
     sequences: &[&SC2_180_SEQUENCE],

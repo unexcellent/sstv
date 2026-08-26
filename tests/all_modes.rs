@@ -1,3 +1,7 @@
+// Test helpers outside #[test] functions are not covered by the clippy.toml
+// test allowances.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 //! Round-trip test for every mode: encode a test image, decode the samples
 //! back, and compare against the original.
 
@@ -29,7 +33,7 @@ fn mean_abs_error(a: &[RgbPixel], b: &[RgbPixel]) -> f64 {
         .iter()
         .zip(b)
         .map(|(p, q)| {
-            let d = |x: u8, y: u8| (x as i32 - y as i32).unsigned_abs() as u64;
+            let d = |x: u8, y: u8| u64::from((i32::from(x) - i32::from(y)).unsigned_abs());
             d(p.red(), q.red()) + d(p.green(), q.green()) + d(p.blue(), q.blue())
         })
         .sum();

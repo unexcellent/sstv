@@ -1,3 +1,7 @@
+// Test helpers outside #[test] functions are not covered by the clippy.toml
+// test allowances.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 //! End-to-end tests: encode an image to tones with the [`Encoder`], optionally
 //! corrupt the audio with deterministic noise, and decode it back with
 //! [`Decoder`], reassembling the event stream into images.
@@ -47,7 +51,7 @@ fn encode(image: &[RgbPixel]) -> Vec<i16> {
 /// The noise standard deviation that yields the given SNR against a full-scale
 /// sinusoidal signal.
 fn sigma_for_snr(snr_db: f64) -> f64 {
-    let signal_rms = i16::MAX as f64 / std::f64::consts::SQRT_2;
+    let signal_rms = f64::from(i16::MAX) / std::f64::consts::SQRT_2;
     signal_rms / 10f64.powf(snr_db / 20.0)
 }
 
@@ -61,7 +65,7 @@ fn noise(len: usize, seed: u64) -> Vec<i16> {
             normal
                 .sample(&mut rng)
                 .round()
-                .clamp(i16::MIN as f64, i16::MAX as f64) as i16
+                .clamp(f64::from(i16::MIN), f64::from(i16::MAX)) as i16
         })
         .collect()
 }
@@ -82,7 +86,7 @@ fn mean_abs_error(a: &[RgbPixel], b: &[RgbPixel]) -> f64 {
         .iter()
         .zip(b)
         .map(|(p, q)| {
-            let d = |x: u8, y: u8| (x as i32 - y as i32).unsigned_abs() as u64;
+            let d = |x: u8, y: u8| u64::from((i32::from(x) - i32::from(y)).unsigned_abs());
             d(p.red(), q.red()) + d(p.green(), q.green()) + d(p.blue(), q.blue())
         })
         .sum();

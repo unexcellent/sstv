@@ -1,3 +1,7 @@
+// Test helpers outside #[test] functions are not covered by the clippy.toml
+// test allowances.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 //! Tests for the `mp3` feature: encoding to and decoding from in-memory MP3s.
 
 use sstv::{Decoder, Encoder, Mode, RgbPixel};
@@ -42,7 +46,7 @@ fn round_trips_through_an_mp3() {
         .iter()
         .zip(decoded.pixels())
         .map(|(p, q)| {
-            let d = |x: u8, y: u8| (x as i32 - y as i32).unsigned_abs() as u64;
+            let d = |x: u8, y: u8| u64::from((i32::from(x) - i32::from(y)).unsigned_abs());
             d(p.red(), q.red()) + d(p.green(), q.green()) + d(p.blue(), q.blue())
         })
         .sum();

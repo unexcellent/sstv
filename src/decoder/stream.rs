@@ -20,7 +20,7 @@ pub(super) struct FrequencyStream<I: Iterator<Item = i16>> {
 }
 
 impl<I: Iterator<Item = i16>> FrequencyStream<I> {
-    pub fn new(demodulator: Demodulator<I>) -> Self {
+    pub const fn new(demodulator: Demodulator<I>) -> Self {
         Self {
             demodulator,
             buffer: Vec::new(),
@@ -30,7 +30,7 @@ impl<I: Iterator<Item = i16>> FrequencyStream<I> {
         }
     }
 
-    pub fn sample_rate(&self) -> u32 {
+    pub const fn sample_rate(&self) -> u32 {
         self.demodulator.sample_rate()
     }
 
@@ -40,12 +40,12 @@ impl<I: Iterator<Item = i16>> FrequencyStream<I> {
     }
 
     /// Samples consumed since the origin was last moved.
-    pub fn position(&self) -> usize {
+    pub const fn position(&self) -> usize {
         self.position
     }
 
     /// The most recently consumed frequency.
-    pub fn current(&self) -> Frequency {
+    pub const fn current(&self) -> Frequency {
         self.current
     }
 
@@ -101,5 +101,5 @@ impl<I: Iterator<Item = i16>> FrequencyStream<I> {
 }
 
 pub(super) fn duration_to_samples(duration: Duration, sample_rate: u32) -> f64 {
-    duration.ns() as f64 * sample_rate as f64 / 1_000_000_000.0
+    duration.ns() as f64 * f64::from(sample_rate) / 1_000_000_000.0
 }

@@ -1,3 +1,7 @@
+// Test helpers outside #[test] functions are not covered by the clippy.toml
+// test allowances.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 //! End-to-end test against a real off-air recording captured by a ground
 //! station — the true reception path, exercising receiver imperfections (drift,
 //! noise, level and DC variation) that synthetic signals do not exhibit.
@@ -40,7 +44,7 @@ fn mean_abs_error(a: &[u8], b: &[u8]) -> f64 {
     let sum: u64 = a
         .iter()
         .zip(b)
-        .map(|(x, y)| (*x as i32 - *y as i32).unsigned_abs() as u64)
+        .map(|(x, y)| u64::from((i32::from(*x) - i32::from(*y)).unsigned_abs()))
         .sum();
     sum as f64 / a.len() as f64
 }

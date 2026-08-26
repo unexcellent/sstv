@@ -1,3 +1,6 @@
+// Examples fail fast on bad input by design.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 //! Encode examples/patch.png into an SSTV WAV using this crate's encoder.
 //! Loading the image is done with the `image` crate.
 //!
@@ -21,14 +24,10 @@ fn main() {
     let output = args
         .next()
         .expect("usage: encode <output.wav> [mode] [sample_rate]");
-    let mode = args
-        .next()
-        .map(|name| parse_mode(&name))
-        .unwrap_or(Mode::Robot36);
-    let sample_rate: u32 = args
-        .next()
-        .map(|s| s.parse().expect("sample rate must be an integer"))
-        .unwrap_or(48_000);
+    let mode = args.next().map_or(Mode::Robot36, |name| parse_mode(&name));
+    let sample_rate: u32 = args.next().map_or(48_000, |s| {
+        s.parse().expect("sample rate must be an integer")
+    });
 
     let image = image::open("examples/patch.png").expect("open examples/patch.png");
     let encoder = Encoder::from_image(mode, &image).expect("encode");

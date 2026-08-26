@@ -27,6 +27,11 @@ pub struct Encoder {
 
 impl Encoder {
     /// Construct an `Encoder` from the mode and a pixel iterator.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::EmptyImage`] if the iterator cannot fill the mode's first
+    /// lines.
     pub fn new<I>(mode: Mode, pixels: I) -> Result<Self>
     where
         I: Iterator<Item = RgbPixel> + 'static,
@@ -39,12 +44,17 @@ impl Encoder {
     /// The transmission as a complete mono 16-bit PCM WAV at the given sample
     /// rate; see [`Synthesizer::to_wav`].
     #[cfg(feature = "wav")]
+    #[must_use]
     pub fn to_wav(self, sample_rate: u32) -> Vec<u8> {
         crate::Synthesizer::new(self, sample_rate).to_wav()
     }
 
     /// The transmission as a complete mono 128 kbps MP3 at the given sample
     /// rate; see [`Synthesizer::to_mp3`].
+    ///
+    /// # Errors
+    ///
+    /// Fails if LAME rejects the sample rate.
     #[cfg(feature = "mp3")]
     pub fn to_mp3(
         self,
@@ -67,6 +77,11 @@ impl Encoder {
     /// let image = image::open("image.png").expect("load image");
     /// let encoder = Encoder::from_image(Mode::Robot36, &image).expect("encode image");
     /// ```
+    ///
+    /// # Errors
+    ///
+    /// [`Error::EmptyImage`] if the mode has no pixels, which cannot happen
+    /// for the supported modes.
     pub fn from_image(mode: Mode, image: &image::DynamicImage) -> Result<Self> {
         let (width, height) = (mode.image_width(), mode.image_height());
         let image = if (image.width(), image.height()) == (width, height) {
@@ -76,6 +91,9 @@ impl Encoder {
                 .resize_exact(width, height, image::imageops::FilterType::Triangle)
                 .to_rgb8()
         };
+        // `Encoder::new` needs an owned (`'static`) iterator, so the pixels
+        // cannot be borrowed from the image buffer.
+        #[allow(clippy::needless_collect)]
         let pixels: Vec<RgbPixel> = image
             .pixels()
             .map(|pixel| RgbPixel::new(pixel[0], pixel[1], pixel[2]))
@@ -222,7 +240,7 @@ where
     /// Replace the buffered lines with the next ones from the pixel iterator.
     /// `None` once the image runs out of complete line groups.
     fn buffer_next_lines(&mut self) -> Option<()> {
-        for line in self.lines.iter_mut() {
+        for line in &mut self.lines {
             Self::fill_line(&mut self.pixels, line, self.layout.width)?;
         }
         Some(())
@@ -256,7 +274,7 @@ where
         match self.layout.color {
             ColorMode::YuvAveragedPair | ColorMode::YuvSharedPair => {
                 let sum: u16 = (0..self.lines.len())
-                    .map(|buffered| component(self.yuv(buffered, x)) as u16)
+                    .map(|buffered| u16::from(component(self.yuv(buffered, x))))
                     .sum();
                 (sum / self.lines.len() as u16) as u8
             }
@@ -267,7 +285,7 @@ where
     /// Whether the phase just moved onto the first tone of a line cycle whose
     /// lines are not buffered yet. The first cycle's lines are already
     /// buffered at construction.
-    fn needs_next_lines(&self) -> bool {
+    const fn needs_next_lines(&self) -> bool {
         matches!(
             self.phase,
             Phase::Line {

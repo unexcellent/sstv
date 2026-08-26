@@ -43,7 +43,10 @@ impl Assembler {
     }
 
     /// The rows completed by one sequence pass, in transmission order.
-    pub fn assemble(&mut self, data: SequenceData) -> Vec<Vec<RgbPixel>> {
+    // expect: the layouts guarantee every scan and tone their colour mode
+    // relies on.
+    #[allow(clippy::expect_used)]
+    pub fn assemble(&mut self, data: &SequenceData) -> Vec<Vec<RgbPixel>> {
         let scan = |channel: Channel| {
             data.scans
                 .iter()

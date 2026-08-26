@@ -1,3 +1,7 @@
+// Test helpers outside #[test] functions are not covered by the clippy.toml
+// test allowances.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 //! Tests for the `wav` feature: encoding to and decoding from in-memory WAVs.
 
 use sstv::{Decoder, Encoder, Mode, RgbPixel, Synthesizer};
@@ -26,7 +30,7 @@ fn mean_abs_error(a: &[RgbPixel], b: &[RgbPixel]) -> f64 {
         .iter()
         .zip(b)
         .map(|(p, q)| {
-            let d = |x: u8, y: u8| (x as i32 - y as i32).unsigned_abs() as u64;
+            let d = |x: u8, y: u8| u64::from((i32::from(x) - i32::from(y)).unsigned_abs());
             d(p.red(), q.red()) + d(p.green(), q.green()) + d(p.blue(), q.blue())
         })
         .sum();
@@ -67,7 +71,7 @@ fn decodes_stereo_float_wavs() {
     let mut cursor = std::io::Cursor::new(Vec::new());
     let mut writer = hound::WavWriter::new(&mut cursor, spec).expect("write wav");
     for sample in samples {
-        let value = sample as f32 / i16::MAX as f32;
+        let value = f32::from(sample) / f32::from(i16::MAX);
         writer.write_sample(value).expect("write sample");
         writer.write_sample(0.0f32).expect("write sample"); // silent right channel
     }

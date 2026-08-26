@@ -37,8 +37,8 @@ const fn layout(sequences: &'static [&'static [Step]]) -> Layout {
 }
 
 /// 496 lines of 409.375ms each: a 203 second transmission.
-pub(crate) const PASOKON_P3: Layout = layout(&[&P3_SEQUENCE]);
+pub const PASOKON_P3: Layout = layout(&[&P3_SEQUENCE]);
 /// 496 lines of 614.065ms each: a 305 second transmission.
-pub(crate) const PASOKON_P5: Layout = layout(&[&P5_SEQUENCE]);
+pub const PASOKON_P5: Layout = layout(&[&P5_SEQUENCE]);
 /// 496 lines of 818.747ms each: a 406 second transmission.
-pub(crate) const PASOKON_P7: Layout = layout(&[&P7_SEQUENCE]);
+pub const PASOKON_P7: Layout = layout(&[&P7_SEQUENCE]);

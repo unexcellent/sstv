@@ -8,16 +8,19 @@ pub struct Frequency {
 
 impl Frequency {
     /// Construct a `Frequency` from its value in Hertz.
+    #[must_use]
     pub const fn from_hz(hertz: u32) -> Self {
         Self { hertz }
     }
 
     /// Get the frequency value in Hertz.
+    #[must_use]
     pub const fn hz(self) -> u32 {
         self.hertz
     }
 
     /// Return the absolute difference between this and another Frequency.
+    #[must_use]
     pub const fn abs_diff(self, other: Self) -> Self {
         Self::from_hz(self.hz().abs_diff(other.hz()))
     }
@@ -80,11 +83,13 @@ pub struct Duration {
 
 impl Duration {
     /// Construct a `Duration` from its value in nanoseconds.
+    #[must_use]
     pub const fn from_ns(nanoseconds: u64) -> Self {
         Self { nanoseconds }
     }
 
     /// Construct a `Duration` from its value in microseconds.
+    #[must_use]
     pub const fn from_us(microseconds: u64) -> Self {
         Self {
             nanoseconds: microseconds * 1000,
@@ -92,6 +97,7 @@ impl Duration {
     }
 
     /// Construct a `Duration` from its value in milliseconds.
+    #[must_use]
     pub const fn from_ms(milliseconds: u64) -> Self {
         Self {
             nanoseconds: milliseconds * 1_000_000,
@@ -99,11 +105,13 @@ impl Duration {
     }
 
     /// Get the duration value in nanoseconds.
+    #[must_use]
     pub const fn ns(self) -> u64 {
         self.nanoseconds
     }
 
     /// Get the duration value in microseconds.
+    #[must_use]
     pub const fn us(self) -> u32 {
         (self.nanoseconds / 1000) as u32
     }
@@ -129,7 +137,7 @@ impl Mul<u32> for Duration {
     type Output = Self;
 
     fn mul(self, rhs: u32) -> Self {
-        Self::from_ns(self.ns() * (rhs as u64))
+        Self::from_ns(self.ns() * u64::from(rhs))
     }
 }
 
@@ -137,7 +145,7 @@ impl Div<u32> for Duration {
     type Output = Self;
 
     fn div(self, rhs: u32) -> Self {
-        Self::from_ns(self.ns() / (rhs as u64))
+        Self::from_ns(self.ns() / u64::from(rhs))
     }
 }
 

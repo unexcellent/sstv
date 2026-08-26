@@ -7,7 +7,7 @@
 //! shared between modes — the frequency range, the calibration header and the
 //! VIS code — is defined here, as in the paper's common sections.
 
-pub(crate) mod layout;
+pub mod layout;
 
 mod martin;
 mod pasokon;
@@ -22,13 +22,13 @@ use crate::{Hz, ms};
 use layout::Layout;
 
 /// The sync pulse frequency, shared by every mode.
-pub(crate) const SYNC_FREQUENCY: Frequency = Hz!(1200);
+pub const SYNC_FREQUENCY: Frequency = Hz!(1200);
 /// Pure black — the lower end of the luminance range.
-pub(crate) const BLACK_FREQUENCY: Frequency = Hz!(1500);
+pub const BLACK_FREQUENCY: Frequency = Hz!(1500);
 /// Pure white — the upper end of the luminance range.
-pub(crate) const WHITE_FREQUENCY: Frequency = Hz!(2300);
+pub const WHITE_FREQUENCY: Frequency = Hz!(2300);
 /// The leader tone of the calibration header.
-pub(crate) const LEADER_FREQUENCY: Frequency = Hz!(1900);
+pub const LEADER_FREQUENCY: Frequency = Hz!(1900);
 const VIS_ONE_FREQUENCY: Frequency = Hz!(1100);
 const VIS_ZERO_FREQUENCY: Frequency = Hz!(1300);
 /// Every VIS bit (start, data, parity, stop) lasts 30ms.
@@ -36,8 +36,8 @@ const VIS_BIT_DURATION: Duration = ms!(30);
 
 /// The frequency representing a pixel value, mapped linearly onto the
 /// luminance range.
-pub(crate) fn value_frequency(value: u8) -> Frequency {
-    BLACK_FREQUENCY + (WHITE_FREQUENCY - BLACK_FREQUENCY) * value as u32 / 255
+pub fn value_frequency(value: u8) -> Frequency {
+    BLACK_FREQUENCY + (WHITE_FREQUENCY - BLACK_FREQUENCY) * u32::from(value) / 255
 }
 
 /// Tuning (VOX) tones customarily sent ahead of the calibration header to
@@ -100,117 +100,121 @@ pub enum Mode {
 
 impl Mode {
     /// Every transmission mode, in the paper's order. Excludes [`Auto`](Mode::Auto).
-    pub const ALL: [Mode; 18] = [
-        Mode::Scottie1,
-        Mode::Scottie2,
-        Mode::ScottieDx,
-        Mode::Martin1,
-        Mode::Martin2,
-        Mode::Robot36,
-        Mode::Robot72,
-        Mode::WrasseSc2180,
-        Mode::PasokonP3,
-        Mode::PasokonP5,
-        Mode::PasokonP7,
-        Mode::Pd50,
-        Mode::Pd90,
-        Mode::Pd120,
-        Mode::Pd160,
-        Mode::Pd180,
-        Mode::Pd240,
-        Mode::Pd290,
+    pub const ALL: [Self; 18] = [
+        Self::Scottie1,
+        Self::Scottie2,
+        Self::ScottieDx,
+        Self::Martin1,
+        Self::Martin2,
+        Self::Robot36,
+        Self::Robot72,
+        Self::WrasseSc2180,
+        Self::PasokonP3,
+        Self::PasokonP5,
+        Self::PasokonP7,
+        Self::Pd50,
+        Self::Pd90,
+        Self::Pd120,
+        Self::Pd160,
+        Self::Pd180,
+        Self::Pd240,
+        Self::Pd290,
     ];
 
     /// The mode's 7-bit VIS code, identifying it to a receiving system.
+    #[must_use]
     pub const fn vis_code(&self) -> u8 {
         match self {
-            Mode::Auto => Mode::Robot36.vis_code(),
-            Mode::Scottie1 => 60,
-            Mode::Scottie2 => 56,
-            Mode::ScottieDx => 76,
-            Mode::Martin1 => 44,
-            Mode::Martin2 => 40,
-            Mode::Robot36 => 8,
-            Mode::Robot72 => 12,
-            Mode::WrasseSc2180 => 55,
-            Mode::PasokonP3 => 113,
-            Mode::PasokonP5 => 114,
-            Mode::PasokonP7 => 115,
-            Mode::Pd50 => 93,
-            Mode::Pd90 => 99,
-            Mode::Pd120 => 95,
-            Mode::Pd160 => 98,
-            Mode::Pd180 => 96,
-            Mode::Pd240 => 97,
-            Mode::Pd290 => 94,
+            Self::Auto => Self::Robot36.vis_code(),
+            Self::Scottie1 => 60,
+            Self::Scottie2 => 56,
+            Self::ScottieDx => 76,
+            Self::Martin1 => 44,
+            Self::Martin2 => 40,
+            Self::Robot36 => 8,
+            Self::Robot72 => 12,
+            Self::WrasseSc2180 => 55,
+            Self::PasokonP3 => 113,
+            Self::PasokonP5 => 114,
+            Self::PasokonP7 => 115,
+            Self::Pd50 => 93,
+            Self::Pd90 => 99,
+            Self::Pd120 => 95,
+            Self::Pd160 => 98,
+            Self::Pd180 => 96,
+            Self::Pd240 => 97,
+            Self::Pd290 => 94,
         }
     }
 
     /// Look up a mode by its 7-bit VIS code.
-    pub const fn from_vis_code(code: u8) -> Option<Mode> {
+    #[must_use]
+    pub const fn from_vis_code(code: u8) -> Option<Self> {
         match code {
-            60 => Some(Mode::Scottie1),
-            56 => Some(Mode::Scottie2),
-            76 => Some(Mode::ScottieDx),
-            44 => Some(Mode::Martin1),
-            40 => Some(Mode::Martin2),
-            8 => Some(Mode::Robot36),
-            12 => Some(Mode::Robot72),
-            55 => Some(Mode::WrasseSc2180),
-            113 => Some(Mode::PasokonP3),
-            114 => Some(Mode::PasokonP5),
-            115 => Some(Mode::PasokonP7),
-            93 => Some(Mode::Pd50),
-            99 => Some(Mode::Pd90),
-            95 => Some(Mode::Pd120),
-            98 => Some(Mode::Pd160),
-            96 => Some(Mode::Pd180),
-            97 => Some(Mode::Pd240),
-            94 => Some(Mode::Pd290),
+            60 => Some(Self::Scottie1),
+            56 => Some(Self::Scottie2),
+            76 => Some(Self::ScottieDx),
+            44 => Some(Self::Martin1),
+            40 => Some(Self::Martin2),
+            8 => Some(Self::Robot36),
+            12 => Some(Self::Robot72),
+            55 => Some(Self::WrasseSc2180),
+            113 => Some(Self::PasokonP3),
+            114 => Some(Self::PasokonP5),
+            115 => Some(Self::PasokonP7),
+            93 => Some(Self::Pd50),
+            99 => Some(Self::Pd90),
+            95 => Some(Self::Pd120),
+            98 => Some(Self::Pd160),
+            96 => Some(Self::Pd180),
+            97 => Some(Self::Pd240),
+            94 => Some(Self::Pd290),
             _ => None,
         }
     }
 
     /// The mode's scanline structure as specified by its timing-sequence
     /// table in the paper.
-    pub(crate) const fn layout(&self) -> Layout {
+    pub(crate) const fn layout(self) -> Layout {
         match self {
-            Mode::Auto => Mode::Robot36.layout(),
-            Mode::Scottie1 => scottie::SCOTTIE_1,
-            Mode::Scottie2 => scottie::SCOTTIE_2,
-            Mode::ScottieDx => scottie::SCOTTIE_DX,
-            Mode::Martin1 => martin::MARTIN_1,
-            Mode::Martin2 => martin::MARTIN_2,
-            Mode::Robot36 => robot::ROBOT_36,
-            Mode::Robot72 => robot::ROBOT_72,
-            Mode::WrasseSc2180 => wrasse::WRASSE_SC2_180,
-            Mode::PasokonP3 => pasokon::PASOKON_P3,
-            Mode::PasokonP5 => pasokon::PASOKON_P5,
-            Mode::PasokonP7 => pasokon::PASOKON_P7,
-            Mode::Pd50 => pd::PD_50,
-            Mode::Pd90 => pd::PD_90,
-            Mode::Pd120 => pd::PD_120,
-            Mode::Pd160 => pd::PD_160,
-            Mode::Pd180 => pd::PD_180,
-            Mode::Pd240 => pd::PD_240,
-            Mode::Pd290 => pd::PD_290,
+            Self::Auto => Self::Robot36.layout(),
+            Self::Scottie1 => scottie::SCOTTIE_1,
+            Self::Scottie2 => scottie::SCOTTIE_2,
+            Self::ScottieDx => scottie::SCOTTIE_DX,
+            Self::Martin1 => martin::MARTIN_1,
+            Self::Martin2 => martin::MARTIN_2,
+            Self::Robot36 => robot::ROBOT_36,
+            Self::Robot72 => robot::ROBOT_72,
+            Self::WrasseSc2180 => wrasse::WRASSE_SC2_180,
+            Self::PasokonP3 => pasokon::PASOKON_P3,
+            Self::PasokonP5 => pasokon::PASOKON_P5,
+            Self::PasokonP7 => pasokon::PASOKON_P7,
+            Self::Pd50 => pd::PD_50,
+            Self::Pd90 => pd::PD_90,
+            Self::Pd120 => pd::PD_120,
+            Self::Pd160 => pd::PD_160,
+            Self::Pd180 => pd::PD_180,
+            Self::Pd240 => pd::PD_240,
+            Self::Pd290 => pd::PD_290,
         }
     }
 
     /// The horizontal resolution in pixels.
+    #[must_use]
     pub const fn image_width(&self) -> u32 {
         self.layout().width as u32
     }
 
     /// The vertical resolution in pixels.
+    #[must_use]
     pub const fn image_height(&self) -> u32 {
         self.layout().height as u32
     }
 
     /// Whether the mode transmits one extra sync pulse between the header and
     /// the first line. Only Scottie modes do.
-    pub(crate) const fn has_starting_sync_pulse(&self) -> bool {
-        matches!(self, Mode::Scottie1 | Mode::Scottie2 | Mode::ScottieDx)
+    pub(crate) const fn has_starting_sync_pulse(self) -> bool {
+        matches!(self, Self::Scottie1 | Self::Scottie2 | Self::ScottieDx)
     }
 
     /// The tones sent before the image: the VOX tuning tones, the calibration
@@ -222,7 +226,7 @@ impl Mode {
     }
 
     /// The `index`-th header tone, or `None` past the end of the header.
-    pub(crate) fn header_tone(&self, index: usize) -> Option<Tone> {
+    pub(crate) fn header_tone(self, index: usize) -> Option<Tone> {
         let code = self.vis_code();
         let bit = |one: bool| {
             let frequency = if one {
@@ -234,13 +238,11 @@ impl Mode {
         };
         match index {
             0..=7 => Some(VOX_TONES[index]),
-            8 => Some(Tone::new(LEADER_FREQUENCY, ms!(300))),
+            8 | 10 => Some(Tone::new(LEADER_FREQUENCY, ms!(300))),
             9 => Some(Tone::new(SYNC_FREQUENCY, ms!(10))), // break
-            10 => Some(Tone::new(LEADER_FREQUENCY, ms!(300))),
-            11 => Some(Tone::new(SYNC_FREQUENCY, VIS_BIT_DURATION)), // start bit
+            11 | 20 => Some(Tone::new(SYNC_FREQUENCY, VIS_BIT_DURATION)), // start and stop bits
             12..=18 => Some(bit((code >> (index - 12)) & 1 == 1)), // code bits, least significant first
             19 => Some(bit(code.count_ones() % 2 == 1)),           // even parity
-            20 => Some(Tone::new(SYNC_FREQUENCY, VIS_BIT_DURATION)), // stop bit
             21 if self.has_starting_sync_pulse() => {
                 Some(Tone::new(SYNC_FREQUENCY, self.layout().sync_pulse().1))
             }
@@ -285,7 +287,7 @@ mod tests {
                 Tone::new(Hz!(1100), ms!(30)),
                 Tone::new(Hz!(1200), ms!(30)),
             ]
-        )
+        );
     }
 
     #[test]

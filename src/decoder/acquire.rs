@@ -11,11 +11,11 @@ use super::stream::FrequencyStream;
 /// How far a frequency may stray from a nominal tone and still count as it.
 const TONE_TOLERANCE_HZ: u32 = 150;
 
-pub(super) fn is_sync(frequency: Frequency) -> bool {
+pub(super) const fn is_sync(frequency: Frequency) -> bool {
     frequency.hz().abs_diff(SYNC_FREQUENCY.hz()) <= TONE_TOLERANCE_HZ
 }
 
-fn is_leader(frequency: Frequency) -> bool {
+const fn is_leader(frequency: Frequency) -> bool {
     frequency.hz().abs_diff(LEADER_FREQUENCY.hz()) <= TONE_TOLERANCE_HZ
 }
 
@@ -99,7 +99,7 @@ pub(super) fn lock_onto_first_line<I: Iterator<Item = i16>>(
 pub(super) fn detect_mode<I: Iterator<Item = i16>>(
     stream: &mut FrequencyStream<I>,
 ) -> Option<(Mode, f64)> {
-    let sample_rate = stream.sample_rate() as f64;
+    let sample_rate = f64::from(stream.sample_rate());
     let samples = move |milliseconds: f64| milliseconds / 1000.0 * sample_rate;
     let min_leader = samples(150.0) as usize;
     let min_break = samples(4.0) as usize;
@@ -149,7 +149,7 @@ fn read_vis<I: Iterator<Item = i16>>(
     stream: &mut FrequencyStream<I>,
     break_end: usize,
 ) -> Option<(Mode, f64)> {
-    let sample_rate = stream.sample_rate() as f64;
+    let sample_rate = f64::from(stream.sample_rate());
     let samples = move |milliseconds: f64| milliseconds / 1000.0 * sample_rate;
 
     // The second leader tone fills the 300ms between break and start bit.

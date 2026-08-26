@@ -1,3 +1,13 @@
+// Build-time code generation: panicking is the intended failure mode, and the
+// casts are in range by construction (0..256, sin scaled into i16).
+#![allow(
+    clippy::unwrap_used,
+    clippy::as_conversions,
+    clippy::cast_precision_loss,
+    clippy::cast_possible_truncation,
+    clippy::cast_lossless
+)]
+
 use std::f64::consts::PI;
 use std::io::Write;
 

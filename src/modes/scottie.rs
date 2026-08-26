@@ -40,8 +40,8 @@ const fn layout(sequences: &'static [&'static [Step]]) -> Layout {
 }
 
 /// 256 lines of 428.22ms each: a 110 second transmission.
-pub(crate) const SCOTTIE_1: Layout = layout(&[&SCOTTIE_1_SEQUENCE]);
+pub const SCOTTIE_1: Layout = layout(&[&SCOTTIE_1_SEQUENCE]);
 /// 256 lines of 277.692ms each: a 71 second transmission.
-pub(crate) const SCOTTIE_2: Layout = layout(&[&SCOTTIE_2_SEQUENCE]);
+pub const SCOTTIE_2: Layout = layout(&[&SCOTTIE_2_SEQUENCE]);
 /// 256 lines of 1050.3ms each: a 269 second transmission.
-pub(crate) const SCOTTIE_DX: Layout = layout(&[&SCOTTIE_DX_SEQUENCE]);
+pub const SCOTTIE_DX: Layout = layout(&[&SCOTTIE_DX_SEQUENCE]);

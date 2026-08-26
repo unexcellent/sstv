@@ -3,7 +3,7 @@ include!(concat!(env!("OUT_DIR"), "/sine_table.rs"));
 use crate::units::{Duration, Frequency};
 
 /// A single frequency emitted for a certain duration.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Tone {
     /// The frequency
     pub frequency: Frequency,
@@ -13,6 +13,7 @@ pub struct Tone {
 
 impl Tone {
     /// Create a new Tone
+    #[must_use]
     pub const fn new(frequency: Frequency, duration: Duration) -> Self {
         Self {
             frequency,
@@ -69,11 +70,11 @@ impl<I: Iterator<Item = Tone>> Synthesizer<I> {
 
     fn load_next_tone(&mut self) -> Option<()> {
         let tone = self.tones.next()?;
-        let numerator = tone.duration.ns() * self.sample_rate as u64 + self.sample_carry;
+        let numerator = tone.duration.ns() * u64::from(self.sample_rate) + self.sample_carry;
         self.samples_remaining = (numerator / 1_000_000_000) as u32;
         self.sample_carry = numerator % 1_000_000_000;
         self.phase_increment =
-            ((tone.frequency.hz() as u64 * (1u64 << 32)) / self.sample_rate as u64) as u32;
+            ((u64::from(tone.frequency.hz()) * (1u64 << 32)) / u64::from(self.sample_rate)) as u32;
         Some(())
     }
 }
@@ -86,6 +87,9 @@ impl<I: Iterator<Item = Tone>> Synthesizer<I> {
     /// This buffers the entire transmission in memory (a few megabytes at
     /// typical sample rates); on memory-constrained systems, emit the samples
     /// one by one instead.
+    // expect: writing into an in-memory cursor cannot fail.
+    #[allow(clippy::expect_used, clippy::missing_panics_doc)]
+    #[must_use]
     pub fn to_wav(mut self) -> alloc::vec::Vec<u8> {
         let spec = hound::WavSpec {
             channels: 1,
@@ -109,8 +113,13 @@ impl<I: Iterator<Item = Tone>> Synthesizer<I> {
     /// The remaining samples as a complete mono 128 kbps MP3, ready to be
     /// written wherever the MP3 should go.
     ///
-    /// This buffers the entire transmission in memory. Fails if LAME rejects
-    /// the sample rate.
+    /// This buffers the entire transmission in memory.
+    ///
+    /// # Errors
+    ///
+    /// Fails if LAME rejects the sample rate.
+    // expect: the buffer is sized via `max_required_buffer_size`.
+    #[allow(clippy::expect_used, clippy::missing_panics_doc)]
     pub fn to_mp3(mut self) -> Result<alloc::vec::Vec<u8>, mp3lame_encoder::BuildError> {
         use mp3lame_encoder::{Builder, FlushNoGap, MonoPcm};
 
@@ -130,11 +139,11 @@ impl<I: Iterator<Item = Tone>> Synthesizer<I> {
         let mut mp3 = alloc::vec::Vec::with_capacity(mp3lame_encoder::max_required_buffer_size(
             samples.len(),
         ));
-        let encoded = encoder
+        let written = encoder
             .encode(MonoPcm(&samples), mp3.spare_capacity_mut())
             .expect("the buffer is sized to fit the whole encoding");
-        // The encoder wrote `encoded` bytes into the spare capacity.
-        unsafe { mp3.set_len(mp3.len() + encoded) };
+        // The encoder wrote `written` bytes into the spare capacity.
+        unsafe { mp3.set_len(mp3.len() + written) };
 
         let flushed = encoder
             .flush::<FlushNoGap>(mp3.spare_capacity_mut())
@@ -172,13 +181,13 @@ mod tests {
         let mut carry: u64 = 0;
 
         for tone in tones {
-            let numerator = tone.duration.ns() * sample_rate as u64 + carry;
+            let numerator = tone.duration.ns() * u64::from(sample_rate) + carry;
             let count = (numerator / 1_000_000_000) as usize;
             carry = numerator % 1_000_000_000;
 
-            let increment = 2.0 * PI * tone.frequency.hz() as f64 / sample_rate as f64;
+            let increment = 2.0 * PI * f64::from(tone.frequency.hz()) / f64::from(sample_rate);
             for _ in 0..count {
-                samples.push((phase.sin() * i16::MAX as f64).round() as i16);
+                samples.push((phase.sin() * f64::from(i16::MAX)).round() as i16);
                 phase += increment;
             }
         }
