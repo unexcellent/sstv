@@ -14,7 +14,7 @@ mod modes;
 mod synthesizer;
 mod units;
 
-pub use decoder::{DecodedImage, Decoder, Event, Events, ImageInfo, Images, RgbRow};
+pub use decoder::{DecodedImage, Decoder, Event, Events, Images, RgbRow};
 pub use demodulator::Demodulator;
 pub use encoder::Encoder;
 pub use error::{Error, Result};

@@ -4,7 +4,7 @@
 //! to the given path (format inferred from its extension).
 //!
 //! ```text
-//! cargo run --example decode -- tests/assets/real_recording.wav.gz local/decoded.png [mode]
+//! cargo run --features image --example decode -- tests/assets/real_recording.wav.gz local/decoded.png [mode]
 //! ```
 //!
 //! Rows that could not be decoded are left black, so a misaligned or truncated
@@ -14,7 +14,7 @@ use std::env;
 use std::fs::File;
 use std::io::{Cursor, Read};
 
-use sstv::{Decoder, Mode, RgbPixel};
+use sstv::{Decoder, Mode};
 
 fn parse_mode(name: &str) -> Mode {
     Mode::ALL
@@ -51,12 +51,9 @@ fn main() {
         image.complete(),
     );
 
-    save_image(
-        image.pixels(),
-        image.width() as u32,
-        image.height() as u32,
-        &output,
-    );
+    image::RgbImage::from(&image)
+        .save(&output)
+        .expect("save output image");
     println!("wrote {output}");
 }
 
@@ -84,14 +81,4 @@ fn read_samples(path: &str) -> (Vec<i16>, u32) {
         .step_by(channels)
         .collect();
     (samples, sample_rate)
-}
-
-fn save_image(pixels: &[RgbPixel], width: u32, height: u32, path: &str) {
-    let mut image = image::RgbImage::new(width, height);
-    for (index, pixel) in pixels.iter().take((width * height) as usize).enumerate() {
-        let x = index as u32 % width;
-        let y = index as u32 / width;
-        image.put_pixel(x, y, image::Rgb([pixel.red(), pixel.green(), pixel.blue()]));
-    }
-    image.save(path).expect("save output image");
 }

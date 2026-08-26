@@ -27,6 +27,10 @@ rand_distr = "0.5"
 name = "encode"
 required-features = ["image"]
 
+[[example]]
+name = "decode"
+required-features = ["image"]
+
 [[test]]
 name = "image_feature"
 required-features = ["image"]

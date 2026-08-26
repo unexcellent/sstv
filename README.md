@@ -9,7 +9,7 @@ Supported modes (encoding and decoding): Scottie 1/2/DX, Martin 1/2, Robot 36/72
 The core encoder and decoder are `no_std` (plus `alloc`) and stay that way. Optional features add conveniences on top:
 
 - `std` (default): APIs that need the Rust standard library.
-- `image` (implies `std`): encode images straight from disk via the `image` crate — `Encoder::from_image_path(Mode::Pd120, "photo.png")`. Images are resized to the mode's resolution.
+- `image` (implies `std`): bridges to the `image` crate. Encode straight from disk with `Encoder::from_image_path(Mode::Pd120, "photo.png")` (images are resized to the mode's resolution), and convert decoded images for saving with `image::RgbImage::from(&decoded).save("out.png")`.
 
 Embedded users disable the defaults:
 

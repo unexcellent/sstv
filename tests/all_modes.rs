@@ -37,7 +37,7 @@ fn mean_abs_error(a: &[RgbPixel], b: &[RgbPixel]) -> f64 {
 }
 
 /// Decode `samples` with the given decoder mode and check the result against
-/// `image`, whose actual mode must be reported in the image info.
+/// `image`, whose actual mode must be reported when the image starts.
 fn assert_decodes(decoder_mode: Mode, samples: &[i16], mode: Mode, image: &[RgbPixel]) {
     let width = mode.image_width() as usize;
     let height = mode.image_height() as usize;
@@ -47,11 +47,7 @@ fn assert_decodes(decoder_mode: Mode, samples: &[i16], mode: Mode, image: &[RgbP
     for event in Decoder::from_samples(decoder_mode, samples.iter().copied(), SAMPLE_RATE).events()
     {
         match event {
-            Event::ImageStart(info) => {
-                assert_eq!(info.mode(), mode);
-                assert_eq!(info.width(), width);
-                assert_eq!(info.height(), height);
-            }
+            Event::ImageStart(started) => assert_eq!(started, mode),
             Event::Row(row) => {
                 assert_eq!(row.index() * width, decoded.len(), "row out of order");
                 decoded.extend_from_slice(row.pixels());

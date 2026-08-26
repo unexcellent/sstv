@@ -44,6 +44,27 @@ fn resizes_to_the_mode_resolution() {
 }
 
 #[test]
+fn decoded_images_convert_to_image_buffers() {
+    let encoder =
+        Encoder::from_image_path(Mode::Robot36, "examples/patch.png").expect("load image");
+    let samples: Vec<i16> = Synthesizer::new(encoder, SAMPLE_RATE).collect();
+
+    let decoded = Decoder::from_samples(Mode::Robot36, samples.into_iter(), SAMPLE_RATE)
+        .images()
+        .next()
+        .expect("an image");
+    let buffer = image::RgbImage::from(&decoded);
+
+    assert_eq!(buffer.width() as usize, decoded.width());
+    assert_eq!(buffer.height() as usize, decoded.height());
+    let pixel = decoded.pixels()[decoded.width() + 1];
+    assert_eq!(
+        buffer.get_pixel(1, 1),
+        &image::Rgb([pixel.red(), pixel.green(), pixel.blue()])
+    );
+}
+
+#[test]
 fn missing_file_reports_an_error() {
     assert!(matches!(
         Encoder::from_image_path(Mode::Robot36, "does-not-exist.png"),
