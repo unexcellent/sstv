@@ -36,8 +36,8 @@ fn mean_abs_error(a: &[RgbPixel], b: &[RgbPixel]) -> f64 {
     total as f64 / (a.len() as f64 * 3.0)
 }
 
-/// Decode `samples` with the given decoder mode and check the result against
-/// `image`, whose actual mode must be reported when the image starts.
+/// Decode `samples` event by event, expecting an image in the given mode with
+/// its rows complete, in order, and close to `image`.
 fn assert_decodes(decoder_mode: Mode, samples: &[i16], mode: Mode, image: &[RgbPixel]) {
     let width = mode.image_width() as usize;
     let height = mode.image_height() as usize;

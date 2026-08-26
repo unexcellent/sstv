@@ -40,7 +40,7 @@ impl Encoder {
     /// rate; see [`Synthesizer::to_wav`].
     #[cfg(feature = "wav")]
     pub fn to_wav(self, sample_rate: u32) -> Vec<u8> {
-        Synthesizer::new(self, sample_rate).to_wav()
+        crate::Synthesizer::new(self, sample_rate).to_wav()
     }
 
     /// The transmission as a complete mono 128 kbps MP3 at the given sample
@@ -50,7 +50,7 @@ impl Encoder {
         self,
         sample_rate: u32,
     ) -> core::result::Result<Vec<u8>, mp3lame_encoder::BuildError> {
-        Synthesizer::new(self, sample_rate).to_mp3()
+        crate::Synthesizer::new(self, sample_rate).to_mp3()
     }
 }
 

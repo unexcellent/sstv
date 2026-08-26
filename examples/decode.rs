@@ -1,10 +1,10 @@
-//! Decode an SSTV WAV back into an image.
+//! Decode an SSTV WAV or MP3 back into an image.
 //!
-//! Accepts a plain `.wav` or a gzipped `.wav.gz` and writes the decoded image
-//! to the given path (format inferred from its extension).
+//! Accepts a `.wav`, an `.mp3` or a gzipped `.wav.gz` and writes the decoded
+//! image to the given path (format inferred from its extension).
 //!
 //! ```text
-//! cargo run --features image --example decode -- tests/assets/real_recording.wav.gz local/decoded.png [mode]
+//! cargo run --features image,wav,mp3 --example decode -- tests/assets/real_recording.wav.gz local/decoded.png [mode]
 //! ```
 //!
 //! Rows that could not be decoded are left black, so a misaligned or truncated
@@ -12,7 +12,7 @@
 
 use std::env;
 use std::fs::File;
-use std::io::{Cursor, Read};
+use std::io::Read;
 
 use sstv::{Decoder, Mode};
 
@@ -26,7 +26,7 @@ fn parse_mode(name: &str) -> Mode {
 
 fn main() {
     let mut args = env::args().skip(1);
-    let usage = "usage: decode <input.wav|input.wav.gz> <output image> [mode]";
+    let usage = "usage: decode <input.wav|input.mp3|input.wav.gz> <output image> [mode]";
     let input = args.next().expect(usage);
     let output = args.next().expect(usage);
     let mode = args
@@ -34,13 +34,14 @@ fn main() {
         .map(|name| parse_mode(&name))
         .unwrap_or(Mode::Auto);
 
-    let (samples, sample_rate) = read_samples(&input);
-    println!("read {} samples at {sample_rate} Hz", samples.len());
+    let audio = read_audio(&input);
+    let decoder = if input.ends_with(".mp3") {
+        Decoder::from_mp3(mode, &audio).expect("parse mp3")
+    } else {
+        Decoder::from_wav(mode, &audio).expect("parse wav")
+    };
 
-    let Some(image) = Decoder::from_samples(mode, samples.into_iter(), sample_rate)
-        .images()
-        .next()
-    else {
+    let Some(image) = decoder.images().next() else {
         panic!("no image found in {input}");
     };
     println!(
@@ -57,9 +58,8 @@ fn main() {
     println!("wrote {output}");
 }
 
-/// Read 16-bit PCM samples from a WAV, decompressing first if the path ends in
-/// `.gz`. Returns the first channel and the sample rate.
-fn read_samples(path: &str) -> (Vec<i16>, u32) {
+/// Read the input file, decompressing first if the path ends in `.gz`.
+fn read_audio(path: &str) -> Vec<u8> {
     let file = File::open(path).expect("open input file");
 
     let mut bytes = Vec::new();
@@ -71,14 +71,5 @@ fn read_samples(path: &str) -> (Vec<i16>, u32) {
         let mut file = file;
         file.read_to_end(&mut bytes).expect("read input");
     }
-
-    let reader = hound::WavReader::new(Cursor::new(bytes)).expect("parse wav");
-    let channels = reader.spec().channels as usize;
-    let sample_rate = reader.spec().sample_rate;
-    let samples = reader
-        .into_samples::<i16>()
-        .map(|sample| sample.expect("read sample"))
-        .step_by(channels)
-        .collect();
-    (samples, sample_rate)
+    bytes
 }

@@ -127,6 +127,75 @@ impl<I: Iterator<Item = i16>> Decoder<I> {
     }
 }
 
+#[cfg(feature = "wav")]
+impl Decoder<alloc::vec::IntoIter<i16>> {
+    /// Decode a transmission from in-memory WAV data.
+    ///
+    /// Only the first channel of multi-channel audio is used; integer samples
+    /// of any bit depth and float samples are converted to 16 bit.
+    pub fn from_wav(mode: Mode, wav: &[u8]) -> core::result::Result<Self, hound::Error> {
+        let reader = hound::WavReader::new(std::io::Cursor::new(wav))?;
+        let spec = reader.spec();
+        let channels = spec.channels.max(1) as usize;
+
+        let mut samples = Vec::with_capacity(reader.len() as usize / channels);
+        match spec.sample_format {
+            hound::SampleFormat::Int => {
+                for (index, sample) in reader.into_samples::<i32>().enumerate() {
+                    let sample = sample?;
+                    if index % channels == 0 {
+                        let scaled = if spec.bits_per_sample >= 16 {
+                            sample >> (spec.bits_per_sample - 16)
+                        } else {
+                            sample << (16 - spec.bits_per_sample)
+                        };
+                        samples.push(scaled as i16);
+                    }
+                }
+            }
+            hound::SampleFormat::Float => {
+                for (index, sample) in reader.into_samples::<f32>().enumerate() {
+                    let sample = sample?;
+                    if index % channels == 0 {
+                        samples.push((sample * i16::MAX as f32) as i16);
+                    }
+                }
+            }
+        }
+
+        Ok(Self::from_samples(
+            mode,
+            samples.into_iter(),
+            spec.sample_rate,
+        ))
+    }
+}
+
+#[cfg(feature = "mp3")]
+impl Decoder<alloc::vec::IntoIter<i16>> {
+    /// Decode a transmission from in-memory MP3 data.
+    ///
+    /// Only the first channel of multi-channel audio is used.
+    pub fn from_mp3(mode: Mode, mp3: &[u8]) -> core::result::Result<Self, minimp3::Error> {
+        let mut frames = minimp3::Decoder::new(std::io::Cursor::new(mp3));
+        let mut samples = Vec::new();
+        let mut sample_rate = 0u32;
+        loop {
+            match frames.next_frame() {
+                Ok(frame) => {
+                    sample_rate = frame.sample_rate as u32;
+                    let channels = frame.channels.max(1);
+                    samples.extend(frame.data.iter().step_by(channels));
+                }
+                Err(minimp3::Error::Eof) => break,
+                Err(error) => return Err(error),
+            }
+        }
+
+        Ok(Self::from_samples(mode, samples.into_iter(), sample_rate))
+    }
+}
+
 #[cfg(feature = "image")]
 impl<I: Iterator<Item = i16>> Decoder<I> {
     /// Assemble and stream whole images as `image` crate buffers, ready for

@@ -115,7 +115,10 @@ impl<I: Iterator<Item = Tone>> Synthesizer<I> {
         use mp3lame_encoder::{Builder, FlushNoGap, MonoPcm};
 
         let sample_rate = self.sample_rate;
-        let samples: alloc::vec::Vec<i16> = self.by_ref().collect();
+        let mut samples: alloc::vec::Vec<i16> = self.by_ref().collect();
+        // The encoder and any decoder each delay the stream by up to a frame;
+        // pad the tail so the transmission's end survives the codec chain.
+        samples.resize(samples.len() + 2304, 0);
 
         let mut builder = Builder::new().ok_or(mp3lame_encoder::BuildError::NoMem)?;
         builder.set_num_channels(1)?;
