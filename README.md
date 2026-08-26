@@ -7,6 +7,7 @@ Install it with `cargo add sstv`. The examples below use the optional `image`, `
 Encoding an image file into a WAV takes three steps: load the image with the `image` crate, turn it into a transmission with `Encoder`, and pack the audio into a file. The image is resized to the mode's resolution automatically. (Features: `image`, `wav` — or `mp3` for `to_mp3`.)
 
 ```rust
+use image;
 use sstv::{Encoder, Mode};
 
 let image = image::open("image.png").expect("load image");
@@ -17,6 +18,7 @@ std::fs::write("transmission.wav", encoder.to_wav(48_000)).expect("write wav");
 To transmit directly instead, feed the encoder into a `Synthesizer` and stream the 16 bit samples to your audio output one by one:
 
 ```rust
+use image;
 use sstv::{Encoder, Mode, Synthesizer};
 
 let image = image::open("image.png").expect("load image");

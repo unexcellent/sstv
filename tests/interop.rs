@@ -25,11 +25,14 @@ const SSTV_REFERENCE: &str = "tests/assets/encoder-robot36-sstv.png";
 /// The source image both references derive from.
 const SOURCE_IMAGE: &str = "examples/patch.png";
 
-fn require(path: &str, generate_with: &str) {
-    assert!(
-        Path::new(path).exists(),
-        "{path} not found. Generate it with `{generate_with}`",
-    );
+/// Whether the fixture exists; prints how to generate it otherwise, so the
+/// test can skip on machines (like CI) that do not have it.
+fn require(path: &str, generate_with: &str) -> bool {
+    if Path::new(path).exists() {
+        return true;
+    }
+    eprintln!("skipping: {path} not found, generate it with `{generate_with}`");
+    false
 }
 
 /// Load an image as raw row-major RGB bytes, with its dimensions.
@@ -75,10 +78,12 @@ fn read_wav(path: &str) -> (Vec<i16>, u32) {
 /// Our decoder should reconstruct a PySSTV-generated Robot36 signal.
 #[test]
 fn decoder_matches_pysstv_reference() {
-    require(
+    if !require(
         PYSSTV_FIXTURE,
         "python3 tests/scripts/encode_with_pysstv.py",
-    );
+    ) {
+        return;
+    }
 
     let (samples, sample_rate) = read_wav(PYSSTV_FIXTURE);
 
@@ -100,7 +105,9 @@ fn decoder_matches_pysstv_reference() {
 /// validating the encoder against a foreign implementation.
 #[test]
 fn encoder_output_decodes_via_sstv() {
-    require(SSTV_REFERENCE, "python3 tests/scripts/decode_reference.py");
+    if !require(SSTV_REFERENCE, "python3 tests/scripts/decode_reference.py") {
+        return;
+    }
 
     let (decoded, decoded_dimensions) = image_bytes(SSTV_REFERENCE);
     let (original, original_dimensions) = image_bytes(SOURCE_IMAGE);

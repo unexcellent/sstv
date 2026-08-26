@@ -1,0 +1,63 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  # Runs the same hooks as .pre-commit-config.yaml, so commits made without
+  # the hooks installed are still held to them.
+  pre-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The full history is needed to validate every pushed commit message.
+          fetch-depth: 0
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Runs all pre-commit-stage hooks (file checks, fmt, clippy, test).
+      - uses: pre-commit/action@v3.0.1
+
+      # The conventional-commits hook runs at the commit-msg stage, which
+      # `pre-commit run --all-files` does not cover: validate the message of
+      # every pushed commit explicitly.
+      - name: Check commit messages
+        if: github.event_name == 'push'
+        run: |
+          before="${{ github.event.before }}"
+          if [ "$before" = "0000000000000000000000000000000000000000" ] \
+            || ! git cat-file -e "$before" 2>/dev/null; then
+            commits=$(git rev-list -1 "${{ github.sha }}")
+          else
+            commits=$(git rev-list "$before..${{ github.sha }}")
+          fi
+          for commit in $commits; do
+            echo "checking message of $commit"
+            git log -1 --format=%B "$commit" > /tmp/commit-message
+            pre-commit run conventional-commits \
+              --hook-stage commit-msg --commit-msg-filename /tmp/commit-message
+          done
+
+  # The hooks build with std; make sure the embedded build keeps working too.
+  no-std:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: thumbv7em-none-eabihf
+
+      - uses: Swatinem/rust-cache@v2
+
+      - run: cargo build --no-default-features --target thumbv7em-none-eabihf
