@@ -1,45 +1,104 @@
-`sstv`, a slow-scan television crate using minimal memory and no access to rust std.
+`sstv`, a crate for encoding and decoding slow-scan television, compatible with embedded systems with minimal memory.
 
-This crate can be used to encode images into slow-scan television signals (and decode them back) on platforms with low memory availability, like microcontrollers.
+Install it with `cargo add sstv`. The examples below use the optional `image`, `wav` and `mp3` features — enable the ones you need with `cargo add sstv --features image,wav,mp3`.
 
-Supported modes (encoding and decoding): Scottie 1/2/DX, Martin 1/2, Robot 36/72, Wrasse SC2-180, Pasokon P3/P5/P7 and PD-50/90/120/160/180/240/290.
+# Encoding
 
-# Mode specifications
-
-All mode timings follow the "Dayton paper": JL Barber (N7CXI), *Proposal for SSTV Mode Specifications*, presented at the Dayton SSTV forum, 20 May 2000. The code is structured to mirror the paper: each mode family lives in its own module under `src/modes/`, transcribing the paper's per-line timing tables (sync pulses, porches, separator pulses and channel scans). The encoder and decoder are generic over these timing sequences, so adding another mode from the paper only means transcribing its table.
-
-The paper's FAX480 is deliberately out of scope: it is a monochrome fax format rather than a true SSTV mode, is essentially unused on air, and is the only mode without the shared calibration header and VIS code. AVT is likewise excluded (as it is from the paper itself).
-
-# Usage
-
-Encoding in `sstv` works iterator based. You need to supply an iterator over `sstv::RgbPixel` to receive an iterator over `sstv::Tone`. These tones contain information about frequency and duration and can then be converted into 16 bit sound samples using `sstv::Synthesizer`.
+Encoding an image file into a WAV takes three steps: load the image with the `image` crate, turn it into a transmission with `Encoder`, and pack the audio into a file. The image is resized to the mode's resolution automatically. (Features: `image`, `wav` — or `mp3` for `to_mp3`.)
 
 ```rust
-use sstv::{Encoder, Mode, RgbPixel, Synthesizer};
+use image;
+use sstv::{Encoder, Mode};
 
-let image = [RgbPixel::new(0, 0, 0); 320 * 240];
-let encoder = Encoder::new(Mode::Robot36, image.into_iter()).expect("error during encoding");
-for sample in Synthesizer::new(encoder, 8000) {
-    // emit the samples
+let image = image::open("image.png").expect("load image");
+let encoder = Encoder::from_image(Mode::Pd120, &image).expect("encode image");
+std::fs::write("transmission.wav", encoder.to_wav(48_000)).expect("write wav");
+```
+
+To transmit directly instead, feed the encoder into a `Synthesizer` and stream the 16 bit samples to your audio output one by one:
+
+```rust
+use image;
+use sstv::{Encoder, Mode, Synthesizer};
+
+let image = image::open("image.png").expect("load image");
+let encoder = Encoder::from_image(Mode::Robot36, &image).expect("encode image");
+for sample in Synthesizer::new(encoder, 44_100) {
+    // hand the sample to your sound card
 }
 ```
 
-Decoding is the streaming inverse: feed 16 bit samples into `sstv::RowDecoder` and receive `sstv::Event`s grouping decoded scanlines into images. Pass a specific mode, or `Mode::Auto` to detect each image's mode from its header.
+# Decoding
 
-```rust,no_run
-use sstv::{Event, Mode, RowDecoder};
+Decoding is the inverse: construct a `Decoder` from WAV data (or MP3 data, via `Decoder::from_mp3`) and iterate over the images it finds. `Mode::Auto` detects each transmission's mode from its header; pass a specific mode to skip detection. (Features: `wav`, `image`.)
 
-# let samples = std::vec::Vec::<i16>::new().into_iter();
-for event in RowDecoder::new(Mode::Auto, samples, 48000) {
+```rust
+use sstv::{Decoder, Mode};
+
+let wav = std::fs::read("transmission.wav").expect("read wav");
+let decoder = Decoder::from_wav(Mode::Auto, &wav).expect("parse wav");
+for (index, image) in decoder.rgb_images().enumerate() {
+    image.save(format!("{index}.png")).expect("save image");
+}
+```
+
+For live decoding, construct the decoder from any sample iterator — for example one fed by your sound card — and consume the event stream instead. Scanlines arrive as they are recovered, so an image can be displayed while its transmission is still on the air:
+
+```rust
+use sstv::{Decoder, Event, Mode};
+
+let samples = microphone_samples(); // any Iterator<Item = i16>
+for event in Decoder::from_samples(Mode::Auto, samples, 48_000).events() {
     match event {
-        Event::ImageStart(info) => { /* a new image begins */ }
-        Event::Row(row) => { /* one decoded scanline */ }
-        Event::ImageEnd { complete } => { /* the image finished */ }
+        Event::ImageStart(mode) => { /* prepare a canvas for the mode */ }
+        Event::Row(row) => { /* draw row.pixels() at line row.index() */ }
+        Event::ImageEnd { complete } => { /* finish the image */ }
     }
 }
 ```
 
-# Planned Features
+# Usage on Embedded Devices
 
-- using rust features to optionally allow std crates (like image and hound)
-- upload to crates.io
+The core of the crate — encoding, synthesis, demodulation and decoding — is `no_std` and only requires an allocator. Disable the default features to use it:
+
+```toml
+[dependencies]
+sstv = { version = "0.1", default-features = false }
+```
+
+This build cannot use the `std`-based features (`image`, `wav`, `mp3`): work with pixel iterators and samples directly, which also keeps memory bounded. The encoder allocates only at construction and holds no more than one line group at a time, and the same is true for decoding through `events()`:
+
+```rust
+use sstv::{Encoder, Mode, RgbPixel, Synthesizer};
+
+let pixels = camera_rows(); // any Iterator<Item = RgbPixel>, row by row
+let encoder = Encoder::new(Mode::Robot36, pixels).expect("encode");
+for sample in Synthesizer::new(encoder, 8_000) {
+    // feed the DAC
+}
+```
+
+# Supported Modes
+
+All mode timings follow the "Dayton paper": JL Barber (N7CXI), *Proposal for SSTV Mode Specifications*, presented at the Dayton SSTV forum, 20 May 2000. Each mode family lives in its own module under `src/modes/`, transcribing the paper's per-line timing tables, and the encoder and decoder are generic over these tables — adding a mode means transcribing its table.
+
+Supported for both encoding and decoding:
+
+- Scottie 1, 2 and DX
+- Martin 1 and 2
+- Robot 36 and 72
+- Wrasse SC2-180
+- Pasokon P3, P5 and P7
+- PD-50, PD-90, PD-120, PD-160, PD-180, PD-240 and PD-290
+
+The paper's FAX480 is deliberately out of scope: it is a monochrome fax format rather than a true SSTV mode, is essentially unused on air, and is the only mode without the shared calibration header and VIS code. AVT is likewise excluded (as it is from the paper itself).
+
+# Compatibility
+
+Compatibility with other SSTV programs is enforced by the test suite:
+
+- The transcribed timings are cross-checked against the transmission times the Dayton paper publishes independently, catching transcription mistakes in any single step.
+- Every mode is round-tripped: encoded, then decoded back and compared against the original image — both with the mode given explicitly and with it detected from the transmitted VIS code.
+- Signals generated by [PySSTV](https://github.com/dnet/pySSTV) are decoded by this crate, and signals encoded by this crate are decoded by the independent [sstv](https://github.com/colaclanth/sstv) decoder (see `tests/scripts/`).
+- A real off-air Robot 36 recording, captured by a ground station, must decode completely — covering receiver imperfections like noise, drift and level variation that synthetic signals do not exhibit.
+- Real ISS transmissions (PD-120 and PD-180, encoded on orbit with MMSSTV and recorded off-air by [KG4AKV](https://spacecomms.wordpress.com/iss-sstv-audio-recordings/)) must decode completely — with the mode detected from their VIS code, or through sync-pulse acquisition for the one recording whose header faded — and re-encoding the decoded images must reproduce each recording's line timing and content. The recordings are large and stay outside the git history: the first test run fetches them (~130 MB) via `tests/scripts/fetch_iss_recordings.py`, and CI caches them.

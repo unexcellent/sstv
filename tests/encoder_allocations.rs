@@ -1,3 +1,7 @@
+// Test helpers outside #[test] functions are not covered by the clippy.toml
+// test allowances.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 //! The encoder is meant for small systems: after construction, encoding and
 //! synthesizing a full transmission must not touch the allocator. This test
 //! pins that guarantee with a counting global allocator.
@@ -35,11 +39,10 @@ static ALLOCATOR: CountingAllocator = CountingAllocator;
 fn encoding_does_not_allocate_after_construction() {
     let mode = Mode::Robot36;
     let (width, height) = (mode.image_width(), mode.image_height());
-    let image: Vec<RgbPixel> = (0..width * height)
-        .map(|i| RgbPixel::new(i as u8, (i >> 8) as u8, (i >> 16) as u8))
-        .collect();
+    let image =
+        (0..width * height).map(|i| RgbPixel::new(i as u8, (i >> 8) as u8, (i >> 16) as u8));
 
-    let encoder = Encoder::new(mode, image.into_iter()).expect("construct encoder");
+    let encoder = Encoder::new(mode, image).expect("construct encoder");
     let synthesizer = Synthesizer::new(encoder, 48_000);
 
     let before = ALLOCATIONS.load(Ordering::SeqCst);

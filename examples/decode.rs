@@ -1,10 +1,13 @@
-//! Decode an SSTV WAV back into an image.
+// Examples fail fast on bad input by design.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+//! Decode an SSTV WAV or MP3 back into an image.
 //!
-//! Accepts a plain `.wav` or a gzipped `.wav.gz` and writes the decoded image
-//! to the given path (format inferred from its extension).
+//! Accepts a `.wav`, an `.mp3` or a gzipped `.wav.gz` and writes the decoded
+//! image to the given path (format inferred from its extension).
 //!
 //! ```text
-//! cargo run --example decode -- tests/assets/real_recording.wav.gz local/decoded.png [mode]
+//! cargo run --features image,wav,mp3 --example decode -- tests/assets/real_recording.wav.gz local/decoded.png [mode]
 //! ```
 //!
 //! Rows that could not be decoded are left black, so a misaligned or truncated
@@ -12,9 +15,15 @@
 
 use std::env;
 use std::fs::File;
-use std::io::{Cursor, Read};
+use std::io::Read;
 
-use sstv::{Event, Mode, RgbPixel, RowDecoder};
+use sstv::{Decoder, Mode};
+
+fn has_extension(path: &str, extension: &str) -> bool {
+    std::path::Path::new(path)
+        .extension()
+        .is_some_and(|actual| actual.eq_ignore_ascii_case(extension))
+}
 
 fn parse_mode(name: &str) -> Mode {
     Mode::ALL
@@ -26,50 +35,41 @@ fn parse_mode(name: &str) -> Mode {
 
 fn main() {
     let mut args = env::args().skip(1);
-    let usage = "usage: decode <input.wav|input.wav.gz> <output image> [mode]";
+    let usage = "usage: decode <input.wav|input.mp3|input.wav.gz> <output image> [mode]";
     let input = args.next().expect(usage);
     let output = args.next().expect(usage);
-    let mode = args
-        .next()
-        .map(|name| parse_mode(&name))
-        .unwrap_or(Mode::Auto);
+    let mode = args.next().map_or(Mode::Auto, |name| parse_mode(&name));
 
-    let (samples, sample_rate) = read_samples(&input);
-    println!("read {} samples at {sample_rate} Hz", samples.len());
+    let audio = read_audio(&input);
+    let decoder = if has_extension(&input, "mp3") {
+        Decoder::from_mp3(mode, &audio).expect("parse mp3")
+    } else {
+        Decoder::from_wav(mode, &audio).expect("parse wav")
+    };
 
-    // Reconstruct the first image in the stream from the decoder's events.
-    let mut decoded: Vec<RgbPixel> = Vec::new();
-    let mut info = None;
-    for event in RowDecoder::new(mode, samples.into_iter(), sample_rate) {
-        match event {
-            Event::ImageStart(_) if !decoded.is_empty() => break,
-            Event::ImageStart(image_info) => info = Some(image_info),
-            Event::Row(row) => decoded.extend_from_slice(row.pixels()),
-            Event::ImageEnd { .. } => break,
-        }
-    }
-    let Some(info) = info else {
+    let Some(image) = decoder.images().next() else {
         panic!("no image found in {input}");
     };
-    let (width, height) = (info.width() as u32, info.height() as u32);
     println!(
-        "decoded {} pixels ({} of {height} rows, {:?})",
-        decoded.len(),
-        decoded.len() / width as usize,
-        info.mode(),
+        "decoded a {}x{} {:?} image (complete: {})",
+        image.width(),
+        image.height(),
+        image.mode(),
+        image.complete(),
     );
 
-    save_image(&decoded, width, height, &output);
+    image::RgbImage::from(&image)
+        .save(&output)
+        .expect("save output image");
     println!("wrote {output}");
 }
 
-/// Read 16-bit PCM samples from a WAV, decompressing first if the path ends in
-/// `.gz`. Returns the first channel and the sample rate.
-fn read_samples(path: &str) -> (Vec<i16>, u32) {
+/// Read the input file, decompressing first if the path ends in `.gz`.
+fn read_audio(path: &str) -> Vec<u8> {
     let file = File::open(path).expect("open input file");
 
     let mut bytes = Vec::new();
-    if path.ends_with(".gz") {
+    if has_extension(path, "gz") {
         flate2::read::GzDecoder::new(file)
             .read_to_end(&mut bytes)
             .expect("gunzip input");
@@ -77,24 +77,5 @@ fn read_samples(path: &str) -> (Vec<i16>, u32) {
         let mut file = file;
         file.read_to_end(&mut bytes).expect("read input");
     }
-
-    let reader = hound::WavReader::new(Cursor::new(bytes)).expect("parse wav");
-    let channels = reader.spec().channels as usize;
-    let sample_rate = reader.spec().sample_rate;
-    let samples = reader
-        .into_samples::<i16>()
-        .map(|sample| sample.expect("read sample"))
-        .step_by(channels)
-        .collect();
-    (samples, sample_rate)
-}
-
-fn save_image(pixels: &[RgbPixel], width: u32, height: u32, path: &str) {
-    let mut image = image::RgbImage::new(width, height);
-    for (index, pixel) in pixels.iter().take((width * height) as usize).enumerate() {
-        let x = index as u32 % width;
-        let y = index as u32 / width;
-        image.put_pixel(x, y, image::Rgb([pixel.red(), pixel.green(), pixel.blue()]));
-    }
-    image.save(path).expect("save output image");
+    bytes
 }

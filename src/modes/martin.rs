@@ -38,6 +38,6 @@ const fn layout(sequences: &'static [&'static [Step]]) -> Layout {
 }
 
 /// 256 lines of 446.446ms each: a 114 second transmission.
-pub(crate) const MARTIN_1: Layout = layout(&[&MARTIN_1_SEQUENCE]);
+pub const MARTIN_1: Layout = layout(&[&MARTIN_1_SEQUENCE]);
 /// 256 lines of 226.798ms each: a 58 second transmission.
-pub(crate) const MARTIN_2: Layout = layout(&[&MARTIN_2_SEQUENCE]);
+pub const MARTIN_2: Layout = layout(&[&MARTIN_2_SEQUENCE]);

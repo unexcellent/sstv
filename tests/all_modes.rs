@@ -1,7 +1,11 @@
+// Test helpers outside #[test] functions are not covered by the clippy.toml
+// test allowances.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 //! Round-trip test for every mode: encode a test image, decode the samples
 //! back, and compare against the original.
 
-use sstv::{Encoder, Event, Mode, RgbPixel, RowDecoder, Synthesizer};
+use sstv::{Decoder, Encoder, Event, Mode, RgbPixel, Synthesizer};
 
 const SAMPLE_RATE: u32 = 24_000;
 
@@ -29,28 +33,25 @@ fn mean_abs_error(a: &[RgbPixel], b: &[RgbPixel]) -> f64 {
         .iter()
         .zip(b)
         .map(|(p, q)| {
-            let d = |x: u8, y: u8| (x as i32 - y as i32).unsigned_abs() as u64;
+            let d = |x: u8, y: u8| u64::from((i32::from(x) - i32::from(y)).unsigned_abs());
             d(p.red(), q.red()) + d(p.green(), q.green()) + d(p.blue(), q.blue())
         })
         .sum();
     total as f64 / (a.len() as f64 * 3.0)
 }
 
-/// Decode `samples` with the given decoder mode and check the result against
-/// `image`, whose actual mode must be reported in the image info.
+/// Decode `samples` event by event, expecting an image in the given mode with
+/// its rows complete, in order, and close to `image`.
 fn assert_decodes(decoder_mode: Mode, samples: &[i16], mode: Mode, image: &[RgbPixel]) {
     let width = mode.image_width() as usize;
     let height = mode.image_height() as usize;
 
     let mut decoded: Vec<RgbPixel> = Vec::new();
     let mut complete = None;
-    for event in RowDecoder::new(decoder_mode, samples.iter().copied(), SAMPLE_RATE) {
+    for event in Decoder::from_samples(decoder_mode, samples.iter().copied(), SAMPLE_RATE).events()
+    {
         match event {
-            Event::ImageStart(info) => {
-                assert_eq!(info.mode(), mode);
-                assert_eq!(info.width(), width);
-                assert_eq!(info.height(), height);
-            }
+            Event::ImageStart(started) => assert_eq!(started, mode),
             Event::Row(row) => {
                 assert_eq!(row.index() * width, decoded.len(), "row out of order");
                 decoded.extend_from_slice(row.pixels());

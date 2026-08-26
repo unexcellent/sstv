@@ -35,7 +35,7 @@ const ROBOT_36_ODD_SEQUENCE: [Step; 6] = [
 ];
 
 /// 240 lines of 150ms each: a 36 second transmission.
-pub(crate) const ROBOT_36: Layout = Layout {
+pub const ROBOT_36: Layout = Layout {
     width: 320,
     height: 240,
     sequences: &[&ROBOT_36_EVEN_SEQUENCE, &ROBOT_36_ODD_SEQUENCE],
@@ -56,7 +56,7 @@ const ROBOT_72_SEQUENCE: [Step; 9] = [
 ];
 
 /// 240 lines of 300ms each: a 72 second transmission.
-pub(crate) const ROBOT_72: Layout = Layout {
+pub const ROBOT_72: Layout = Layout {
     width: 320,
     height: 240,
     sequences: &[&ROBOT_72_SEQUENCE],

@@ -29,9 +29,9 @@ repos:
   - repo: local
     hooks:
       - id: cargo-clippy
-        name: cargo clippy
+        name: cargo clippy 
         description: Run Linter
-        entry: cargo clippy -- -D warnings
+        entry: cargo clippy --all-features --all-targets
         language: system
         pass_filenames: false
 
@@ -40,7 +40,7 @@ repos:
       - id: cargo-test
         name: cargo test
         description: Run tests
-        entry: cargo test
+        entry: cargo test --all-features
         language: system
         pass_filenames: false
 

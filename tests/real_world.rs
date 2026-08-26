@@ -1,3 +1,7 @@
+// Test helpers outside #[test] functions are not covered by the clippy.toml
+// test allowances.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 //! End-to-end test against a real off-air recording captured by a ground
 //! station — the true reception path, exercising receiver imperfections (drift,
 //! noise, level and DC variation) that synthetic signals do not exhibit.
@@ -5,11 +9,7 @@
 use std::io::{Cursor, Read};
 use std::path::Path;
 
-use sstv::{Event, Mode, RgbPixel, RowDecoder};
-
-/// Robot36 resolution.
-const WIDTH: usize = 320;
-const HEIGHT: usize = 240;
+use sstv::{Decoder, Mode, RgbPixel};
 
 /// A real off-air recording captured by a ground station (32 kHz, mono),
 /// stored gzip-compressed to keep the repository small.
@@ -44,7 +44,7 @@ fn mean_abs_error(a: &[u8], b: &[u8]) -> f64 {
     let sum: u64 = a
         .iter()
         .zip(b)
-        .map(|(x, y)| (*x as i32 - *y as i32).unsigned_abs() as u64)
+        .map(|(x, y)| u64::from((i32::from(*x) - i32::from(*y)).unsigned_abs()))
         .sum();
     sum as f64 / a.len() as f64
 }
@@ -76,23 +76,15 @@ fn decodes_real_ground_station_recording() {
 
     let (samples, sample_rate) = read_wav_gz(REAL_RECORDING);
 
-    // Reconstruct the first image in the stream from the decoder's events.
-    let mut decoded: Vec<RgbPixel> = Vec::new();
-    for event in RowDecoder::new(Mode::Robot36, samples.into_iter(), sample_rate) {
-        match event {
-            Event::ImageStart(_) if !decoded.is_empty() => break,
-            Event::ImageStart(_) => {}
-            Event::Row(row) => decoded.extend_from_slice(row.pixels()),
-            Event::ImageEnd { .. } => break,
-        }
-    }
+    let decoded = Decoder::from_samples(Mode::Robot36, samples.into_iter(), sample_rate)
+        .images()
+        .next()
+        .expect("an image in the recording");
+    assert!(decoded.complete(), "image should decode completely");
 
-    let rows = decoded.len() / WIDTH;
-    assert_eq!(rows, HEIGHT, "decoded {rows} of {HEIGHT} rows");
-
-    let decoded_bytes = pixels_to_bytes(&decoded);
+    let decoded_bytes = pixels_to_bytes(decoded.pixels());
     let reference = image_bytes(SOURCE_IMAGE);
-    let error = mean_abs_error(&reference[..decoded_bytes.len()], &decoded_bytes);
+    let error = mean_abs_error(&reference, &decoded_bytes);
     // Real reception drifts a little in colour/timing; a broken decode is 40+.
     assert!(error < 15.0, "decode error {error} too high");
 }

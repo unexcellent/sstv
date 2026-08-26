@@ -42,16 +42,16 @@ const fn layout(width: usize, height: usize, sequences: &'static [&'static [Step
 }
 
 /// 128 line pairs of 388.16ms each: a 50 second transmission.
-pub(crate) const PD_50: Layout = layout(320, 256, &[&PD_50_SEQUENCE]);
+pub const PD_50: Layout = layout(320, 256, &[&PD_50_SEQUENCE]);
 /// 128 line pairs of 703.04ms each: a 90 second transmission.
-pub(crate) const PD_90: Layout = layout(320, 256, &[&PD_90_SEQUENCE]);
+pub const PD_90: Layout = layout(320, 256, &[&PD_90_SEQUENCE]);
 /// 248 line pairs of 508.48ms each: a 126 second transmission.
-pub(crate) const PD_120: Layout = layout(640, 496, &[&PD_120_SEQUENCE]);
+pub const PD_120: Layout = layout(640, 496, &[&PD_120_SEQUENCE]);
 /// 200 line pairs of 804.416ms each: a 161 second transmission.
-pub(crate) const PD_160: Layout = layout(512, 400, &[&PD_160_SEQUENCE]);
+pub const PD_160: Layout = layout(512, 400, &[&PD_160_SEQUENCE]);
 /// 248 line pairs of 754.24ms each: a 187 second transmission.
-pub(crate) const PD_180: Layout = layout(640, 496, &[&PD_180_SEQUENCE]);
+pub const PD_180: Layout = layout(640, 496, &[&PD_180_SEQUENCE]);
 /// 248 line pairs of 1000ms each: a 248 second transmission.
-pub(crate) const PD_240: Layout = layout(640, 496, &[&PD_240_SEQUENCE]);
+pub const PD_240: Layout = layout(640, 496, &[&PD_240_SEQUENCE]);
 /// 308 line pairs of 937.28ms each: a 289 second transmission.
-pub(crate) const PD_290: Layout = layout(800, 616, &[&PD_290_SEQUENCE]);
+pub const PD_290: Layout = layout(800, 616, &[&PD_290_SEQUENCE]);

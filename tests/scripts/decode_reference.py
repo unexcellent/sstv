@@ -25,7 +25,7 @@ def main() -> None:
 
     # 1. Encode patch.png with our crate's encoder into a WAV.
     subprocess.run(
-        ["cargo", "run", "--quiet", "--example", "encode", "--", WAV],
+        ["cargo", "run", "--quiet", "--features", "image,wav", "--example", "encode", "--", WAV],
         cwd=REPO_ROOT,
         check=True,
     )

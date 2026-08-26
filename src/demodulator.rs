@@ -72,15 +72,15 @@ impl<I: Iterator<Item = i16>> Demodulator<I> {
         // the peaks does not jitter it), fast enough to follow DC drift and
         // level changes and to recover from a transient well within the SSTV
         // header (~900 ms before the first line sync).
-        let time_constant = (sample_rate as f64 * 0.1).max(1.0);
+        let time_constant = (f64::from(sample_rate) * 0.1).max(1.0);
         let envelope_decay = libm::exp(-1.0 / time_constant);
 
         Self {
             samples,
             sample_rate,
             previous_sample: first_sample,
-            minimum: first_sample as f64,
-            maximum: first_sample as f64,
+            minimum: f64::from(first_sample),
+            maximum: f64::from(first_sample),
             envelope_decay,
             index: 0,
             last_crossing: None,
@@ -90,23 +90,28 @@ impl<I: Iterator<Item = i16>> Demodulator<I> {
         }
     }
 
+    /// The sample rate the demodulator was constructed with, in Hz.
+    pub const fn sample_rate(&self) -> u32 {
+        self.sample_rate
+    }
+
     fn calculate_frequency(&mut self, current_sample: i16, index: u64) -> Option<Frequency> {
         // Relax the running extremes toward the midline, then re-expand to
         // include the new sample. This adaptive envelope keeps the midline
         // centred on the *current* waveform, so a DC offset, a level change, or
         // an early transient cannot latch it away from the signal.
-        let sample = current_sample as f64;
-        let midline = (self.minimum + self.maximum) / 2.0;
+        let sample = f64::from(current_sample);
+        let midline = f64::midpoint(self.minimum, self.maximum);
         self.maximum = midline + (self.maximum - midline) * self.envelope_decay;
         self.minimum = midline + (self.minimum - midline) * self.envelope_decay;
         self.maximum = self.maximum.max(sample);
         self.minimum = self.minimum.min(sample);
-        let midline = (self.minimum + self.maximum) / 2.0;
+        let midline = f64::midpoint(self.minimum, self.maximum);
 
         let previous_sample = self.previous_sample;
         self.previous_sample = current_sample;
 
-        let previous_offset = previous_sample as f64 - midline;
+        let previous_offset = f64::from(previous_sample) - midline;
         let current_offset = sample - midline;
         let samples_crossed_the_midline = (previous_offset >= 0.0) != (current_offset >= 0.0);
         if !samples_crossed_the_midline {
@@ -131,7 +136,7 @@ impl<I: Iterator<Item = i16>> Demodulator<I> {
         }
 
         let period = midline_crossing - earlier_crossing?;
-        let frequency_float = self.sample_rate as f64 / period;
+        let frequency_float = f64::from(self.sample_rate) / period;
 
         Some(Frequency::from_hz(frequency_float as u32))
     }
@@ -176,7 +181,7 @@ mod tests {
         let actual_frequency = Frequency::from_hz(1500);
         let sample_rate: u32 = 48_000;
         let samples = synthesize(vec![actual_frequency], sample_rate);
-        test_frequency(actual_frequency, sample_rate, samples, vec![]);
+        test_frequency(actual_frequency, sample_rate, &samples, vec![]);
     }
 
     #[test]
@@ -184,7 +189,7 @@ mod tests {
         let actual_frequency = Frequency::from_hz(2300);
         let sample_rate: u32 = 48_000;
         let samples = synthesize(vec![actual_frequency], sample_rate);
-        test_frequency(actual_frequency, sample_rate, samples, vec![]);
+        test_frequency(actual_frequency, sample_rate, &samples, vec![]);
     }
 
     #[test]
@@ -192,7 +197,7 @@ mod tests {
         let actual_frequency = Frequency::from_hz(1200);
         let sample_rate: u32 = 8_000;
         let samples = synthesize(vec![actual_frequency], sample_rate);
-        test_frequency(actual_frequency, sample_rate, samples, vec![]);
+        test_frequency(actual_frequency, sample_rate, &samples, vec![]);
     }
 
     #[test]
@@ -200,7 +205,7 @@ mod tests {
         let actual_frequency = Frequency::from_hz(1000);
         let sample_rate: u32 = 8_000;
         let samples = synthesize(vec![actual_frequency], sample_rate);
-        test_frequency(actual_frequency, sample_rate, samples, vec![]);
+        test_frequency(actual_frequency, sample_rate, &samples, vec![]);
     }
 
     #[test]
@@ -213,7 +218,7 @@ mod tests {
         let samples = synthesize(vec![actual_frequency], sample_rate);
         let dc_offsets = vec![-samples.iter().min().unwrap() + 1; samples.len()];
 
-        test_frequency(actual_frequency, sample_rate, samples, dc_offsets);
+        test_frequency(actual_frequency, sample_rate, &samples, dc_offsets);
     }
 
     #[test]
@@ -224,7 +229,7 @@ mod tests {
 
         let samples = synthesize(vec![actual_frequency], sample_rate);
         let offsets = noise(samples.len(), signal_to_noise_ratio_db);
-        test_frequency(actual_frequency, sample_rate, samples, offsets);
+        test_frequency(actual_frequency, sample_rate, &samples, offsets);
     }
 
     #[test]
@@ -256,18 +261,16 @@ mod tests {
 
     #[test]
     fn empty_samples_yields_empty_frequencies() {
-        let samples = vec![];
-        let estimates: Vec<Frequency> = Demodulator::new(samples.into_iter(), 48_000).collect();
+        let mut estimates = Demodulator::new(core::iter::empty(), 48_000);
 
-        assert!(estimates.is_empty());
+        assert!(estimates.next().is_none());
     }
 
     fn synthesize(frequencies: Vec<Frequency>, sample_rate: u32) -> Vec<i16> {
-        let tones: Vec<Tone> = frequencies
+        let tones = frequencies
             .into_iter()
-            .map(|freq| Tone::new(freq, Duration::from_ms(10)))
-            .collect();
-        Synthesizer::new(tones.into_iter(), sample_rate)
+            .map(|freq| Tone::new(freq, Duration::from_ms(10)));
+        Synthesizer::new(tones, sample_rate)
             .map(|sample| sample / 2)
             .collect()
     }
@@ -275,7 +278,7 @@ mod tests {
     fn test_frequency(
         actual_frequency: Frequency,
         sample_rate: u32,
-        samples: Vec<i16>,
+        samples: &[i16],
         offsets: Vec<i16>,
     ) {
         let samples_with_offset = samples
@@ -294,7 +297,7 @@ mod tests {
                 "median {} Hz ≉ {} Hz",
                 estimate.hz(),
                 actual_frequency.hz(),
-            )
+            );
         }
     }
 
@@ -305,7 +308,7 @@ mod tests {
     }
 
     fn noise(len: usize, snr_db: f64) -> Vec<i16> {
-        let signal_rms = i16::MAX as f64 / core::f64::consts::SQRT_2 / 2.0;
+        let signal_rms = f64::from(i16::MAX) / core::f64::consts::SQRT_2 / 2.0;
         let sigma = signal_rms / 10f64.powf(snr_db / 20.0);
 
         let mut rng = rand::rngs::StdRng::seed_from_u64(0x5EED);
@@ -315,7 +318,7 @@ mod tests {
                 normal
                     .sample(&mut rng)
                     .round()
-                    .clamp(i16::MIN as f64, i16::MAX as f64) as i16
+                    .clamp(f64::from(i16::MIN), f64::from(i16::MAX)) as i16
             })
             .collect()
     }

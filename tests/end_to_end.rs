@@ -1,10 +1,14 @@
+// Test helpers outside #[test] functions are not covered by the clippy.toml
+// test allowances.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
 //! End-to-end tests: encode an image to tones with the [`Encoder`], optionally
 //! corrupt the audio with deterministic noise, and decode it back with
-//! [`RowDecoder`], reassembling the event stream into images.
+//! [`Decoder`], reassembling the event stream into images.
 
 use rand::SeedableRng;
 use rand_distr::{Distribution, Normal};
-use sstv::{Encoder, Event, ImageInfo, Mode, RgbPixel, RgbRow, RowDecoder, Synthesizer};
+use sstv::{DecodedImage, Decoder, Encoder, Mode, RgbPixel, Synthesizer};
 
 /// Robot36 resolution.
 const WIDTH: usize = 320;
@@ -47,7 +51,7 @@ fn encode(image: &[RgbPixel]) -> Vec<i16> {
 /// The noise standard deviation that yields the given SNR against a full-scale
 /// sinusoidal signal.
 fn sigma_for_snr(snr_db: f64) -> f64 {
-    let signal_rms = i16::MAX as f64 / std::f64::consts::SQRT_2;
+    let signal_rms = f64::from(i16::MAX) / std::f64::consts::SQRT_2;
     signal_rms / 10f64.powf(snr_db / 20.0)
 }
 
@@ -61,7 +65,7 @@ fn noise(len: usize, seed: u64) -> Vec<i16> {
             normal
                 .sample(&mut rng)
                 .round()
-                .clamp(i16::MIN as f64, i16::MAX as f64) as i16
+                .clamp(f64::from(i16::MIN), f64::from(i16::MAX)) as i16
         })
         .collect()
 }
@@ -82,65 +86,25 @@ fn mean_abs_error(a: &[RgbPixel], b: &[RgbPixel]) -> f64 {
         .iter()
         .zip(b)
         .map(|(p, q)| {
-            let d = |x: u8, y: u8| (x as i32 - y as i32).unsigned_abs() as u64;
+            let d = |x: u8, y: u8| u64::from((i32::from(x) - i32::from(y)).unsigned_abs());
             d(p.red(), q.red()) + d(p.green(), q.green()) + d(p.blue(), q.blue())
         })
         .sum();
     total as f64 / (a.len() as f64 * 3.0)
 }
 
-/// One image reassembled from the decoder's event stream.
-struct DecodedImage {
-    #[allow(dead_code)]
-    info: ImageInfo,
-    rows: Vec<RgbRow>,
-    complete: bool,
-}
-
-impl DecodedImage {
-    /// Flatten the rows into a single raster-order pixel buffer.
-    fn pixels(&self) -> Vec<RgbPixel> {
-        let mut pixels = Vec::with_capacity(self.rows.len() * WIDTH);
-        for row in &self.rows {
-            pixels.extend_from_slice(row.pixels());
-        }
-        pixels
-    }
-}
-
 /// Drive the decoder to completion, grouping its events into images.
 fn decode_images(samples: Vec<i16>) -> Vec<DecodedImage> {
-    let mut images = Vec::new();
-    let mut current: Option<(ImageInfo, Vec<RgbRow>)> = None;
-
-    for event in RowDecoder::new(Mode::Robot36, samples.into_iter(), SAMPLE_RATE) {
-        match event {
-            Event::ImageStart(info) => current = Some((info, Vec::new())),
-            Event::Row(row) => {
-                let (_, rows) = current
-                    .as_mut()
-                    .expect("Row without a preceding ImageStart");
-                rows.push(row);
-            }
-            Event::ImageEnd { complete } => {
-                let (info, rows) = current.take().expect("ImageEnd without an ImageStart");
-                images.push(DecodedImage {
-                    info,
-                    rows,
-                    complete,
-                });
-            }
-        }
-    }
-
-    images
+    Decoder::from_samples(Mode::Robot36, samples.into_iter(), SAMPLE_RATE)
+        .images()
+        .collect()
 }
 
 /// Assert a decoded image is complete and close enough to the original.
 fn assert_matches(decoded: &DecodedImage, original: &[RgbPixel], max_error: f64) {
-    assert!(decoded.complete, "image should decode completely");
-    assert_eq!(decoded.rows.len(), HEIGHT, "should decode every row");
-    let error = mean_abs_error(original, &decoded.pixels());
+    assert!(decoded.complete(), "image should decode completely");
+    assert_eq!(decoded.pixels().len(), WIDTH * HEIGHT);
+    let error = mean_abs_error(original, decoded.pixels());
     assert!(error < max_error, "mean abs error {error} too high");
 }
 
@@ -216,7 +180,9 @@ fn pure_noise_should_not_be_decoded_as_an_image() {
     let pure_noise = add_noise(&vec![0; samples.len()], 0x1);
 
     assert_eq!(
-        RowDecoder::new(Mode::Robot36, pure_noise.into_iter(), SAMPLE_RATE).next(),
+        Decoder::from_samples(Mode::Robot36, pure_noise.into_iter(), SAMPLE_RATE)
+            .events()
+            .next(),
         None
     );
 }

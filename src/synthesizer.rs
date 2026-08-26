@@ -3,7 +3,7 @@ include!(concat!(env!("OUT_DIR"), "/sine_table.rs"));
 use crate::units::{Duration, Frequency};
 
 /// A single frequency emitted for a certain duration.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Tone {
     /// The frequency
     pub frequency: Frequency,
@@ -13,6 +13,7 @@ pub struct Tone {
 
 impl Tone {
     /// Create a new Tone
+    #[must_use]
     pub const fn new(frequency: Frequency, duration: Duration) -> Self {
         Self {
             frequency,
@@ -69,12 +70,86 @@ impl<I: Iterator<Item = Tone>> Synthesizer<I> {
 
     fn load_next_tone(&mut self) -> Option<()> {
         let tone = self.tones.next()?;
-        let numerator = tone.duration.ns() * self.sample_rate as u64 + self.sample_carry;
+        let numerator = tone.duration.ns() * u64::from(self.sample_rate) + self.sample_carry;
         self.samples_remaining = (numerator / 1_000_000_000) as u32;
         self.sample_carry = numerator % 1_000_000_000;
         self.phase_increment =
-            ((tone.frequency.hz() as u64 * (1u64 << 32)) / self.sample_rate as u64) as u32;
+            ((u64::from(tone.frequency.hz()) * (1u64 << 32)) / u64::from(self.sample_rate)) as u32;
         Some(())
+    }
+}
+
+#[cfg(feature = "wav")]
+impl<I: Iterator<Item = Tone>> Synthesizer<I> {
+    /// The remaining samples as a complete mono 16-bit PCM WAV, ready to be
+    /// written wherever the WAV should go.
+    ///
+    /// This buffers the entire transmission in memory (a few megabytes at
+    /// typical sample rates); on memory-constrained systems, emit the samples
+    /// one by one instead.
+    // expect: writing into an in-memory cursor cannot fail.
+    #[allow(clippy::expect_used, clippy::missing_panics_doc)]
+    #[must_use]
+    pub fn to_wav(mut self) -> alloc::vec::Vec<u8> {
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: self.sample_rate,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut cursor = std::io::Cursor::new(alloc::vec::Vec::new());
+        // Writing into an in-memory cursor cannot fail.
+        let mut writer = hound::WavWriter::new(&mut cursor, spec).expect("write to memory");
+        for sample in &mut self {
+            writer.write_sample(sample).expect("write to memory");
+        }
+        writer.finalize().expect("write to memory");
+        cursor.into_inner()
+    }
+}
+
+#[cfg(feature = "mp3")]
+impl<I: Iterator<Item = Tone>> Synthesizer<I> {
+    /// The remaining samples as a complete mono 128 kbps MP3, ready to be
+    /// written wherever the MP3 should go.
+    ///
+    /// This buffers the entire transmission in memory.
+    ///
+    /// # Errors
+    ///
+    /// Fails if LAME rejects the sample rate.
+    // expect: the buffer is sized via `max_required_buffer_size`.
+    #[allow(clippy::expect_used, clippy::missing_panics_doc)]
+    pub fn to_mp3(mut self) -> Result<alloc::vec::Vec<u8>, mp3lame_encoder::BuildError> {
+        use mp3lame_encoder::{Builder, FlushNoGap, MonoPcm};
+
+        let sample_rate = self.sample_rate;
+        let mut samples: alloc::vec::Vec<i16> = self.by_ref().collect();
+        // The encoder and any decoder each delay the stream by up to a frame;
+        // pad the tail so the transmission's end survives the codec chain.
+        samples.resize(samples.len() + 2304, 0);
+
+        let mut builder = Builder::new().ok_or(mp3lame_encoder::BuildError::NoMem)?;
+        builder.set_num_channels(1)?;
+        builder.set_sample_rate(sample_rate)?;
+        builder.set_brate(mp3lame_encoder::Bitrate::Kbps128)?;
+        builder.set_quality(mp3lame_encoder::Quality::Best)?;
+        let mut encoder = builder.build()?;
+
+        let mut mp3 = alloc::vec::Vec::with_capacity(mp3lame_encoder::max_required_buffer_size(
+            samples.len(),
+        ));
+        let written = encoder
+            .encode(MonoPcm(&samples), mp3.spare_capacity_mut())
+            .expect("the buffer is sized to fit the whole encoding");
+        // The encoder wrote `written` bytes into the spare capacity.
+        unsafe { mp3.set_len(mp3.len() + written) };
+
+        let flushed = encoder
+            .flush::<FlushNoGap>(mp3.spare_capacity_mut())
+            .expect("the buffer is sized to fit the whole encoding");
+        unsafe { mp3.set_len(mp3.len() + flushed) };
+        Ok(mp3)
     }
 }
 
@@ -106,17 +181,36 @@ mod tests {
         let mut carry: u64 = 0;
 
         for tone in tones {
-            let numerator = tone.duration.ns() * sample_rate as u64 + carry;
+            let numerator = tone.duration.ns() * u64::from(sample_rate) + carry;
             let count = (numerator / 1_000_000_000) as usize;
             carry = numerator % 1_000_000_000;
 
-            let increment = 2.0 * PI * tone.frequency.hz() as f64 / sample_rate as f64;
+            let increment = 2.0 * PI * f64::from(tone.frequency.hz()) / f64::from(sample_rate);
             for _ in 0..count {
-                samples.push((phase.sin() * i16::MAX as f64).round() as i16);
+                samples.push((phase.sin() * f64::from(i16::MAX)).round() as i16);
                 phase += increment;
             }
         }
         samples
+    }
+
+    #[cfg(feature = "wav")]
+    #[test]
+    fn to_wav_wraps_the_samples() {
+        let tones = [Tone::new(Frequency::from_hz(1500), Duration::from_ms(50))];
+        let samples: Vec<i16> = Synthesizer::new(tones.into_iter(), 8_000).collect();
+
+        let wav = Synthesizer::new(tones.into_iter(), 8_000).to_wav();
+
+        let reader = hound::WavReader::new(std::io::Cursor::new(wav)).expect("parse wav");
+        assert_eq!(reader.spec().channels, 1);
+        assert_eq!(reader.spec().sample_rate, 8_000);
+        assert_eq!(reader.spec().bits_per_sample, 16);
+        let unwrapped: Vec<i16> = reader
+            .into_samples()
+            .map(|sample| sample.expect("read sample"))
+            .collect();
+        assert_eq!(unwrapped, samples);
     }
 
     #[test]
