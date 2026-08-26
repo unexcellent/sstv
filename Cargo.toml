@@ -2,6 +2,14 @@
 name = "sstv"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.88"
+description = "Encode and decode slow-scan television (SSTV) transmissions, no_std compatible"
+repository = "https://github.com/unexcellent/sstv"
+license = "MIT"
+readme = "README.md"
+keywords = ["sstv", "ham-radio", "amateur-radio", "no-std", "encoding"]
+categories = ["multimedia::audio", "multimedia::encoding", "embedded", "no-std"]
+include = ["/src/**/*.rs", "/build.rs", "/examples/*.rs", "/examples/patch.png", "/README.md", "/LICENSE"]
 
 [features]
 default = ["std"]
