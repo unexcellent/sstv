@@ -41,6 +41,10 @@ name = "wav_feature"
 required-features = ["wav"]
 
 [[test]]
+name = "iss_recordings"
+required-features = ["wav"]
+
+[[test]]
 name = "mp3_feature"
 required-features = ["mp3"]
 

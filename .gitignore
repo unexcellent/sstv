@@ -33,3 +33,6 @@ tests/assets/*.png
 # Added by cargo
 
 /target
+# Real ISS recordings for tests/iss_recordings.rs (fetched by
+# tests/scripts/fetch_iss_recordings.py).
+tests/assets/iss/

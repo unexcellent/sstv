@@ -25,6 +25,13 @@ jobs:
         with:
           python-version: "3.12"
 
+      # The test suite fetches the ISS recordings on first run; cache them so
+      # CI downloads the archive only when the recording set changes.
+      - uses: actions/cache@v4
+        with:
+          path: tests/assets/iss
+          key: iss-recordings-${{ hashFiles('tests/scripts/fetch_iss_recordings.py') }}
+
       # Runs all pre-commit-stage hooks (file checks, fmt, clippy, test).
       - uses: pre-commit/action@v3.0.1
 
@@ -61,3 +68,4 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - run: cargo build --no-default-features --target thumbv7em-none-eabihf
+
