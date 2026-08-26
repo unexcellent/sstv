@@ -2,7 +2,6 @@ use core::fmt;
 
 #[derive(Debug)]
 /// An error generated while encoding or decoding.
-#[non_exhaustive]
 pub enum Error {
     /// Emitted if now enough pixels could be fetched from the image.
     ///
@@ -17,9 +16,6 @@ pub enum Error {
     /// ));
     /// ```
     EmptyImage,
-    /// The image could not be read or decoded.
-    #[cfg(feature = "image")]
-    Image(image::ImageError),
 }
 
 impl fmt::Display for Error {
@@ -29,20 +25,11 @@ impl fmt::Display for Error {
                 f,
                 "The supplied image is empty. Was the pixel iterator already used?"
             ),
-            #[cfg(feature = "image")]
-            Self::Image(error) => write!(f, "The image could not be loaded: {error}"),
         }
     }
 }
 
 impl core::error::Error for Error {}
-
-#[cfg(feature = "image")]
-impl From<image::ImageError> for Error {
-    fn from(error: image::ImageError) -> Self {
-        Self::Image(error)
-    }
-}
 
 /// Result with the custom sstv Error.
 pub type Result<T> = core::result::Result<T, Error>;

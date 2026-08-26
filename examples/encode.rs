@@ -1,4 +1,5 @@
 //! Encode examples/patch.png into an SSTV WAV using this crate's encoder.
+//! Loading the image is done with the `image` crate.
 //!
 //! ```text
 //! cargo run --features image --example encode -- local/encoded.wav [mode] [sample_rate]
@@ -29,7 +30,8 @@ fn main() {
         .map(|s| s.parse().expect("sample rate must be an integer"))
         .unwrap_or(48_000);
 
-    let encoder = Encoder::from_image_path(mode, "examples/patch.png").expect("encode");
+    let image = image::open("examples/patch.png").expect("open examples/patch.png");
+    let encoder = Encoder::from_image(mode, &image).expect("encode");
 
     let spec = hound::WavSpec {
         channels: 1,

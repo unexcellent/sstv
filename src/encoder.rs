@@ -43,6 +43,13 @@ impl Encoder {
     ///
     /// The image is resized to the mode's resolution if it does not match,
     /// stretching it to fit.
+    ///
+    /// ```no_run
+    /// use sstv::{Encoder, Mode};
+    ///
+    /// let image = image::open("image.png").expect("load image");
+    /// let encoder = Encoder::from_image(Mode::Robot36, &image).expect("encode image");
+    /// ```
     pub fn from_image(mode: Mode, image: &image::DynamicImage) -> Result<Self> {
         let (width, height) = (mode.image_width(), mode.image_height());
         let image = if (image.width(), image.height()) == (width, height) {
@@ -57,17 +64,6 @@ impl Encoder {
             .map(|pixel| RgbPixel::new(pixel[0], pixel[1], pixel[2]))
             .collect();
         Self::new(mode, pixels.into_iter())
-    }
-
-    /// Encode an image file in any format the `image` crate can read.
-    ///
-    /// ```no_run
-    /// use sstv::{Encoder, Mode};
-    ///
-    /// let encoder = Encoder::from_image_path(Mode::Robot36, "image.png").expect("load image");
-    /// ```
-    pub fn from_image_path(mode: Mode, path: impl AsRef<std::path::Path>) -> Result<Self> {
-        Self::from_image(mode, &image::open(path)?)
     }
 }
 

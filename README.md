@@ -9,7 +9,9 @@ Supported modes (encoding and decoding): Scottie 1/2/DX, Martin 1/2, Robot 36/72
 The core encoder and decoder are `no_std` (plus `alloc`) and stay that way. Optional features add conveniences on top:
 
 - `std` (default): APIs that need the Rust standard library.
-- `image` (implies `std`): bridges to the `image` crate. Encode straight from disk with `Encoder::from_image_path(Mode::Pd120, "photo.png")` (images are resized to the mode's resolution), and convert decoded images for saving with `image::RgbImage::from(&decoded).save("out.png")`.
+- `image` (implies `std`): bridges to the `image` crate. Encode its buffers with `Encoder::from_image(mode, &image)` (resized to the mode's resolution), and decode straight into its buffers with `Decoder::rgb_images()` (or `image::RgbImage::from(&decoded)`).
+
+Reading and writing files is deliberately not this crate's job: load and save images (and audio) with the crates of your choice and exchange buffers, pixels and samples through the APIs above.
 
 Embedded users disable the defaults:
 
@@ -54,5 +56,4 @@ On memory-constrained receivers, use `.events()` instead of `.images()`: it stre
 
 # Planned Features
 
-- reading and writing WAV files behind a `wav` feature
 - upload to crates.io

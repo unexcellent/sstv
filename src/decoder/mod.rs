@@ -127,6 +127,30 @@ impl<I: Iterator<Item = i16>> Decoder<I> {
     }
 }
 
+#[cfg(feature = "image")]
+impl<I: Iterator<Item = i16>> Decoder<I> {
+    /// Assemble and stream whole images as `image` crate buffers, ready for
+    /// its processing and saving APIs.
+    ///
+    /// This drops the mode and completeness metadata; use
+    /// [`images`](Self::images) to keep it.
+    ///
+    /// ```no_run
+    /// use sstv::{Decoder, Mode};
+    ///
+    /// # let samples = std::vec::Vec::<i16>::new().into_iter();
+    /// for (index, image) in Decoder::from_samples(Mode::Auto, samples, 48000)
+    ///     .rgb_images()
+    ///     .enumerate()
+    /// {
+    ///     image.save(format!("{index}.png")).expect("save image");
+    /// }
+    /// ```
+    pub fn rgb_images(self) -> impl Iterator<Item = image::RgbImage> {
+        self.images().map(|decoded| image::RgbImage::from(&decoded))
+    }
+}
+
 /// The event stream of a [`Decoder`]: scanlines as they are recovered,
 /// grouped into images by [`Event::ImageStart`] and [`Event::ImageEnd`]
 /// markers. It holds at most about one line group at a time — never the
