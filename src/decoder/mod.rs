@@ -137,10 +137,26 @@ impl Decoder<alloc::vec::IntoIter<i16>> {
     /// Only the first channel of multi-channel audio is used; integer samples
     /// of any bit depth and float samples are converted to 16 bit.
     ///
+    /// Data cut short relative to the length declared in the header — common
+    /// in recordings whose writer was interrupted — is decoded up to the cut;
+    /// pixels the audio did not carry are left black.
+    ///
     /// # Errors
     ///
     /// Fails if the WAV data is malformed.
     pub fn from_wav(mode: Mode, wav: &[u8]) -> core::result::Result<Self, hound::Error> {
+        // `hound` reports running out of data mid-sample as an I/O error;
+        // treat that as end of stream to tolerate truncated recordings.
+        fn or_eof<T>(
+            sample: core::result::Result<T, hound::Error>,
+        ) -> core::result::Result<Option<T>, hound::Error> {
+            match sample {
+                Ok(sample) => Ok(Some(sample)),
+                Err(hound::Error::IoError(_)) => Ok(None),
+                Err(error) => Err(error),
+            }
+        }
+
         let reader = hound::WavReader::new(std::io::Cursor::new(wav))?;
         let spec = reader.spec();
         let channels = spec.channels.max(1) as usize;
@@ -149,7 +165,7 @@ impl Decoder<alloc::vec::IntoIter<i16>> {
         match spec.sample_format {
             hound::SampleFormat::Int => {
                 for (index, sample) in reader.into_samples::<i32>().enumerate() {
-                    let sample = sample?;
+                    let Some(sample) = or_eof(sample)? else { break };
                     if index % channels == 0 {
                         let scaled = if spec.bits_per_sample >= 16 {
                             sample >> (spec.bits_per_sample - 16)
@@ -162,7 +178,7 @@ impl Decoder<alloc::vec::IntoIter<i16>> {
             }
             hound::SampleFormat::Float => {
                 for (index, sample) in reader.into_samples::<f32>().enumerate() {
-                    let sample = sample?;
+                    let Some(sample) = or_eof(sample)? else { break };
                     if index % channels == 0 {
                         samples.push((sample * f32::from(i16::MAX)) as i16);
                     }

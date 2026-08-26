@@ -92,3 +92,32 @@ fn decodes_stereo_float_wavs() {
 fn malformed_wav_reports_an_error() {
     assert!(Decoder::from_wav(Mode::Auto, b"not a wav").is_err());
 }
+
+/// A WAV whose data chunk is shorter than its header declares decodes up to
+/// the cut, with the missing rows left black.
+#[test]
+fn decodes_a_truncated_wav() {
+    let image = test_image(Mode::Robot36);
+    let encoder = Encoder::new(Mode::Robot36, image.clone().into_iter()).expect("encode");
+    let wav = encoder.to_wav(SAMPLE_RATE);
+
+    // Cut a quarter of the audio without adjusting the header sizes.
+    let truncated = &wav[..wav.len() - (wav.len() - 44) / 4];
+
+    let decoded = Decoder::from_wav(Mode::Auto, truncated)
+        .expect("parse truncated wav")
+        .images()
+        .next()
+        .expect("an image");
+
+    assert_eq!(decoded.mode(), Mode::Robot36);
+    assert!(!decoded.complete(), "a truncated image is not complete");
+    let pixels = decoded.pixels();
+    let last = pixels.last().expect("pixels");
+    assert_eq!((last.red(), last.green(), last.blue()), (0, 0, 0));
+
+    let decoded_rows = pixels.len() / Mode::Robot36.image_width() as usize;
+    assert_eq!(decoded_rows, Mode::Robot36.image_height() as usize);
+    let error = mean_abs_error(&image[..pixels.len() / 2], &pixels[..pixels.len() / 2]);
+    assert!(error < 12.0, "mean abs error {error} too high");
+}
