@@ -1,10 +1,10 @@
 `sstv`, a crate for encoding and decoding slow-scan television, compatible with embedded systems with minimal memory.
 
-Install it with `cargo add sstv`. The examples below use the optional `image`, `wav` and `mp3` features — enable the ones you need with `cargo add sstv --features image,wav,mp3`.
+Install it with `cargo add sstv`. The examples below use the optional `image`, `wav` and `mp3` features. Enable the ones you need with `cargo add sstv --features image,wav,mp3`.
 
 # Encoding
 
-Encoding an image file into a WAV takes three steps: load the image with the `image` crate, turn it into a transmission with `Encoder`, and pack the audio into a file. The image is resized to the mode's resolution automatically. (Features: `image`, `wav` — or `mp3` for `to_mp3`.)
+Encoding an image file into a WAV takes three steps: load the image with the `image` crate, turn it into a transmission with `Encoder`, and pack the audio into a file. The image is resized to the mode's resolution automatically.
 
 ```rust
 use image;
@@ -30,7 +30,7 @@ for sample in Synthesizer::new(encoder, 44_100) {
 
 # Decoding
 
-Decoding is the inverse: construct a `Decoder` from WAV data (or MP3 data, via `Decoder::from_mp3`) and iterate over the images it finds. `Mode::Auto` detects each transmission's mode from its header; pass a specific mode to skip detection. (Features: `wav`, `image`.)
+Decoding is the inverse: construct a `Decoder` from WAV data (or MP3 data, via `Decoder::from_mp3`) and iterate over the images it finds. `Mode::Auto` detects each transmission's mode from its header; pass a specific mode to skip detection.
 
 ```rust
 use sstv::{Decoder, Mode};
@@ -63,7 +63,7 @@ The core of the crate — encoding, synthesis, demodulation and decoding — is 
 
 ```toml
 [dependencies]
-sstv = { version = "0.1", default-features = false }
+sstv = { version = "*", default-features = false }
 ```
 
 This build cannot use the `std`-based features (`image`, `wav`, `mp3`): work with pixel iterators and samples directly, which also keeps memory bounded. The encoder allocates only at construction and holds no more than one line group at a time, and the same is true for decoding through `events()`:
@@ -91,8 +91,6 @@ Supported for both encoding and decoding:
 - Pasokon P3, P5 and P7
 - PD-50, PD-90, PD-120, PD-160, PD-180, PD-240 and PD-290
 
-The paper's FAX480 is deliberately out of scope: it is a monochrome fax format rather than a true SSTV mode, is essentially unused on air, and is the only mode without the shared calibration header and VIS code. AVT is likewise excluded (as it is from the paper itself).
-
 # Compatibility
 
 Compatibility with other SSTV programs is enforced by the test suite:
@@ -103,7 +101,7 @@ Compatibility with other SSTV programs is enforced by the test suite:
 - A real off-air Robot 36 recording, captured by a ground station, must decode completely — covering receiver imperfections like noise, drift and level variation that synthetic signals do not exhibit.
 - Real ISS transmissions (PD-120 and PD-180, encoded on orbit with MMSSTV and recorded off-air by [KG4AKV](https://spacecomms.wordpress.com/iss-sstv-audio-recordings/)) must decode completely — with the mode detected from their VIS code, or through sync-pulse acquisition for the one recording whose header faded — and re-encoding the decoded images must reproduce each recording's line timing and content. The recordings are large and stay outside the git history: the first test run fetches them (~130 MB) via `tests/scripts/fetch_iss_recordings.py`, and CI caches them.
 
-# Where this Crate is Used Today
+# Implementations
 
 - [`beacon`](https://github.com/unexcellent/beacon) is the firmware of the SSTV payload running on the [MOVE-IIIa satellite](https://warr.de/projects/move/move-iii/). The need for `beacon` to encode SSTV on an ESP32-P4 originally inspired the creation of this crate
 - [slowscan.space](https://slowscan.space) is a website for encoding and decoding SSTV powered by this crate

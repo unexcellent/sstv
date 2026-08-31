@@ -725,6 +725,29 @@ mod tests {
     }
 
     #[test]
+    fn auto_detects_mode_when_front_of_header_is_trimmed() {
+        let image = test_image();
+        let full = encode(&image, 48_000);
+
+        // Emulate a recording clipped at the front (e.g. a trimmed video): drop
+        // the VOX tones, first leader and break, leaving the second leader
+        // running straight into the VIS bits. Auto detection must still lock on.
+        let trimmed: u64 = (0..=9)
+            .map(|index| Mode::Robot36.header_tone(index).unwrap().duration.ns())
+            .sum();
+        let skip = (trimmed * 48_000 / 1_000_000_000) as usize;
+
+        let decoded: Vec<DecodedImage> =
+            Decoder::from_samples(Mode::Auto, full.into_iter().skip(skip), 48_000)
+                .images()
+                .collect();
+
+        assert_eq!(decoded.len(), 1, "expected one image");
+        assert_eq!(decoded[0].mode(), Mode::Robot36);
+        assert_matches(&decoded[0], &image);
+    }
+
+    #[test]
     fn decoding_from_a_demodulator_matches_decoding_from_samples() {
         let image = test_image();
         let samples = encode(&image, 48_000);
