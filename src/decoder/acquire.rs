@@ -118,7 +118,19 @@ pub(super) fn detect_mode<I: Iterator<Item = i16>>(
         if is_leader(frequency) {
             leader_start.get_or_insert(index);
         } else if let Some(start) = leader_start.take() {
-            leader = Some((index, index - start));
+            let length = index - start;
+            leader = Some((index, length));
+            // A recording trimmed at the front loses the leader-break-leader
+            // preamble, leaving a lone leader running straight into the VIS
+            // start bit. Anchor on that transition: when a long-enough leader
+            // ends, try reading the VIS as if its bits begin right there. On a
+            // full header this reads the break tone as the start bit and fails
+            // the bit checks, leaving the break-anchored path below to detect.
+            if length >= min_leader
+                && let Some(found) = read_vis_bits(stream, index)
+            {
+                return Some(found);
+            }
         }
 
         if is_sync(frequency) {
@@ -159,14 +171,27 @@ fn read_vis<I: Iterator<Item = i16>>(
         }
     }
 
-    // Ten 30ms bits follow the leader: start, seven code bits
-    // (least-significant first), parity and stop. Each is judged by the
-    // median of three samples around its centre.
+    read_vis_bits(stream, break_end + samples(300.0) as usize)
+}
+
+/// Read the ten VIS bits beginning at `start_bit`, returning the mode and the
+/// position where its image data begins. `None` if anything about the bits is
+/// off — the search then simply continues.
+fn read_vis_bits<I: Iterator<Item = i16>>(
+    stream: &mut FrequencyStream<I>,
+    start_bit: usize,
+) -> Option<(Mode, f64)> {
+    let sample_rate = f64::from(stream.sample_rate());
+    let samples = move |milliseconds: f64| milliseconds / 1000.0 * sample_rate;
+
+    // Ten 30ms bits: start, seven code bits (least-significant first), parity
+    // and stop. Each is judged by the median of three samples around its
+    // centre.
     let mut bits = [0u32; 10];
     for (slot, bit) in bits.iter_mut().enumerate() {
         let mut medians = [0u32; 3];
         for (sample, offset) in medians.iter_mut().zip([8.0, 15.0, 22.0]) {
-            let position = break_end + samples(300.0 + slot as f64 * 30.0 + offset) as usize;
+            let position = start_bit + samples(slot as f64 * 30.0 + offset) as usize;
             *sample = stream.peek(position)?.hz();
         }
         medians.sort_unstable();
@@ -195,7 +220,8 @@ fn read_vis<I: Iterator<Item = i16>>(
     }
 
     let mode = Mode::from_vis_code(code)?;
-    let mut sequence_start = break_end as f64 + samples(600.0);
+    // The ten bits span 300ms; image data follows the stop bit.
+    let mut sequence_start = start_bit as f64 + samples(300.0);
     if mode.has_starting_sync_pulse() {
         sequence_start += stream.samples_in(mode.layout().sync_pulse().1);
     }
