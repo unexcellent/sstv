@@ -39,8 +39,8 @@ repos:
     hooks:
       - id: cargo-test
         name: cargo test
-        description: Run tests
-        entry: cargo test --all-features
+        description: Run tests (default features only; CI covers --all-features)
+        entry: cargo test
         language: system
         pass_filenames: false
 

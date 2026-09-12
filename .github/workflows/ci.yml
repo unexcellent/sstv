@@ -33,7 +33,13 @@ jobs:
           key: iss-recordings-${{ hashFiles('tests/scripts/fetch_iss_recordings.py') }}
 
       # Runs all pre-commit-stage hooks (file checks, fmt, clippy, test).
+      # The test hook runs default features only; the full suite runs below.
       - uses: pre-commit/action@v3.0.1
+
+      # The pre-commit test hook skips --all-features to keep local commits
+      # fast (the ISS-recording tests are slow); run the full suite here.
+      - name: Test all features
+        run: cargo test --all-features
 
       # The conventional-commits hook runs at the commit-msg stage, which
       # `pre-commit run --all-files` does not cover: validate the message of
