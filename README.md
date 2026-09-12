@@ -105,3 +105,4 @@ Compatibility with other SSTV programs is enforced by the test suite:
 
 - [`beacon`](https://github.com/unexcellent/beacon) is the firmware of the SSTV payload running on the [MOVE-IIIa satellite](https://warr.de/projects/move/move-iii/). The need for `beacon` to encode SSTV on an ESP32-P4 originally inspired the creation of this crate
 - [slowscan.space](https://slowscan.space) is a website for encoding and decoding SSTV powered by this crate
+- [`sstv` Python package](https://github.com/unexcellent/sstv-py) makes high performance SSTV accessible to Python users via `pip` by creating a tested wrapper around this crate
