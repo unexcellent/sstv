@@ -326,14 +326,14 @@ impl ImageState {
             match step {
                 // Re-align on the actual sync pulse rather than trusting the
                 // nominal timing.
-                Step::Tone(tone) if tone.frequency == SYNC_FREQUENCY => {
+                Step::Control(tone) if tone.frequency == SYNC_FREQUENCY => {
                     if stream.advance_to(t).is_none() || consume_sync(stream).is_none() {
                         stream_ended = true;
                         break 'steps;
                     }
                     t = stream.position() as f64;
                 }
-                Step::Tone(tone) => {
+                Step::Control(tone) => {
                     let len = stream.samples_in(tone.duration);
                     if let Some(frequency) = stream.advance_to(t + len / 2.0) {
                         tone_hz.push(frequency.hz());

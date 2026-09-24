@@ -308,7 +308,7 @@ where
                 pixel,
                 ..
             } => match self.layout.sequences[sequence][step] {
-                Step::Tone(tone) => Some(tone),
+                Step::Control(tone) => Some(tone),
                 Step::Scan(channel, duration) => {
                     let value = self.value(sequence, channel, pixel);
                     Some(Tone::new(

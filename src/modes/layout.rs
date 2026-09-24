@@ -26,14 +26,14 @@ pub enum Channel {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Step {
     /// A fixed control tone: sync pulse, sync porch, separator pulse or porch.
-    Tone(Tone),
+    Control(Tone),
     /// A channel scan: one line of pixels spread evenly over the duration.
     Scan(Channel, Duration),
 }
 
 impl Step {
     pub(crate) const fn tone(frequency: Frequency, duration: Duration) -> Self {
-        Self::Tone(Tone::new(frequency, duration))
+        Self::Control(Tone::new(frequency, duration))
     }
 
     pub(crate) const fn scan(channel: Channel, duration: Duration) -> Self {
@@ -42,7 +42,7 @@ impl Step {
 
     pub(crate) const fn duration(&self) -> Duration {
         match self {
-            Self::Tone(tone) => tone.duration,
+            Self::Control(tone) => tone.duration,
             Self::Scan(_, duration) => *duration,
         }
     }
@@ -108,7 +108,7 @@ impl Layout {
     pub(crate) fn sync_pulse(&self) -> (Duration, Duration) {
         let mut offset = Duration::from_ns(0);
         for step in self.sequences[0] {
-            if let Step::Tone(tone) = step
+            if let Step::Control(tone) = step
                 && tone.frequency == super::SYNC_FREQUENCY
             {
                 return (offset, tone.duration);
@@ -128,7 +128,7 @@ impl Layout {
         };
         let mut tone_index = 0;
         for (a, b) in first.iter().zip(second.iter()) {
-            if let (Step::Tone(x), Step::Tone(y)) = (a, b) {
+            if let (Step::Control(x), Step::Control(y)) = (a, b) {
                 if x.frequency == super::SYNC_FREQUENCY {
                     continue;
                 }
