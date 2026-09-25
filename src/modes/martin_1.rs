@@ -4,7 +4,7 @@
 //! sync pulse at the line break and a short separator pulse after each scan.
 
 use super::Mode;
-use super::layout::{Channel, ColorMode, Layout, Step};
+use super::step::{Channel, ColorMode, Step};
 use crate::units::Duration;
 use crate::{tone, us, vis_code};
 
@@ -13,12 +13,10 @@ pub const MARTIN_1: Mode = Mode {
     name: "Martin1",
     vis_code: vis_code!(44),
     starting_sync_pulse: false,
-    layout: Layout {
-        resolution: (320, 256),
-        sequence: &SEQUENCE,
-        lines_per_sequence: 1,
-        color: ColorMode::Rgb,
-    },
+    resolution: (320, 256),
+    sequence: &SEQUENCE,
+    lines_per_sequence: 1,
+    color: ColorMode::Rgb,
 };
 
 const SYNC_PULSE: Step = Step::Control(tone!(1200 Hz, 4_862 us));

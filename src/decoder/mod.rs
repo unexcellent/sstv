@@ -5,7 +5,7 @@ mod stream;
 use alloc::collections::VecDeque;
 use alloc::{vec, vec::Vec};
 
-use crate::modes::layout::Step;
+use crate::modes::step::Step;
 use crate::modes::{BLACK_FREQUENCY, Mode, ROBOT_36, SYNC_FREQUENCY, WHITE_FREQUENCY};
 use crate::{Demodulator, RgbPixel};
 
@@ -306,7 +306,7 @@ impl ImageState {
             mode,
             sequence_start,
             row_index: 0,
-            assembler: Assembler::new(&mode.layout()),
+            assembler: Assembler::new(mode.color),
         }
     }
 
@@ -323,9 +323,8 @@ impl ImageState {
         &mut self,
         stream: &mut FrequencyStream<I>,
     ) -> Option<SequenceData> {
-        let layout = self.mode.layout();
-        let sequence = layout.sequence;
-        let width = layout.resolution.0;
+        let sequence = self.mode.sequence;
+        let width = self.mode.resolution.0;
         let expected_scans = sequence
             .iter()
             .filter(|step| matches!(step, Step::Scan(..)))
@@ -433,7 +432,7 @@ impl<I: Iterator<Item = i16>> Events<I> {
 
         let acquired = match self.expected_mode {
             None => detect_mode(&mut self.stream),
-            Some(mode) => lock_onto_first_line(&mut self.stream, &mode.layout())
+            Some(mode) => lock_onto_first_line(&mut self.stream, mode)
                 .map(|sequence_start| (mode, sequence_start)),
         };
 
@@ -457,7 +456,7 @@ impl<I: Iterator<Item = i16>> Events<I> {
             return;
         };
 
-        if image.row_index >= image.mode.layout().resolution.1 {
+        if image.row_index >= image.mode.resolution.1 {
             self.queue.push_back(Event::ImageEnd { complete: true });
             self.state = State::Searching;
             return;

@@ -2,7 +2,7 @@
 use alloc::vec::Vec;
 
 use crate::image::{RgbPixel, YuvPixel};
-use crate::modes::layout::{Channel, ColorMode, Layout, Step};
+use crate::modes::step::{Channel, ColorMode, Step};
 use crate::modes::{Mode, value_frequency};
 use crate::synthesizer::Tone;
 use crate::{Error, Result};
@@ -23,7 +23,7 @@ use crate::{Error, Result};
 /// # Ok::<(), Error>(())
 /// ```
 ///
-/// It encodes any mode by walking its layout: the header, then for each
+/// It encodes any mode by walking its timing sequence: the header, then for each
 /// group of buffered lines the mode's timing sequences, emitting fixed tones
 /// verbatim and expanding each scan step into one tone per pixel.
 pub struct Encoder<'a, I>
@@ -176,8 +176,8 @@ where
     fn with_storage(mode: Mode, mut pixels: I, storage: Storage<'a>) -> Result<Self> {
         let mut lines = RgbLines {
             storage,
-            width: mode.layout().resolution.0,
-            color: mode.layout().color,
+            width: mode.resolution.0,
+            color: mode.color,
         };
 
         if lines.fill_next(&mut pixels).is_none() {
@@ -202,14 +202,14 @@ where
     }
 
     fn emit_image_tone(&self, step: usize, pixel: usize) -> Tone {
-        let current_step = self.mode.layout().sequence[step];
+        let current_step = self.mode.sequence[step];
         match current_step {
             Step::Control(tone) => tone,
             Step::Scan(channel, duration) => {
                 let value = self.lines.value(pixel, channel);
                 Tone::new(
                     value_frequency(value),
-                    duration / self.mode.layout().resolution.0 as u32,
+                    duration / self.mode.resolution.0 as u32,
                 )
             }
         }
@@ -295,7 +295,7 @@ where
     type Item = Tone;
 
     fn next(&mut self) -> Option<Tone> {
-        self.state.advance(self.mode, &self.mode.layout());
+        self.state.advance(self.mode);
 
         let pixel_iterator_is_empty =
             self.state.needs_next_lines() && self.lines.fill_next(&mut self.pixels).is_none();
@@ -325,7 +325,7 @@ enum State {
 
 impl State {
     /// Step to the state that emits the next tone.
-    fn advance(&mut self, mode: Mode, layout: &Layout) {
+    fn advance(&mut self, mode: Mode) {
         match *self {
             Self::NotStarted => *self = Self::Header(0),
             Self::Header(index) => {
@@ -340,9 +340,9 @@ impl State {
                 };
             }
             Self::Image { row, step, pixel } => {
-                let steps = layout.sequence;
+                let steps = mode.sequence;
                 let mid_scan =
-                    matches!(steps[step], Step::Scan(..)) && pixel + 1 < layout.resolution.0;
+                    matches!(steps[step], Step::Scan(..)) && pixel + 1 < mode.resolution.0;
                 *self = if mid_scan {
                     Self::Image {
                         row,
@@ -355,9 +355,9 @@ impl State {
                         step: step + 1,
                         pixel: 0,
                     }
-                } else if row + layout.lines_per_sequence < layout.resolution.1 {
+                } else if row + mode.lines_per_sequence < mode.resolution.1 {
                     Self::Image {
-                        row: row + layout.lines_per_sequence,
+                        row: row + mode.lines_per_sequence,
                         step: 0,
                         pixel: 0,
                     }

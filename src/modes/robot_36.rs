@@ -9,7 +9,7 @@
 //! 150ms lines — and thus two sync pulses.
 
 use super::Mode;
-use super::layout::{Channel, ColorMode, Layout, Step};
+use super::step::{Channel, ColorMode, Step};
 use crate::{ms, tone, vis_code};
 
 /// A 320x240 colour image in a 36 second transmission: 240 lines of 150ms each.
@@ -17,12 +17,10 @@ pub const ROBOT_36: Mode = Mode {
     name: "Robot36",
     vis_code: vis_code!(8),
     starting_sync_pulse: false,
-    layout: Layout {
-        resolution: (320, 240),
-        sequence: &SEQUENCE,
-        lines_per_sequence: 2,
-        color: ColorMode::YuvSharedPair,
-    },
+    resolution: (320, 240),
+    sequence: &SEQUENCE,
+    lines_per_sequence: 2,
+    color: ColorMode::YuvSharedPair,
 };
 
 const SYNC_PULSE: Step = Step::Control(tone!(1200 Hz, 9 ms));

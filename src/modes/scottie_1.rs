@@ -6,7 +6,7 @@
 //! very first line (emitted here as the last header tone).
 
 use super::Mode;
-use super::layout::{Channel, ColorMode, Layout, Step};
+use super::step::{Channel, ColorMode, Step};
 use crate::units::Duration;
 use crate::{tone, us, vis_code};
 
@@ -15,12 +15,10 @@ pub const SCOTTIE_1: Mode = Mode {
     name: "Scottie1",
     vis_code: vis_code!(60),
     starting_sync_pulse: true,
-    layout: Layout {
-        resolution: (320, 256),
-        sequence: &SEQUENCE,
-        lines_per_sequence: 1,
-        color: ColorMode::Rgb,
-    },
+    resolution: (320, 256),
+    sequence: &SEQUENCE,
+    lines_per_sequence: 1,
+    color: ColorMode::Rgb,
 };
 
 const SYNC_PULSE: Step = Step::Control(tone!(1200 Hz, 9 ms));

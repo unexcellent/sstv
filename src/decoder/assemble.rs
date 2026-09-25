@@ -4,7 +4,7 @@
 use alloc::vec::Vec;
 
 use crate::image::{RgbPixel, YuvPixel};
-use crate::modes::layout::{Channel, ColorMode, Layout};
+use crate::modes::step::{Channel, ColorMode};
 
 /// The sampled contents of one pass through a timing sequence.
 pub(super) struct SequenceData {
@@ -18,10 +18,8 @@ pub(super) struct Assembler {
 }
 
 impl Assembler {
-    pub const fn new(layout: &Layout) -> Self {
-        Self {
-            color: layout.color,
-        }
+    pub const fn new(color: ColorMode) -> Self {
+        Self { color }
     }
 
     /// The rows completed by one sequence pass, in transmission order.

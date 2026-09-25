@@ -5,7 +5,7 @@
 //! transmits both differences on every line.
 
 use super::Mode;
-use super::layout::{Channel, ColorMode, Layout, Step};
+use super::step::{Channel, ColorMode, Step};
 use crate::{ms, tone, vis_code};
 
 /// A 320x240 colour image in a 72 second transmission: 240 lines of 300ms each.
@@ -13,12 +13,10 @@ pub const ROBOT_72: Mode = Mode {
     name: "Robot72",
     vis_code: vis_code!(12),
     starting_sync_pulse: false,
-    layout: Layout {
-        resolution: (320, 240),
-        sequence: &SEQUENCE,
-        lines_per_sequence: 1,
-        color: ColorMode::Yuv,
-    },
+    resolution: (320, 240),
+    sequence: &SEQUENCE,
+    lines_per_sequence: 1,
+    color: ColorMode::Yuv,
 };
 
 const SYNC_PULSE: Step = Step::Control(tone!(1200 Hz, 9 ms));

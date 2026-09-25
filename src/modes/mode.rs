@@ -1,9 +1,10 @@
 //! The [`Mode`] type and the calibration header preceding a mode's image
 //! data.
 
-use super::layout::Layout;
+use super::step::{ColorMode, Step};
 use super::{ALL, LEADER_FREQUENCY, SYNC_FREQUENCY, VisCode};
 use crate::synthesizer::Tone;
+use crate::units::Duration;
 use crate::{Error, ms, tone};
 
 /// Tuning (VOX) tones customarily sent ahead of the calibration header to
@@ -33,8 +34,17 @@ pub struct Mode {
     pub(super) vis_code: VisCode,
     /// Whether one extra sync pulse precedes the first line (Scottie modes).
     pub(super) starting_sync_pulse: bool,
-    /// The scanline structure specified by the mode's timing-sequence table.
-    pub(super) layout: Layout,
+    /// The horizontal and vertical resolution in pixels.
+    pub(crate) resolution: (usize, usize),
+    /// The repeating timing sequence from the paper's table. Its sync pulses
+    /// are evenly spaced — the decoder relies on that to acquire and
+    /// re-align.
+    pub(crate) sequence: &'static [Step],
+    /// Image lines carried by one pass through the sequence (2 for Robot 36
+    /// and PD modes).
+    pub(crate) lines_per_sequence: usize,
+    /// How the scans combine into pixels.
+    pub(crate) color: ColorMode,
 }
 
 impl Mode {
@@ -44,27 +54,70 @@ impl Mode {
         self.vis_code
     }
 
-    /// The mode's scanline structure as specified by its timing-sequence
-    /// table in the paper.
-    pub(crate) const fn layout(self) -> Layout {
-        self.layout
-    }
-
     /// The number of pixels the encoder buffers for this mode — one full
     /// line group. This is the length [`Encoder::new_in`](crate::Encoder)
     /// requires of its buffer.
     #[must_use]
     pub const fn encoder_buffer_len(&self) -> usize {
-        self.layout.lines_per_sequence * self.layout.resolution.0
+        self.lines_per_sequence * self.resolution.0
     }
 
     /// The image resolution in pixels, as (width, height).
     #[must_use]
     pub const fn resolution(&self) -> (u32, u32) {
-        (
-            self.layout.resolution.0 as u32,
-            self.layout.resolution.1 as u32,
-        )
+        (self.resolution.0 as u32, self.resolution.1 as u32)
+    }
+
+    /// The duration of one pass through the timing sequence.
+    pub(crate) fn sequence_duration(&self) -> Duration {
+        let mut sum = Duration::from_ns(0);
+        for step in self.sequence {
+            sum = sum + step.duration();
+        }
+        sum
+    }
+
+    /// Each step of the sequence with the offset at which it begins.
+    pub(crate) fn step_offsets(&self) -> impl Iterator<Item = (Duration, &'static Step)> {
+        self.sequence.iter().scan(Duration::from_ns(0), |at, step| {
+            let offset = *at;
+            *at = *at + step.duration();
+            Some((offset, step))
+        })
+    }
+
+    /// The offset at which each sync pulse starts.
+    pub(crate) fn sync_offsets(&self) -> impl Iterator<Item = Duration> {
+        self.step_offsets().filter_map(|(offset, step)| {
+            matches!(step, Step::Control(tone) if tone.frequency == SYNC_FREQUENCY)
+                .then_some(offset)
+        })
+    }
+
+    /// The number of sync pulses in the sequence (2 for Robot 36).
+    pub(crate) fn sync_count(&self) -> usize {
+        self.sync_offsets().count()
+    }
+
+    /// The spacing of the sync pulses — the duration of one transmitted line.
+    pub(crate) fn sync_spacing(&self) -> Duration {
+        self.sequence_duration() / self.sync_count() as u32
+    }
+
+    /// The first sync pulse's offset within the sequence and its duration.
+    ///
+    /// Zero offset for most modes; Scottie places the sync pulse between the
+    /// Blue and Red scans.
+    pub(crate) fn sync_pulse(&self) -> (Duration, Duration) {
+        for (offset, step) in self.step_offsets() {
+            if let Step::Control(tone) = step
+                && tone.frequency == SYNC_FREQUENCY
+            {
+                return (offset, tone.duration);
+            }
+        }
+        // Every mode's sequence contains a sync pulse.
+        (Duration::from_ns(0), Duration::from_ns(0))
     }
 
     /// Whether the mode transmits one extra sync pulse between the header and
@@ -89,7 +142,7 @@ impl Mode {
             9 => Some(Tone::new(SYNC_FREQUENCY, ms!(10))), // break
             11..=20 => self.vis_code.tone(index - 11),
             21 if self.has_starting_sync_pulse() => {
-                Some(Tone::new(SYNC_FREQUENCY, self.layout().sync_pulse().1))
+                Some(Tone::new(SYNC_FREQUENCY, self.sync_pulse().1))
             }
             _ => None,
         }
@@ -147,16 +200,15 @@ pub mod testing {
     /// pair period for two-line sequences), and that its sync pulses are
     /// evenly spaced — the decoder relies on that to acquire and re-align.
     pub fn assert_line_period(mode: Mode, expected: Duration) {
-        let layout = mode.layout();
-        let sum = layout
+        let sum = mode
             .sequence
             .iter()
             .fold(us!(0), |sum, step| sum + step.duration());
         assert_eq!(sum, expected);
 
-        let first_sync = layout.sync_pulse().0;
-        for (index, offset) in layout.sync_offsets().enumerate() {
-            assert_eq!(offset, first_sync + layout.sync_spacing() * index as u32);
+        let first_sync = mode.sync_pulse().0;
+        for (index, offset) in mode.sync_offsets().enumerate() {
+            assert_eq!(offset, first_sync + mode.sync_spacing() * index as u32);
         }
     }
 
@@ -164,9 +216,8 @@ pub mod testing {
     /// the transmission time the paper publishes alongside the per-step
     /// timings — this catches a transcription mistake in any single step.
     pub fn assert_transmission_time(mode: Mode, expected_seconds: f64) {
-        let layout = mode.layout();
-        let passes = (layout.resolution.1 / layout.lines_per_sequence) as f64;
-        let seconds = passes * layout.sequence_duration().ns() as f64 / 1e9;
+        let passes = (mode.resolution.1 / mode.lines_per_sequence) as f64;
+        let seconds = passes * mode.sequence_duration().ns() as f64 / 1e9;
         assert!(
             (seconds - expected_seconds).abs() < 0.1,
             "{seconds}s instead of {expected_seconds}s",

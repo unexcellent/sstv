@@ -6,7 +6,7 @@
 //! time and resolution.
 
 use super::Mode;
-use super::layout::{Channel, ColorMode, Layout, Step};
+use super::step::{Channel, ColorMode, Step};
 use crate::units::Duration;
 use crate::{tone, us, vis_code};
 
@@ -15,12 +15,10 @@ pub const PD_90: Mode = Mode {
     name: "Pd90",
     vis_code: vis_code!(99),
     starting_sync_pulse: false,
-    layout: Layout {
-        resolution: (320, 256),
-        sequence: &SEQUENCE,
-        lines_per_sequence: 2,
-        color: ColorMode::YuvSharedPair,
-    },
+    resolution: (320, 256),
+    sequence: &SEQUENCE,
+    lines_per_sequence: 2,
+    color: ColorMode::YuvSharedPair,
 };
 
 const SYNC_PULSE: Step = Step::Control(tone!(1200 Hz, 20 ms));

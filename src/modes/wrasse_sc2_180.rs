@@ -4,7 +4,7 @@
 //! the sync pulse and porch directly, without separators.
 
 use super::Mode;
-use super::layout::{Channel, ColorMode, Layout, Step};
+use super::step::{Channel, ColorMode, Step};
 use crate::{ms, tone, vis_code};
 
 /// A 320x256 colour image in a 182 second transmission: 256 lines of 711.0225ms each.
@@ -12,12 +12,10 @@ pub const WRASSE_SC2_180: Mode = Mode {
     name: "WrasseSc2180",
     vis_code: vis_code!(55),
     starting_sync_pulse: false,
-    layout: Layout {
-        resolution: (320, 256),
-        sequence: &SEQUENCE,
-        lines_per_sequence: 1,
-        color: ColorMode::Rgb,
-    },
+    resolution: (320, 256),
+    sequence: &SEQUENCE,
+    lines_per_sequence: 1,
+    color: ColorMode::Rgb,
 };
 
 const SEQUENCE: [Step; 5] = [

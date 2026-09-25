@@ -6,7 +6,7 @@
 //! clock rates.
 
 use super::Mode;
-use super::layout::{Channel, ColorMode, Layout, Step};
+use super::step::{Channel, ColorMode, Step};
 use crate::units::Duration;
 use crate::{tone, us, vis_code};
 
@@ -15,12 +15,10 @@ pub const PASOKON_P3: Mode = Mode {
     name: "PasokonP3",
     vis_code: vis_code!(113),
     starting_sync_pulse: false,
-    layout: Layout {
-        resolution: (640, 496),
-        sequence: &SEQUENCE,
-        lines_per_sequence: 1,
-        color: ColorMode::Rgb,
-    },
+    resolution: (640, 496),
+    sequence: &SEQUENCE,
+    lines_per_sequence: 1,
+    color: ColorMode::Rgb,
 };
 
 const SYNC_PULSE: Step = Step::Control(tone!(1200 Hz, 5_208 us));

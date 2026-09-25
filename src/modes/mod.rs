@@ -3,12 +3,12 @@
 //! forum, 20 May 2000.
 //!
 //! Each mode lives in its own module, transcribing its timing table from the
-//! paper into a `Layout`. Everything shared between modes — the frequency
+//! paper into a [`Mode`]. Everything shared between modes — the frequency
 //! range, the calibration header and the VIS code — is defined here, as in
 //! the paper's common sections.
 
-pub(crate) mod layout;
 mod mode;
+pub(crate) mod step;
 mod vis_code;
 
 #[cfg(test)]

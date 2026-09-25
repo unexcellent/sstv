@@ -3,7 +3,7 @@
 //! of its line sync pulses when the mode is known.
 
 use crate::Frequency;
-use crate::modes::layout::{Layout, Step};
+use crate::modes::step::Step;
 use crate::modes::{LEADER_FREQUENCY, Mode, SYNC_FREQUENCY, VisCode};
 
 use super::stream::FrequencyStream;
@@ -34,11 +34,11 @@ const fn is_leader(frequency: Frequency) -> bool {
 /// resolved for sequences carrying several sync pulses (Robot 36).
 pub(super) fn lock_onto_first_line<I: Iterator<Item = i16>>(
     stream: &mut FrequencyStream<I>,
-    layout: &Layout,
+    mode: Mode,
 ) -> Option<f64> {
-    let (sync_offset, sync_duration) = layout.sync_pulse();
+    let (sync_offset, sync_duration) = mode.sync_pulse();
     let sync_len = stream.samples_in(sync_duration);
-    let period = stream.samples_in(layout.sync_spacing());
+    let period = stream.samples_in(mode.sync_spacing());
 
     let min_run = (sync_len * 0.5) as usize;
     let max_run = (sync_len * 2.0) as usize;
@@ -76,10 +76,10 @@ pub(super) fn lock_onto_first_line<I: Iterator<Item = i16>>(
                 }
                 for &(a, _) in candidates.iter().rev() {
                     if a < b && spaced(a, b) {
-                        if layout.sync_count() == 1 {
+                        if mode.sync_count() == 1 {
                             return Some(a as f64 - stream.samples_in(sync_offset));
                         }
-                        return Some(resolve_phase(stream, layout, a as f64));
+                        return Some(resolve_phase(stream, mode, a as f64));
                     }
                 }
             }
@@ -93,7 +93,7 @@ pub(super) fn lock_onto_first_line<I: Iterator<Item = i16>>(
 }
 
 /// The sequence start implied by a locked sync at `sync_position`, for
-/// layouts whose sequence carries several sync pulses (Robot 36's line
+/// modes whose sequence carries several sync pulses (Robot 36's line
 /// pair). The lock could be on any of them: every alignment is tried, and
 /// the one whose control tones match the layout best wins — otherwise a
 /// decode entering at a pair's second line would swap the colour
@@ -101,17 +101,17 @@ pub(super) fn lock_onto_first_line<I: Iterator<Item = i16>>(
 /// whole sequence.
 fn resolve_phase<I: Iterator<Item = i16>>(
     stream: &mut FrequencyStream<I>,
-    layout: &Layout,
+    mode: Mode,
     sync_position: f64,
 ) -> f64 {
-    let sequence_len = stream.samples_in(layout.sequence_duration());
+    let sequence_len = stream.samples_in(mode.sequence_duration());
     let mut best = (0usize, sync_position);
-    for sync_offset in layout.sync_offsets() {
+    for sync_offset in mode.sync_offsets() {
         let mut start = sync_position - stream.samples_in(sync_offset);
         if start < 0.0 {
             start += sequence_len;
         }
-        let score = phase_score(stream, layout, start);
+        let score = phase_score(stream, mode, start);
         if score > best.0 {
             best = (score, start);
         }
@@ -123,11 +123,11 @@ fn resolve_phase<I: Iterator<Item = i16>>(
 /// the sequence is assumed to start at `start`.
 fn phase_score<I: Iterator<Item = i16>>(
     stream: &mut FrequencyStream<I>,
-    layout: &Layout,
+    mode: Mode,
     start: f64,
 ) -> usize {
     let mut score = 0;
-    for (offset, step) in layout.step_offsets() {
+    for (offset, step) in mode.step_offsets() {
         let Step::Control(tone) = step else { continue };
         if tone.frequency == SYNC_FREQUENCY {
             continue;
@@ -279,7 +279,7 @@ fn read_vis_bits<I: Iterator<Item = i16>>(
     // The ten bits span 300ms; image data follows the stop bit.
     let mut sequence_start = start_bit as f64 + samples(300.0);
     if mode.has_starting_sync_pulse() {
-        sequence_start += stream.samples_in(mode.layout().sync_pulse().1);
+        sequence_start += stream.samples_in(mode.sync_pulse().1);
     }
     Some((mode, sequence_start))
 }
