@@ -33,7 +33,7 @@ where
     mode: Mode,
     pixels: I,
     lines: RgbLines<'a>,
-    phase: Phase,
+    state: State,
 }
 
 /// The image lines the scan steps sample — one line for most modes, the line
@@ -186,16 +186,16 @@ where
             mode,
             pixels,
             lines,
-            phase: Phase::NotStarted,
+            state: State::NotStarted,
         })
     }
 
-    /// The tone belonging to the current phase.
+    /// The tone belonging to the current state.
     fn emit(&self) -> Option<Tone> {
-        match self.phase {
-            Phase::NotStarted | Phase::Finished => None,
-            Phase::Header(index) => self.mode.header_tone(index),
-            Phase::Image {
+        match self.state {
+            State::NotStarted | State::Finished => None,
+            State::Header(index) => self.mode.header_tone(index),
+            State::Image {
                 sequence,
                 step,
                 pixel,
@@ -294,12 +294,12 @@ where
     type Item = Tone;
 
     fn next(&mut self) -> Option<Tone> {
-        self.phase.advance(self.mode, &self.mode.layout());
+        self.state.advance(self.mode, &self.mode.layout());
 
         let pixel_iterator_is_empty =
-            self.phase.needs_next_lines() && self.lines.fill_next(&mut self.pixels).is_none();
+            self.state.needs_next_lines() && self.lines.fill_next(&mut self.pixels).is_none();
         if pixel_iterator_is_empty {
-            self.phase = Phase::Finished;
+            self.state = State::Finished;
         }
 
         self.emit()
@@ -308,7 +308,7 @@ where
 
 /// Where the encoder is within the transmission.
 #[derive(Debug, Clone, Copy, PartialEq)]
-enum Phase {
+enum State {
     NotStarted,
     Header(usize),
     Image {
@@ -324,8 +324,8 @@ enum Phase {
     Finished,
 }
 
-impl Phase {
-    /// Step to the phase that emits the next tone.
+impl State {
+    /// Step to the state that emits the next tone.
     fn advance(&mut self, mode: Mode, layout: &Layout) {
         match *self {
             Self::NotStarted => *self = Self::Header(0),
@@ -386,7 +386,7 @@ impl Phase {
         }
     }
 
-    /// Whether the phase just moved onto the first tone of a line cycle whose
+    /// Whether the state just moved onto the first tone of a line cycle whose
     /// lines are not buffered yet. The first cycle's lines are already
     /// buffered at construction.
     const fn needs_next_lines(&self) -> bool {
