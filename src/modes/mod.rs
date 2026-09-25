@@ -2,19 +2,31 @@
 //! "Proposal for SSTV Mode Specifications", presented at the Dayton SSTV
 //! forum, 20 May 2000.
 //!
-//! Each mode family lives in its own module mirroring a chapter of the paper,
-//! transcribing its timing table into a [`Layout`]. Everything
-//! shared between modes — the frequency range, the calibration header and the
-//! VIS code — is defined here, as in the paper's common sections.
+//! Each mode lives in its own module, transcribing its timing table from the
+//! paper into a [`Layout`]. Everything shared between modes — the frequency
+//! range, the calibration header and the VIS code — is defined here, as in
+//! the paper's common sections.
 
 pub mod layout;
 
-mod martin;
-mod pasokon;
-mod pd;
-mod robot;
-mod scottie;
-mod wrasse;
+mod martin_1;
+mod martin_2;
+mod pasokon_p3;
+mod pasokon_p5;
+mod pasokon_p7;
+mod pd_120;
+mod pd_160;
+mod pd_180;
+mod pd_240;
+mod pd_290;
+mod pd_50;
+mod pd_90;
+mod robot_36;
+mod robot_72;
+mod scottie_1;
+mod scottie_2;
+mod scottie_dx;
+mod wrasse_sc2_180;
 
 use crate::synthesizer::Tone;
 use crate::units::{Duration, Frequency};
@@ -173,24 +185,24 @@ impl Mode {
     /// table in the paper.
     pub(crate) const fn layout(self) -> Layout {
         match self {
-            Self::Scottie1 => scottie::SCOTTIE_1,
-            Self::Scottie2 => scottie::SCOTTIE_2,
-            Self::ScottieDx => scottie::SCOTTIE_DX,
-            Self::Martin1 => martin::MARTIN_1,
-            Self::Martin2 => martin::MARTIN_2,
-            Self::Robot36 => robot::ROBOT_36,
-            Self::Robot72 => robot::ROBOT_72,
-            Self::WrasseSc2180 => wrasse::WRASSE_SC2_180,
-            Self::PasokonP3 => pasokon::PASOKON_P3,
-            Self::PasokonP5 => pasokon::PASOKON_P5,
-            Self::PasokonP7 => pasokon::PASOKON_P7,
-            Self::Pd50 => pd::PD_50,
-            Self::Pd90 => pd::PD_90,
-            Self::Pd120 => pd::PD_120,
-            Self::Pd160 => pd::PD_160,
-            Self::Pd180 => pd::PD_180,
-            Self::Pd240 => pd::PD_240,
-            Self::Pd290 => pd::PD_290,
+            Self::Scottie1 => scottie_1::SCOTTIE_1,
+            Self::Scottie2 => scottie_2::SCOTTIE_2,
+            Self::ScottieDx => scottie_dx::SCOTTIE_DX,
+            Self::Martin1 => martin_1::MARTIN_1,
+            Self::Martin2 => martin_2::MARTIN_2,
+            Self::Robot36 => robot_36::ROBOT_36,
+            Self::Robot72 => robot_72::ROBOT_72,
+            Self::WrasseSc2180 => wrasse_sc2_180::WRASSE_SC2_180,
+            Self::PasokonP3 => pasokon_p3::PASOKON_P3,
+            Self::PasokonP5 => pasokon_p5::PASOKON_P5,
+            Self::PasokonP7 => pasokon_p7::PASOKON_P7,
+            Self::Pd50 => pd_50::PD_50,
+            Self::Pd90 => pd_90::PD_90,
+            Self::Pd120 => pd_120::PD_120,
+            Self::Pd160 => pd_160::PD_160,
+            Self::Pd180 => pd_180::PD_180,
+            Self::Pd240 => pd_240::PD_240,
+            Self::Pd290 => pd_290::PD_290,
         }
     }
 
