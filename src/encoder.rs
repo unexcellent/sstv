@@ -32,32 +32,95 @@ where
 {
     mode: Mode,
     pixels: I,
-    lines: Lines<'a>,
+    lines: RgbLines<'a>,
     phase: Phase,
+}
+
+/// The image lines the scan steps sample — one line for most modes, the line
+/// pair for Robot 36 and PD modes — stored line after line.
+struct RgbLines<'a> {
+    storage: Storage<'a>,
+    /// The width of one line in pixels.
+    width: usize,
+    /// How the buffered lines combine into colour channels.
+    color: ColorMode,
 }
 
 /// The backing storage of the buffered lines: allocated by [`Encoder::new`],
 /// or caller-provided through [`Encoder::new_in`].
-enum Lines<'a> {
+enum Storage<'a> {
     #[cfg(feature = "alloc")]
     Owned(Vec<RgbPixel>),
     Borrowed(&'a mut [RgbPixel]),
 }
 
-impl Lines<'_> {
+impl Storage<'_> {
     fn as_slice(&self) -> &[RgbPixel] {
         match self {
             #[cfg(feature = "alloc")]
-            Self::Owned(lines) => lines,
-            Self::Borrowed(lines) => lines,
+            Self::Owned(pixels) => pixels,
+            Self::Borrowed(pixels) => pixels,
         }
     }
 
     fn as_mut_slice(&mut self) -> &mut [RgbPixel] {
         match self {
             #[cfg(feature = "alloc")]
-            Self::Owned(lines) => lines,
-            Self::Borrowed(lines) => lines,
+            Self::Owned(pixels) => pixels,
+            Self::Borrowed(pixels) => pixels,
+        }
+    }
+}
+
+impl RgbLines<'_> {
+    /// The number of buffered lines.
+    fn line_count(&self) -> usize {
+        self.storage.as_slice().len() / self.width
+    }
+
+    /// Replace the buffered lines with the next ones from the pixel iterator.
+    /// `None` once the image runs out of complete line groups.
+    fn fill_next(&mut self, pixels: &mut impl Iterator<Item = RgbPixel>) -> Option<()> {
+        for slot in self.storage.as_mut_slice() {
+            *slot = pixels.next()?;
+        }
+        Some(())
+    }
+
+    /// The pixel value a scan step transmits at horizontal position `x`,
+    /// reading from the buffered line group starting at `first_line`.
+    fn value(&self, first_line: usize, channel: Channel, x: usize) -> u8 {
+        match channel {
+            Channel::Red => self.rgb(first_line, x).red(),
+            Channel::Green => self.rgb(first_line, x).green(),
+            Channel::Blue => self.rgb(first_line, x).blue(),
+            Channel::Y => self.yuv(first_line, x).luma(),
+            Channel::YSecond => self.yuv(first_line + 1, x).luma(),
+            Channel::RY => self.chroma(first_line, x, YuvPixel::chroma_red),
+            Channel::BY => self.chroma(first_line, x, YuvPixel::chroma_blue),
+        }
+    }
+
+    fn rgb(&self, line: usize, x: usize) -> RgbPixel {
+        self.storage.as_slice()[line * self.width + x]
+    }
+
+    fn yuv(&self, line: usize, x: usize) -> YuvPixel {
+        YuvPixel::from(self.rgb(line, x))
+    }
+
+    /// One colour-difference component, averaged over all buffered lines
+    /// where the mode calls for it (Robot 36 and PD modes).
+    fn chroma(&self, line: usize, x: usize, component: fn(YuvPixel) -> u8) -> u8 {
+        match self.color {
+            ColorMode::YuvAveragedPair | ColorMode::YuvSharedPair => {
+                let lines = self.line_count();
+                let sum: u16 = (0..lines)
+                    .map(|buffered| u16::from(component(self.yuv(buffered, x))))
+                    .sum();
+                (sum / lines as u16) as u8
+            }
+            _ => component(self.yuv(line, x)),
         }
     }
 }
@@ -76,8 +139,8 @@ where
     /// [`Error::EmptyImage`] if the iterator cannot fill the mode's first
     /// lines.
     pub fn new(mode: Mode, pixels: I) -> Result<Self> {
-        let lines = alloc::vec![RgbPixel::new(0, 0, 0); mode.encoder_buffer_len()];
-        Self::with_lines(mode, pixels, Lines::Owned(lines))
+        let storage = alloc::vec![RgbPixel::new(0, 0, 0); mode.encoder_buffer_len()];
+        Self::with_storage(mode, pixels, Storage::Owned(storage))
     }
 }
 
@@ -104,18 +167,20 @@ where
     /// [`Error::EmptyImage`] if the iterator cannot fill the mode's first
     /// lines.
     pub fn new_in(mode: Mode, pixels: I, buffer: &'a mut [RgbPixel]) -> Result<Self> {
-        let Some(lines) = buffer.get_mut(..mode.encoder_buffer_len()) else {
+        let Some(storage) = buffer.get_mut(..mode.encoder_buffer_len()) else {
             return Err(Error::BufferTooSmall);
         };
-        Self::with_lines(mode, pixels, Lines::Borrowed(lines))
+        Self::with_storage(mode, pixels, Storage::Borrowed(storage))
     }
 
-    fn with_lines(mode: Mode, mut pixels: I, mut lines: Lines<'a>) -> Result<Self> {
-        let width = mode.layout().resolution.0;
-        for line in lines.as_mut_slice().chunks_exact_mut(width) {
-            if fill_line(&mut pixels, line).is_none() {
-                return Err(Error::EmptyImage);
-            }
+    fn with_storage(mode: Mode, mut pixels: I, storage: Storage<'a>) -> Result<Self> {
+        let mut lines = RgbLines {
+            storage,
+            width: mode.layout().resolution.0,
+            color: mode.layout().color,
+        };
+        if lines.fill_next(&mut pixels).is_none() {
+            return Err(Error::EmptyImage);
         }
         Ok(Self {
             mode,
@@ -123,53 +188,6 @@ where
             lines,
             phase: Phase::NotStarted,
         })
-    }
-
-    /// Replace the buffered lines with the next ones from the pixel iterator.
-    /// `None` once the image runs out of complete line groups.
-    fn buffer_next_lines(&mut self) -> Option<()> {
-        let width = self.mode.layout().resolution.0;
-        for line in self.lines.as_mut_slice().chunks_exact_mut(width) {
-            fill_line(&mut self.pixels, line)?;
-        }
-        Some(())
-    }
-
-    /// The pixel value a scan step transmits at horizontal position `x`.
-    fn value(&self, sequence: usize, channel: Channel, x: usize) -> u8 {
-        let first_line = sequence * self.mode.layout().lines_per_sequence;
-        match channel {
-            Channel::Red => self.rgb(first_line, x).red(),
-            Channel::Green => self.rgb(first_line, x).green(),
-            Channel::Blue => self.rgb(first_line, x).blue(),
-            Channel::Y => self.yuv(first_line, x).luma(),
-            Channel::YSecond => self.yuv(first_line + 1, x).luma(),
-            Channel::RY => self.chroma(first_line, x, YuvPixel::chroma_red),
-            Channel::BY => self.chroma(first_line, x, YuvPixel::chroma_blue),
-        }
-    }
-
-    fn rgb(&self, line: usize, x: usize) -> RgbPixel {
-        self.lines.as_slice()[line * self.mode.layout().resolution.0 + x]
-    }
-
-    fn yuv(&self, line: usize, x: usize) -> YuvPixel {
-        YuvPixel::from(self.rgb(line, x))
-    }
-
-    /// One colour-difference component, averaged over all buffered lines
-    /// where the mode calls for it (Robot 36 and PD modes).
-    fn chroma(&self, line: usize, x: usize, component: fn(YuvPixel) -> u8) -> u8 {
-        match self.mode.layout().color {
-            ColorMode::YuvAveragedPair | ColorMode::YuvSharedPair => {
-                let lines = self.mode.layout().lines_per_cycle();
-                let sum: u16 = (0..lines)
-                    .map(|buffered| u16::from(component(self.yuv(buffered, x))))
-                    .sum();
-                (sum / lines as u16) as u8
-            }
-            _ => component(self.yuv(line, x)),
-        }
     }
 
     /// Whether the phase just moved onto the first tone of a line cycle whose
@@ -200,7 +218,8 @@ where
             } => match self.mode.layout().sequences[sequence][step] {
                 Step::Control(tone) => Some(tone),
                 Step::Scan(channel, duration) => {
-                    let value = self.value(sequence, channel, pixel);
+                    let first_line = sequence * self.mode.layout().lines_per_sequence;
+                    let value = self.lines.value(first_line, channel, pixel);
                     Some(Tone::new(
                         value_frequency(value),
                         duration / self.mode.layout().resolution.0 as u32,
@@ -292,7 +311,8 @@ where
     fn next(&mut self) -> Option<Tone> {
         self.phase.advance(self.mode, &self.mode.layout());
 
-        let pixel_iterator_is_empty = self.needs_next_lines() && self.buffer_next_lines().is_none();
+        let pixel_iterator_is_empty =
+            self.needs_next_lines() && self.lines.fill_next(&mut self.pixels).is_none();
         if pixel_iterator_is_empty {
             self.phase = Phase::Finished;
         }
@@ -379,12 +399,4 @@ impl Phase {
             Self::Finished => (),
         }
     }
-}
-
-/// Fill `line` from the pixel iterator; `None` if it runs out first.
-fn fill_line<I: Iterator<Item = RgbPixel>>(pixels: &mut I, line: &mut [RgbPixel]) -> Option<()> {
-    for slot in line {
-        *slot = pixels.next()?;
-    }
-    Some(())
 }
