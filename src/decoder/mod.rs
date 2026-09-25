@@ -253,8 +253,9 @@ impl<I: Iterator<Item = i16>> Decoder<I> {
     ///     .rgb_images()
     ///     .enumerate()
     /// {
-    ///     image.save(format!("{index}.png")).expect("save image");
+    ///     image.save(format!("{index}.png"))?;
     /// }
+    /// # Ok::<(), image::ImageError>(())
     /// ```
     pub fn rgb_images(self) -> impl Iterator<Item = image::RgbImage> {
         self.images().map(|decoded| image::RgbImage::from(&decoded))

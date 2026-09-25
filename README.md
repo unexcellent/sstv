@@ -10,9 +10,9 @@ Encoding an image file into a WAV takes three steps: load the image with the `im
 use image;
 use sstv::{modes::PD_120, Encoder};
 
-let image = image::open("image.png").expect("load image");
-let encoder = Encoder::from_image(PD_120, &image).expect("encode image");
-std::fs::write("transmission.wav", encoder.to_wav(48_000)).expect("write wav");
+let image = image::open("image.png")?;
+let encoder = Encoder::from_image(PD_120, &image)?;
+std::fs::write("transmission.wav", encoder.to_wav(48_000))?;
 ```
 
 To transmit directly instead, feed the encoder into a `Synthesizer` and stream the 16 bit samples to your audio output one by one:
@@ -21,8 +21,8 @@ To transmit directly instead, feed the encoder into a `Synthesizer` and stream t
 use image;
 use sstv::{modes::ROBOT_36, Encoder, Synthesizer};
 
-let image = image::open("image.png").expect("load image");
-let encoder = Encoder::from_image(ROBOT_36, &image).expect("encode image");
+let image = image::open("image.png")?;
+let encoder = Encoder::from_image(ROBOT_36, &image)?;
 for sample in Synthesizer::new(encoder, 44_100) {
     // hand the sample to your sound card
 }
@@ -35,10 +35,10 @@ Decoding is the inverse: construct a `Decoder` from WAV data (or MP3 data, via `
 ```rust
 use sstv::Decoder;
 
-let wav = std::fs::read("transmission.wav").expect("read wav");
-let decoder = Decoder::from_wav(&wav).expect("parse wav");
+let wav = std::fs::read("transmission.wav")?;
+let decoder = Decoder::from_wav(&wav)?;
 for (index, image) in decoder.rgb_images().enumerate() {
-    image.save(format!("{index}.png")).expect("save image");
+    image.save(format!("{index}.png"))?;
 }
 ```
 
@@ -72,7 +72,7 @@ This build cannot use the `std`-based features (`image`, `wav`, `mp3`): work wit
 use sstv::{modes::ROBOT_36, Encoder, RgbPixel, Synthesizer};
 
 let pixels = camera_rows(); // any Iterator<Item = RgbPixel>, row by row
-let encoder = Encoder::new(ROBOT_36, pixels).expect("encode");
+let encoder = Encoder::new(ROBOT_36, pixels)?;
 for sample in Synthesizer::new(encoder, 8_000) {
     // feed the DAC
 }

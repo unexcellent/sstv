@@ -29,10 +29,11 @@ impl Tone {
 /// use sstv::{modes::ROBOT_36, Encoder, RgbPixel, Synthesizer};
 ///
 /// let image = [RgbPixel::new(0, 0, 0); 320 * 240];
-/// let encoder = Encoder::new(ROBOT_36, image.into_iter()).expect("error during encoding");
+/// let encoder = Encoder::new(ROBOT_36, image.into_iter())?;
 /// for sample in Synthesizer::new(encoder, 8000) {
 ///     // ...
 /// }
+/// # Ok::<(), sstv::Error>(())
 /// ```
 ///
 /// It can be used with a single `Tone` as well.

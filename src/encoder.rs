@@ -15,10 +15,11 @@ use crate::{Error, Result};
 /// use sstv::{modes::ROBOT_36, Encoder, Error, RgbPixel};
 ///
 /// let image = [RgbPixel::new(0, 0, 0); 320 * 240];
-/// let encoder = Encoder::new(ROBOT_36, image.into_iter()).expect("error during encoding");
+/// let encoder = Encoder::new(ROBOT_36, image.into_iter())?;
 /// for tone in encoder {
 ///     // emit or save the tones
 /// }
+/// # Ok::<(), Error>(())
 /// ```
 ///
 /// It encodes any mode by walking its layout: the header, then for each
@@ -197,8 +198,9 @@ impl Encoder<alloc::vec::IntoIter<RgbPixel>> {
     /// ```no_run
     /// use sstv::{modes::ROBOT_36, Encoder};
     ///
-    /// let image = image::open("image.png").expect("load image");
-    /// let encoder = Encoder::from_image(ROBOT_36, &image).expect("encode image");
+    /// let image = image::open("image.png")?;
+    /// let encoder = Encoder::from_image(ROBOT_36, &image)?;
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
     /// ```
     ///
     /// # Errors
