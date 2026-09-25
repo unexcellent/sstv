@@ -125,14 +125,6 @@ impl Add for Duration {
     }
 }
 
-impl Sub for Duration {
-    type Output = Self;
-
-    fn sub(self, rhs: Self) -> Self {
-        Self::from_ns(self.ns() - rhs.ns())
-    }
-}
-
 impl Mul<u32> for Duration {
     type Output = Self;
 

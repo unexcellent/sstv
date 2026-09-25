@@ -83,7 +83,7 @@ Decoding buffers scanlines and the acquisition window on the heap, so it require
 
 # Supported Modes
 
-All mode timings follow the "Dayton paper": JL Barber (N7CXI), *Proposal for SSTV Mode Specifications*, presented at the Dayton SSTV forum, 20 May 2000. Each mode family lives in its own module under `src/modes/`, transcribing the paper's per-line timing tables, and the encoder and decoder are generic over these tables — adding a mode means transcribing its table.
+All mode timings follow the "Dayton paper": JL Barber (N7CXI), *Proposal for SSTV Mode Specifications*, presented at the Dayton SSTV forum, 20 May 2000. Each mode lives in its own module under `src/modes/`, transcribing the paper's per-line timing tables, and the encoder and decoder are generic over these tables — adding a mode means transcribing its table.
 
 Supported for both encoding and decoding:
 

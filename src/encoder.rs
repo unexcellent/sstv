@@ -23,9 +23,9 @@ use crate::{Error, Result};
 /// # Ok::<(), Error>(())
 /// ```
 ///
-/// It encodes any mode by walking its timing sequence: the header, then for each
-/// group of buffered lines the mode's timing sequences, emitting fixed tones
-/// verbatim and expanding each scan step into one tone per pixel.
+/// It encodes any mode by walking its timing sequence: the header, then for
+/// each group of buffered lines one pass through the sequence, emitting fixed
+/// tones verbatim and expanding each scan step into one tone per pixel.
 pub struct Encoder<'a, I>
 where
     I: Iterator<Item = RgbPixel>,

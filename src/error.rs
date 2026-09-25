@@ -3,7 +3,7 @@ use core::fmt;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// An error generated while encoding or decoding.
 pub enum Error {
-    /// Emitted if now enough pixels could be fetched from the image.
+    /// Emitted if not enough pixels could be fetched from the image.
     ///
     /// ```rust
     /// use sstv::{modes::ROBOT_36, Encoder, Error, RgbPixel};
