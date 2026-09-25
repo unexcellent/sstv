@@ -11,14 +11,14 @@ use crate::{Hz, us};
 
 const fn sequence(sync: Duration, porch: Duration, scan: Duration) -> [Step; 8] {
     [
-        Step::tone(Hz!(1200), sync),
-        Step::tone(Hz!(1500), porch),
+        Step::control(Hz!(1200), sync),
+        Step::control(Hz!(1500), porch),
         Step::scan(Channel::Red, scan),
-        Step::tone(Hz!(1500), porch),
+        Step::control(Hz!(1500), porch),
         Step::scan(Channel::Green, scan),
-        Step::tone(Hz!(1500), porch),
+        Step::control(Hz!(1500), porch),
         Step::scan(Channel::Blue, scan),
-        Step::tone(Hz!(1500), porch),
+        Step::control(Hz!(1500), porch),
     ]
 }
 

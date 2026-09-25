@@ -10,16 +10,16 @@
 use super::layout::{Channel, ColorMode, Layout, Step};
 use crate::{Hz, ms, us};
 
-const SYNC_PULSE: Step = Step::tone(Hz!(1200), ms!(9));
-const SYNC_PORCH: Step = Step::tone(Hz!(1500), ms!(3));
-const PORCH: Step = Step::tone(Hz!(1900), us!(1_500));
+const SYNC_PULSE: Step = Step::control(Hz!(1200), ms!(9));
+const SYNC_PORCH: Step = Step::control(Hz!(1500), ms!(3));
+const PORCH: Step = Step::control(Hz!(1900), us!(1_500));
 
 /// The even line of a pair.
 const ROBOT_36_EVEN_SEQUENCE: [Step; 6] = [
     SYNC_PULSE,
     SYNC_PORCH,
     Step::scan(Channel::Y, ms!(88)),
-    Step::tone(Hz!(1500), us!(4_500)), // even-line separator pulse
+    Step::control(Hz!(1500), us!(4_500)), // even-line separator pulse
     PORCH,
     Step::scan(Channel::RY, ms!(44)),
 ];
@@ -29,7 +29,7 @@ const ROBOT_36_ODD_SEQUENCE: [Step; 6] = [
     SYNC_PULSE,
     SYNC_PORCH,
     Step::scan(Channel::Y, ms!(88)),
-    Step::tone(Hz!(2300), us!(4_500)), // odd-line separator pulse
+    Step::control(Hz!(2300), us!(4_500)), // odd-line separator pulse
     PORCH,
     Step::scan(Channel::BY, ms!(44)),
 ];
@@ -47,11 +47,11 @@ const ROBOT_72_SEQUENCE: [Step; 9] = [
     SYNC_PULSE,
     SYNC_PORCH,
     Step::scan(Channel::Y, ms!(138)),
-    Step::tone(Hz!(1500), us!(4_500)), // even separator pulse
+    Step::control(Hz!(1500), us!(4_500)), // even separator pulse
     PORCH,
     Step::scan(Channel::RY, ms!(69)),
-    Step::tone(Hz!(2300), us!(4_500)), // odd separator pulse
-    Step::tone(Hz!(1500), us!(1_500)),
+    Step::control(Hz!(2300), us!(4_500)), // odd separator pulse
+    Step::control(Hz!(1500), us!(1_500)),
     Step::scan(Channel::BY, ms!(69)),
 ];
 

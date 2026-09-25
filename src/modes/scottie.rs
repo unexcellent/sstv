@@ -9,9 +9,9 @@ use super::layout::{Channel, ColorMode, Layout, Step};
 use crate::units::Duration;
 use crate::{Hz, ms, us};
 
-const SYNC_PULSE: Step = Step::tone(Hz!(1200), ms!(9));
-const SYNC_PORCH: Step = Step::tone(Hz!(1500), us!(1_500));
-const SEPARATOR_PULSE: Step = Step::tone(Hz!(1500), us!(1_500));
+const SYNC_PULSE: Step = Step::control(Hz!(1200), ms!(9));
+const SYNC_PORCH: Step = Step::control(Hz!(1500), us!(1_500));
+const SEPARATOR_PULSE: Step = Step::control(Hz!(1500), us!(1_500));
 
 const fn sequence(scan: Duration) -> [Step; 7] {
     [

@@ -7,8 +7,8 @@ use super::layout::{Channel, ColorMode, Layout, Step};
 use crate::{Hz, ms, ns, us};
 
 const SC2_180_SEQUENCE: [Step; 5] = [
-    Step::tone(Hz!(1200), ns!(5_522_500)),
-    Step::tone(Hz!(1500), us!(500)),
+    Step::control(Hz!(1200), ns!(5_522_500)),
+    Step::control(Hz!(1500), us!(500)),
     Step::scan(Channel::Red, ms!(235)),
     Step::scan(Channel::Green, ms!(235)),
     Step::scan(Channel::Blue, ms!(235)),

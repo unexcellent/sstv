@@ -32,7 +32,7 @@ pub enum Step {
 }
 
 impl Step {
-    pub(crate) const fn tone(frequency: Frequency, duration: Duration) -> Self {
+    pub(crate) const fn control(frequency: Frequency, duration: Duration) -> Self {
         Self::Control(Tone::new(frequency, duration))
     }
 
