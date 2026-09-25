@@ -37,3 +37,26 @@ const SEQUENCE: [Step; 9] = [
     Step::Control(tone!(1500 Hz, 1_500 us)),
     Step::Scan(Channel::BY, ms!(69)),
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::modes::testing::{
+        assert_line_period, assert_transmission_time, assert_vis_code_round_trips,
+    };
+
+    #[test]
+    fn line_period_matches_the_paper() {
+        assert_line_period(ROBOT_72, crate::ms!(300));
+    }
+
+    #[test]
+    fn transmission_time_matches_the_paper() {
+        assert_transmission_time(ROBOT_72, 72.0);
+    }
+
+    #[test]
+    fn vis_code_round_trips() {
+        assert_vis_code_round_trips(ROBOT_72);
+    }
+}

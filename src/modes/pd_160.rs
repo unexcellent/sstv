@@ -36,3 +36,26 @@ const SEQUENCE: [Step; 6] = [
     Step::Scan(Channel::BY, SCAN),
     Step::Scan(Channel::YSecond, SCAN),
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::modes::testing::{
+        assert_line_period, assert_transmission_time, assert_vis_code_round_trips,
+    };
+
+    #[test]
+    fn line_period_matches_the_paper() {
+        assert_line_period(PD_160, crate::us!(804_416));
+    }
+
+    #[test]
+    fn transmission_time_matches_the_paper() {
+        assert_transmission_time(PD_160, 160.9);
+    }
+
+    #[test]
+    fn vis_code_round_trips() {
+        assert_vis_code_round_trips(PD_160);
+    }
+}

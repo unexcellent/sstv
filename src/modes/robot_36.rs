@@ -48,3 +48,59 @@ const ODD_SEQUENCE: [Step; 6] = [
     PORCH,
     Step::Scan(Channel::BY, ms!(44)),
 ];
+
+#[cfg(test)]
+mod tests {
+    extern crate std;
+    use std::vec::Vec;
+
+    use super::*;
+    use crate::modes::testing::{
+        assert_line_period, assert_transmission_time, assert_vis_code_round_trips,
+    };
+
+    #[test]
+    fn line_period_matches_the_paper() {
+        assert_line_period(ROBOT_36, crate::ms!(150));
+    }
+
+    #[test]
+    fn transmission_time_matches_the_paper() {
+        assert_transmission_time(ROBOT_36, 36.0);
+    }
+
+    #[test]
+    fn vis_code_round_trips() {
+        assert_vis_code_round_trips(ROBOT_36);
+    }
+
+    #[test]
+    fn header_tones_match_the_vis_encoding() {
+        assert_eq!(
+            ROBOT_36.header_tones().collect::<Vec<_>>(),
+            std::vec![
+                tone!(1900 Hz, 100 ms),
+                tone!(1500 Hz, 100 ms),
+                tone!(1900 Hz, 100 ms),
+                tone!(1500 Hz, 100 ms),
+                tone!(2300 Hz, 100 ms),
+                tone!(1500 Hz, 100 ms),
+                tone!(2300 Hz, 100 ms),
+                tone!(1500 Hz, 100 ms),
+                tone!(1900 Hz, 300 ms),
+                tone!(1200 Hz, 10 ms),
+                tone!(1900 Hz, 300 ms),
+                tone!(1200 Hz, 30 ms),
+                tone!(1300 Hz, 30 ms),
+                tone!(1300 Hz, 30 ms),
+                tone!(1300 Hz, 30 ms),
+                tone!(1100 Hz, 30 ms),
+                tone!(1300 Hz, 30 ms),
+                tone!(1300 Hz, 30 ms),
+                tone!(1300 Hz, 30 ms),
+                tone!(1100 Hz, 30 ms),
+                tone!(1200 Hz, 30 ms),
+            ]
+        );
+    }
+}

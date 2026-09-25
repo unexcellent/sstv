@@ -217,110 +217,40 @@ impl core::fmt::Debug for Mode {
     }
 }
 
+/// The shared assertions behind every mode's tests.
 #[cfg(test)]
-mod tests {
-    extern crate std;
-    use std::vec::Vec;
-
+pub(crate) mod testing {
     use super::*;
-    use crate::{ms, tone, us};
+    use crate::us;
 
-    #[test]
-    fn header_tones_robot36() {
-        assert_eq!(
-            ROBOT_36.header_tones().collect::<Vec<_>>(),
-            std::vec![
-                tone!(1900 Hz, 100 ms),
-                tone!(1500 Hz, 100 ms),
-                tone!(1900 Hz, 100 ms),
-                tone!(1500 Hz, 100 ms),
-                tone!(2300 Hz, 100 ms),
-                tone!(1500 Hz, 100 ms),
-                tone!(2300 Hz, 100 ms),
-                tone!(1500 Hz, 100 ms),
-                tone!(1900 Hz, 300 ms),
-                tone!(1200 Hz, 10 ms),
-                tone!(1900 Hz, 300 ms),
-                tone!(1200 Hz, 30 ms),
-                tone!(1300 Hz, 30 ms),
-                tone!(1300 Hz, 30 ms),
-                tone!(1300 Hz, 30 ms),
-                tone!(1100 Hz, 30 ms),
-                tone!(1300 Hz, 30 ms),
-                tone!(1300 Hz, 30 ms),
-                tone!(1300 Hz, 30 ms),
-                tone!(1100 Hz, 30 ms),
-                tone!(1200 Hz, 30 ms),
-            ]
+    /// Assert that every timing sequence sums to the paper's line period —
+    /// the decoder relies on the sync pulses being evenly spaced.
+    pub fn assert_line_period(mode: Mode, expected: Duration) {
+        for sequence in mode.layout().sequences {
+            let sum = sequence
+                .iter()
+                .fold(us!(0), |sum, step| sum + step.duration());
+            assert_eq!(sum, expected);
+        }
+    }
+
+    /// Assert that the transcribed steps, summed over all lines, reproduce
+    /// the transmission time the paper publishes alongside the per-step
+    /// timings — this catches a transcription mistake in any single step.
+    pub fn assert_transmission_time(mode: Mode, expected_seconds: f64) {
+        let layout = mode.layout();
+        let passes = (layout.height / layout.lines_per_sequence) as f64;
+        let seconds = passes * layout.sequence_duration().ns() as f64 / 1e9;
+        assert!(
+            (seconds - expected_seconds).abs() < 0.1,
+            "{seconds}s instead of {expected_seconds}s",
         );
     }
 
-    #[test]
-    fn vis_codes_round_trip() {
-        for mode in ALL {
-            let code = mode.vis_code();
-            assert_eq!(Mode::from_vis_code(code), Some(mode));
-            assert!(code < 128, "VIS codes are 7 bit");
-        }
-    }
-
-    /// Every sequence of a mode must be equally long — the decoder relies on
-    /// the sync pulses being evenly spaced.
-    #[test]
-    fn sequences_are_equally_long() {
-        for mode in ALL {
-            let layout = mode.layout();
-            let duration = layout.sequence_duration();
-            for sequence in layout.sequences {
-                let sum = sequence
-                    .iter()
-                    .fold(us!(0), |sum, step| sum + step.duration());
-                assert_eq!(sum, duration, "{mode:?}");
-            }
-        }
-    }
-
-    /// The per-line duration from the paper: Robot 36 transmits 240 lines in
-    /// 36 seconds — 150.0ms per line.
-    #[test]
-    fn robot36_line_duration_matches_paper() {
-        assert_eq!(ROBOT_36.layout().sequence_duration(), ms!(150));
-    }
-
-    /// The paper publishes each mode's total transmission time (excluding the
-    /// header) alongside the per-step timings. Summing our transcribed steps
-    /// over all lines must reproduce those times, which catches transcription
-    /// mistakes in any single step.
-    #[test]
-    fn transmission_times_match_paper() {
-        let expected_seconds = [
-            (SCOTTIE_1, 109.6),
-            (SCOTTIE_2, 71.1),
-            (SCOTTIE_DX, 268.9),
-            (MARTIN_1, 114.3),
-            (MARTIN_2, 58.06),
-            (ROBOT_36, 36.0),
-            (ROBOT_72, 72.0),
-            (WRASSE_SC2_180, 182.0),
-            (PASOKON_P3, 203.0),
-            (PASOKON_P5, 304.6),
-            (PASOKON_P7, 406.1),
-            (PD_50, 49.7),
-            (PD_90, 90.0),
-            (PD_120, 126.1),
-            (PD_160, 160.9),
-            (PD_180, 187.1),
-            (PD_240, 248.0),
-            (PD_290, 288.7),
-        ];
-        for (mode, expected) in expected_seconds {
-            let layout = mode.layout();
-            let passes = (layout.height / layout.lines_per_sequence) as f64;
-            let seconds = passes * layout.sequence_duration().ns() as f64 / 1e9;
-            assert!(
-                (seconds - expected).abs() < 0.1,
-                "{mode:?}: {seconds}s instead of {expected}s",
-            );
-        }
+    /// Assert that the mode's VIS code is 7 bit and round-trips through the
+    /// lookup — a collision between two modes fails the round trip.
+    pub fn assert_vis_code_round_trips(mode: Mode) {
+        assert!(mode.vis_code() < 128, "VIS codes are 7 bit");
+        assert_eq!(Mode::from_vis_code(mode.vis_code()), Some(mode));
     }
 }

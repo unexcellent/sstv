@@ -38,3 +38,26 @@ const SEQUENCE: [Step; 7] = [
     SYNC_PORCH,
     Step::Scan(Channel::Red, SCAN),
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::modes::testing::{
+        assert_line_period, assert_transmission_time, assert_vis_code_round_trips,
+    };
+
+    #[test]
+    fn line_period_matches_the_paper() {
+        assert_line_period(SCOTTIE_DX, crate::us!(1_050_300));
+    }
+
+    #[test]
+    fn transmission_time_matches_the_paper() {
+        assert_transmission_time(SCOTTIE_DX, 268.9);
+    }
+
+    #[test]
+    fn vis_code_round_trips() {
+        assert_vis_code_round_trips(SCOTTIE_DX);
+    }
+}

@@ -37,3 +37,26 @@ const SEQUENCE: [Step; 8] = [
     Step::Scan(Channel::Red, SCAN),
     SEPARATOR_PULSE,
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::modes::testing::{
+        assert_line_period, assert_transmission_time, assert_vis_code_round_trips,
+    };
+
+    #[test]
+    fn line_period_matches_the_paper() {
+        assert_line_period(MARTIN_1, crate::us!(446_446));
+    }
+
+    #[test]
+    fn transmission_time_matches_the_paper() {
+        assert_transmission_time(MARTIN_1, 114.3);
+    }
+
+    #[test]
+    fn vis_code_round_trips() {
+        assert_vis_code_round_trips(MARTIN_1);
+    }
+}

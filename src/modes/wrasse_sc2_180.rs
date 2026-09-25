@@ -28,3 +28,26 @@ const SEQUENCE: [Step; 5] = [
     Step::Scan(Channel::Green, ms!(235)),
     Step::Scan(Channel::Blue, ms!(235)),
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::modes::testing::{
+        assert_line_period, assert_transmission_time, assert_vis_code_round_trips,
+    };
+
+    #[test]
+    fn line_period_matches_the_paper() {
+        assert_line_period(WRASSE_SC2_180, crate::ns!(711_022_500));
+    }
+
+    #[test]
+    fn transmission_time_matches_the_paper() {
+        assert_transmission_time(WRASSE_SC2_180, 182.0);
+    }
+
+    #[test]
+    fn vis_code_round_trips() {
+        assert_vis_code_round_trips(WRASSE_SC2_180);
+    }
+}
