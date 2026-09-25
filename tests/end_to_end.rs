@@ -8,6 +8,8 @@
 
 use rand::SeedableRng;
 use rand_distr::{Distribution, Normal};
+mod common;
+use common::{mean_abs_error, test_image};
 use sstv::{DecodedImage, Decoder, Encoder, RgbPixel, Synthesizer, modes};
 
 /// Robot36 resolution.
@@ -24,20 +26,6 @@ const NOISE_PADDING: usize = 3 * SAMPLE_RATE as usize;
 const CLEAN_ERROR: f64 = 12.0;
 /// Acceptable mean absolute per-channel error for a noisy decode.
 const NOISY_ERROR: f64 = 20.0;
-
-/// A 320x240 test image with variation in all three channels.
-fn test_image() -> Vec<RgbPixel> {
-    let mut pixels = Vec::with_capacity(WIDTH * HEIGHT);
-    for y in 0..HEIGHT as u32 {
-        for x in 0..WIDTH as u32 {
-            let red = (x * 255 / (WIDTH as u32 - 1)) as u8;
-            let green = (y * 255 / (HEIGHT as u32 - 1)) as u8;
-            let blue = ((x + y) * 255 / (WIDTH as u32 - 1 + HEIGHT as u32 - 1)) as u8;
-            pixels.push(RgbPixel::new(red, green, blue));
-        }
-    }
-    pixels
-}
 
 /// Encode an image into a full Robot36 transmission (header + image tones).
 fn encode(image: &[RgbPixel]) -> Vec<i16> {
@@ -79,20 +67,6 @@ fn add_noise(samples: &[i16], seed: u64) -> Vec<i16> {
         .collect()
 }
 
-/// Mean absolute per-channel error between two images of equal length.
-fn mean_abs_error(a: &[RgbPixel], b: &[RgbPixel]) -> f64 {
-    assert_eq!(a.len(), b.len());
-    let total: u64 = a
-        .iter()
-        .zip(b)
-        .map(|(p, q)| {
-            let d = |x: u8, y: u8| u64::from((i32::from(x) - i32::from(y)).unsigned_abs());
-            d(p.red(), q.red()) + d(p.green(), q.green()) + d(p.blue(), q.blue())
-        })
-        .sum();
-    total as f64 / (a.len() as f64 * 3.0)
-}
-
 /// Drive the decoder to completion, grouping its events into images.
 fn decode_images(samples: Vec<i16>) -> Vec<DecodedImage> {
     Decoder::from_samples(samples.into_iter(), SAMPLE_RATE)
@@ -112,7 +86,7 @@ fn assert_matches(decoded: &DecodedImage, original: &[RgbPixel], max_error: f64)
 /// A clean transmission with only the image tones decodes to one image.
 #[test]
 fn image_tones_only() {
-    let image = test_image();
+    let image = test_image(modes::ROBOT_36);
     let samples = encode(&image);
 
     let decoded = decode_images(samples);
@@ -124,7 +98,7 @@ fn image_tones_only() {
 /// The image tones mixed with 30 dB SNR noise still decode to one image.
 #[test]
 fn image_tones_with_noise() {
-    let image = test_image();
+    let image = test_image(modes::ROBOT_36);
     let samples = add_noise(&encode(&image), 0x1);
 
     let decoded = decode_images(samples);
@@ -136,7 +110,7 @@ fn image_tones_with_noise() {
 /// Noise trailing the transmission must not spawn a spurious second image.
 #[test]
 fn image_tones_with_noise_then_pure_noise() {
-    let image = test_image();
+    let image = test_image(modes::ROBOT_36);
     let mut samples = add_noise(&encode(&image), 0x1);
     samples.extend(noise(NOISE_PADDING, 0x2));
 
@@ -149,7 +123,7 @@ fn image_tones_with_noise_then_pure_noise() {
 /// Noise leading the transmission must be skipped, then the image decoded.
 #[test]
 fn image_tones_with_noise_prefixed_by_pure_noise() {
-    let image = test_image();
+    let image = test_image(modes::ROBOT_36);
     let mut samples = noise(NOISE_PADDING, 0x2);
     samples.extend(add_noise(&encode(&image), 0x1));
 
@@ -162,7 +136,7 @@ fn image_tones_with_noise_prefixed_by_pure_noise() {
 /// Two noisy images separated by a stretch of pure noise decode to two images.
 #[test]
 fn two_images_with_noise_and_noise_gap() {
-    let image = test_image();
+    let image = test_image(modes::ROBOT_36);
     let mut samples = add_noise(&encode(&image), 0x1);
     samples.extend(noise(NOISE_PADDING, 0x2));
     samples.extend(add_noise(&encode(&image), 0x3));
@@ -177,7 +151,7 @@ fn two_images_with_noise_and_noise_gap() {
 
 #[test]
 fn pure_noise_should_not_be_decoded_as_an_image() {
-    let samples = encode(&test_image());
+    let samples = encode(&test_image(modes::ROBOT_36));
     let pure_noise = add_noise(&vec![0; samples.len()], 0x1);
 
     assert_eq!(

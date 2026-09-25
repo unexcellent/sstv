@@ -8,6 +8,8 @@
 //! The recordings stay outside the git history; the first test run fetches
 //! them (~130 MB) via `tests/scripts/fetch_iss_recordings.py`.
 
+mod common;
+use common::mean_abs_error;
 use sstv::{DecodedImage, Decoder, Demodulator, Encoder, Mode, Synthesizer, modes};
 
 const PD_120_PERIOD: f64 = 0.508_48;
@@ -125,21 +127,6 @@ fn decode(expected_mode: Option<Mode>, wav: &[u8]) -> DecodedImage {
     decoder.images().next().expect("an image")
 }
 
-/// Mean absolute per-channel error between two images of equal length.
-fn mean_abs_error(a: &DecodedImage, b: &DecodedImage) -> f64 {
-    assert_eq!(a.pixels().len(), b.pixels().len());
-    let total: u64 = a
-        .pixels()
-        .iter()
-        .zip(b.pixels())
-        .map(|(p, q)| {
-            let d = |x: u8, y: u8| u64::from((i32::from(x) - i32::from(y)).unsigned_abs());
-            d(p.red(), q.red()) + d(p.green(), q.green()) + d(p.blue(), q.blue())
-        })
-        .sum();
-    total as f64 / (a.pixels().len() as f64 * 3.0)
-}
-
 /// The median spacing and length of the line sync pulses in a signal, in
 /// seconds. Spacings are filtered to those near `expected_period` so that
 /// header tones and reception glitches do not skew the median.
@@ -242,7 +229,7 @@ fn reencoding_matches_the_recorded_tones_and_images() {
         writer.finalize().expect("finalize wav");
         let reencoded_image = decode(Some(mode), wav_out.get_ref());
 
-        let error = mean_abs_error(&recorded_image, &reencoded_image);
+        let error = mean_abs_error(recorded_image.pixels(), reencoded_image.pixels());
         assert!(error < 10.0, "{path}: mean abs error {error} too high");
     }
 }

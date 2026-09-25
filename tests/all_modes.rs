@@ -5,40 +5,14 @@
 //! Round-trip test for every mode: encode a test image, decode the samples
 //! back, and compare against the original.
 
+mod common;
+use common::{mean_abs_error, test_image};
 use sstv::{Decoder, Encoder, Event, Mode, RgbPixel, Synthesizer, modes};
 
 const SAMPLE_RATE: u32 = 24_000;
 
 /// Acceptable mean absolute per-channel error between original and decode.
 const MAX_ERROR: f64 = 12.0;
-
-/// A test image with variation in all three channels.
-fn test_image(width: usize, height: usize) -> Vec<RgbPixel> {
-    let mut pixels = Vec::with_capacity(width * height);
-    for y in 0..height as u32 {
-        for x in 0..width as u32 {
-            let red = (x * 255 / (width as u32 - 1)) as u8;
-            let green = (y * 255 / (height as u32 - 1)) as u8;
-            let blue = ((x + y) * 255 / (width as u32 - 1 + height as u32 - 1)) as u8;
-            pixels.push(RgbPixel::new(red, green, blue));
-        }
-    }
-    pixels
-}
-
-/// Mean absolute per-channel error between two images of equal length.
-fn mean_abs_error(a: &[RgbPixel], b: &[RgbPixel]) -> f64 {
-    assert_eq!(a.len(), b.len());
-    let total: u64 = a
-        .iter()
-        .zip(b)
-        .map(|(p, q)| {
-            let d = |x: u8, y: u8| u64::from((i32::from(x) - i32::from(y)).unsigned_abs());
-            d(p.red(), q.red()) + d(p.green(), q.green()) + d(p.blue(), q.blue())
-        })
-        .sum();
-    total as f64 / (a.len() as f64 * 3.0)
-}
 
 /// Decode `samples` event by event, expecting an image in the given mode with
 /// its rows complete, in order, and close to `image`. `expected_mode` pins the
@@ -74,9 +48,7 @@ fn assert_decodes(expected_mode: Option<Mode>, samples: &[i16], mode: Mode, imag
 /// Encode an image, then decode it back — once with the mode given explicitly
 /// and once detecting it from the header.
 fn round_trip(mode: Mode) {
-    let (width, height) = mode.resolution();
-    let (width, height) = (width as usize, height as usize);
-    let image = test_image(width, height);
+    let image = test_image(mode);
 
     let encoder = Encoder::new(mode, image.clone().into_iter()).expect("construct encoder");
     let samples: Vec<i16> = Synthesizer::new(encoder, SAMPLE_RATE).collect();

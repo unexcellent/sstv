@@ -4,38 +4,11 @@
 
 //! Tests for the `wav` feature: encoding to and decoding from in-memory WAVs.
 
-use sstv::{Decoder, Encoder, Mode, RgbPixel, Synthesizer, modes};
+mod common;
+use common::{mean_abs_error, test_image};
+use sstv::{Decoder, Encoder, Synthesizer, modes};
 
 const SAMPLE_RATE: u32 = 24_000;
-
-/// A test image with variation in all three channels.
-fn test_image(mode: Mode) -> Vec<RgbPixel> {
-    let (width, height) = mode.resolution();
-    let mut pixels = Vec::with_capacity((width * height) as usize);
-    for y in 0..height {
-        for x in 0..width {
-            let red = (x * 255 / (width - 1)) as u8;
-            let green = (y * 255 / (height - 1)) as u8;
-            let blue = ((x + y) * 255 / (width + height - 2)) as u8;
-            pixels.push(RgbPixel::new(red, green, blue));
-        }
-    }
-    pixels
-}
-
-/// Mean absolute per-channel error between two images of equal length.
-fn mean_abs_error(a: &[RgbPixel], b: &[RgbPixel]) -> f64 {
-    assert_eq!(a.len(), b.len());
-    let total: u64 = a
-        .iter()
-        .zip(b)
-        .map(|(p, q)| {
-            let d = |x: u8, y: u8| u64::from((i32::from(x) - i32::from(y)).unsigned_abs());
-            d(p.red(), q.red()) + d(p.green(), q.green()) + d(p.blue(), q.blue())
-        })
-        .sum();
-    total as f64 / (a.len() as f64 * 3.0)
-}
 
 #[test]
 fn round_trips_through_a_wav() {
