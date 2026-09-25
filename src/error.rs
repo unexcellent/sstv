@@ -16,6 +16,9 @@ pub enum Error {
     /// ));
     /// ```
     EmptyImage,
+    /// Emitted by [`Encoder::new_in`](crate::Encoder::new_in) if the buffer
+    /// cannot hold one of the mode's line groups.
+    BufferTooSmall,
     /// Emitted by [`VisCode::try_new`](crate::VisCode::try_new) if the value
     /// does not fit in 7 bits.
     BadVisCode,
@@ -30,6 +33,11 @@ impl fmt::Display for Error {
             Self::EmptyImage => write!(
                 f,
                 "The supplied image is empty. Was the pixel iterator already used?"
+            ),
+            Self::BufferTooSmall => write!(
+                f,
+                "The buffer cannot hold one of the mode's line groups. Size it \
+                 to the mode's encoder_buffer_len()."
             ),
             Self::BadVisCode => write!(f, "VIS codes are 7 bit; the value does not fit."),
             Self::UnknownMode => write!(f, "The VIS code does not identify a known mode."),

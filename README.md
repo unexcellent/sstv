@@ -63,26 +63,29 @@ for event in Decoder::from_samples(samples, 48_000).events() {
 
 # Embedded Devices
 
-The core of the crate — encoding, synthesis, demodulation and decoding — is `no_std` and only requires an allocator. Disable the default features to use it:
+The core of the crate is `no_std`, and encoding needs no allocator at all: hand the encoder a line buffer of your own via `Encoder::new_in` and it never touches a heap. Disable the default features for the allocation-free build:
 
 ```toml
 [dependencies]
 sstv = { version = "*", default-features = false }
 ```
 
-This build cannot use the `std`-based features (`image`, `wav`, `mp3`): work with pixel iterators and samples directly, which also keeps memory bounded. The encoder allocates only at construction and holds no more than one line group at a time, and the same is true for decoding through `events()`:
+This build cannot use the `std`-based features (`image`, `wav`, `mp3`): work with pixel iterators and samples directly, which also keeps memory bounded — the encoder holds no more than one line group at a time:
 
 ```rust
 use sstv::{modes::ROBOT_36, Encoder, RgbPixel, Synthesizer};
 
 # fn camera_rows() -> impl Iterator<Item = RgbPixel> { core::iter::repeat(RgbPixel::new(0, 0, 0)).take(320 * 240) }
 let pixels = camera_rows(); // any Iterator<Item = RgbPixel>, row by row
-let encoder = Encoder::new(ROBOT_36, pixels)?;
+let mut buffer = [RgbPixel::new(0, 0, 0); ROBOT_36.encoder_buffer_len()];
+let encoder = Encoder::new_in(ROBOT_36, pixels, &mut buffer)?;
 for sample in Synthesizer::new(encoder, 8_000) {
     // feed the DAC
 }
 # Ok::<(), sstv::Error>(())
 ```
+
+Decoding buffers scanlines and the acquisition window on the heap, so it requires an allocator: enable the `alloc` feature for it. Decoding through `events()` still holds no more than about one line group at a time.
 
 # Supported Modes
 

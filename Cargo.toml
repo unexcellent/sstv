@@ -13,7 +13,8 @@ include = ["/src/**/*.rs", "/build.rs", "/examples/*.rs", "/examples/patch.png",
 
 [features]
 default = ["std"]
-std = []
+std = ["alloc"]
+alloc = []
 image = ["std", "dep:image"]
 wav = ["std", "dep:hound"]
 mp3 = ["std", "dep:mp3lame-encoder", "dep:minimp3"]

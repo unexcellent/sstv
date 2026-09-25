@@ -50,6 +50,14 @@ impl Mode {
         self.layout
     }
 
+    /// The number of pixels the encoder buffers for this mode — one full
+    /// line group. This is the length [`Encoder::new_in`](crate::Encoder)
+    /// requires of its buffer.
+    #[must_use]
+    pub const fn encoder_buffer_len(&self) -> usize {
+        self.layout.lines_per_cycle() * self.layout.resolution.0
+    }
+
     /// The image resolution in pixels, as (width, height).
     #[must_use]
     pub const fn resolution(&self) -> (u32, u32) {

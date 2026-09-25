@@ -1,3 +1,4 @@
+#[cfg(feature = "alloc")]
 use alloc::vec::Vec;
 
 use crate::image::{RgbPixel, YuvPixel};
@@ -25,37 +26,99 @@ use crate::{Error, Result};
 /// It encodes any mode by walking its layout: the header, then for each
 /// group of buffered lines the mode's timing sequences, emitting fixed tones
 /// verbatim and expanding each scan step into one tone per pixel.
-pub struct Encoder<I>
+pub struct Encoder<'a, I>
 where
     I: Iterator<Item = RgbPixel>,
 {
     mode: Mode,
     pixels: I,
     /// The image lines carried by the current pass through the sequences —
-    /// one line for most modes, the line pair for Robot 36 and PD modes.
-    lines: Vec<Vec<RgbPixel>>,
+    /// one line for most modes, the line pair for Robot 36 and PD modes —
+    /// stored line after line.
+    lines: Lines<'a>,
     phase: Phase,
 }
 
-impl<I> Encoder<I>
+/// The backing storage of the buffered lines: allocated by [`Encoder::new`],
+/// or caller-provided through [`Encoder::new_in`].
+enum Lines<'a> {
+    #[cfg(feature = "alloc")]
+    Owned(Vec<RgbPixel>),
+    Borrowed(&'a mut [RgbPixel]),
+}
+
+impl Lines<'_> {
+    fn as_slice(&self) -> &[RgbPixel] {
+        match self {
+            #[cfg(feature = "alloc")]
+            Self::Owned(lines) => lines,
+            Self::Borrowed(lines) => lines,
+        }
+    }
+
+    fn as_mut_slice(&mut self) -> &mut [RgbPixel] {
+        match self {
+            #[cfg(feature = "alloc")]
+            Self::Owned(lines) => lines,
+            Self::Borrowed(lines) => lines,
+        }
+    }
+}
+
+#[cfg(feature = "alloc")]
+impl<I> Encoder<'static, I>
 where
     I: Iterator<Item = RgbPixel>,
 {
-    /// Construct an `Encoder` from the mode and a pixel iterator.
+    /// Construct an `Encoder` from the mode and a pixel iterator, buffering
+    /// lines in an allocation of its own. Available with the `alloc` feature
+    /// (on by default); [`Encoder::new_in`] encodes without allocating.
     ///
     /// # Errors
     ///
     /// [`Error::EmptyImage`] if the iterator cannot fill the mode's first
     /// lines.
-    pub fn new(mode: Mode, mut pixels: I) -> Result<Self> {
-        let layout = mode.layout();
-        let mut lines = Vec::with_capacity(layout.lines_per_cycle());
-        for _ in 0..layout.lines_per_cycle() {
-            let mut line = Vec::with_capacity(layout.resolution.0);
-            if Self::fill_line(&mut pixels, &mut line, layout.resolution.0).is_none() {
+    pub fn new(mode: Mode, pixels: I) -> Result<Self> {
+        let lines = alloc::vec![RgbPixel::new(0, 0, 0); mode.encoder_buffer_len()];
+        Self::with_lines(mode, pixels, Lines::Owned(lines))
+    }
+}
+
+impl<'a, I> Encoder<'a, I>
+where
+    I: Iterator<Item = RgbPixel>,
+{
+    /// Construct an `Encoder` that buffers lines in the given storage instead
+    /// of allocating. The buffer must hold at least one of the mode's line
+    /// groups — [`Mode::encoder_buffer_len`] pixels.
+    ///
+    /// ```rust
+    /// use sstv::{modes::ROBOT_36, Encoder, RgbPixel};
+    ///
+    /// let image = [RgbPixel::new(0, 0, 0); 320 * 240];
+    /// let mut buffer = [RgbPixel::new(0, 0, 0); ROBOT_36.encoder_buffer_len()];
+    /// let encoder = Encoder::new_in(ROBOT_36, image.into_iter(), &mut buffer)?;
+    /// # Ok::<(), sstv::Error>(())
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// [`Error::BufferTooSmall`] if the buffer cannot hold a line group, and
+    /// [`Error::EmptyImage`] if the iterator cannot fill the mode's first
+    /// lines.
+    pub fn new_in(mode: Mode, pixels: I, buffer: &'a mut [RgbPixel]) -> Result<Self> {
+        let Some(lines) = buffer.get_mut(..mode.encoder_buffer_len()) else {
+            return Err(Error::BufferTooSmall);
+        };
+        Self::with_lines(mode, pixels, Lines::Borrowed(lines))
+    }
+
+    fn with_lines(mode: Mode, mut pixels: I, mut lines: Lines<'a>) -> Result<Self> {
+        let width = mode.layout().resolution.0;
+        for line in lines.as_mut_slice().chunks_exact_mut(width) {
+            if fill_line(&mut pixels, line).is_none() {
                 return Err(Error::EmptyImage);
             }
-            lines.push(line);
         }
         Ok(Self {
             mode,
@@ -65,20 +128,12 @@ where
         })
     }
 
-    /// Refill `line` in place from the pixel iterator, reusing its allocation.
-    fn fill_line(pixels: &mut I, line: &mut Vec<RgbPixel>, width: usize) -> Option<()> {
-        line.clear();
-        for _ in 0..width {
-            line.push(pixels.next()?);
-        }
-        Some(())
-    }
-
     /// Replace the buffered lines with the next ones from the pixel iterator.
     /// `None` once the image runs out of complete line groups.
     fn buffer_next_lines(&mut self) -> Option<()> {
-        for line in &mut self.lines {
-            Self::fill_line(&mut self.pixels, line, self.mode.layout().resolution.0)?;
+        let width = self.mode.layout().resolution.0;
+        for line in self.lines.as_mut_slice().chunks_exact_mut(width) {
+            fill_line(&mut self.pixels, line)?;
         }
         Some(())
     }
@@ -98,7 +153,7 @@ where
     }
 
     fn rgb(&self, line: usize, x: usize) -> RgbPixel {
-        self.lines[line][x]
+        self.lines.as_slice()[line * self.mode.layout().resolution.0 + x]
     }
 
     fn yuv(&self, line: usize, x: usize) -> YuvPixel {
@@ -110,10 +165,11 @@ where
     fn chroma(&self, line: usize, x: usize, component: fn(YuvPixel) -> u8) -> u8 {
         match self.mode.layout().color {
             ColorMode::YuvAveragedPair | ColorMode::YuvSharedPair => {
-                let sum: u16 = (0..self.lines.len())
+                let lines = self.mode.layout().lines_per_cycle();
+                let sum: u16 = (0..lines)
                     .map(|buffered| u16::from(component(self.yuv(buffered, x))))
                     .sum();
-                (sum / self.lines.len() as u16) as u8
+                (sum / lines as u16) as u8
             }
             _ => component(self.yuv(line, x)),
         }
@@ -159,7 +215,7 @@ where
 }
 
 /// The transmission as a whole, packed into common audio containers.
-impl<I> Encoder<I>
+impl<I> Encoder<'_, I>
 where
     I: Iterator<Item = RgbPixel>,
 {
@@ -187,7 +243,7 @@ where
 }
 
 #[cfg(feature = "image")]
-impl Encoder<alloc::vec::IntoIter<RgbPixel>> {
+impl Encoder<'static, alloc::vec::IntoIter<RgbPixel>> {
     /// Encode an image loaded with the `image` crate.
     ///
     /// The image is resized to the mode's resolution if it does not match,
@@ -225,7 +281,7 @@ impl Encoder<alloc::vec::IntoIter<RgbPixel>> {
     }
 }
 
-impl<I> Iterator for Encoder<I>
+impl<I> Iterator for Encoder<'_, I>
 where
     I: Iterator<Item = RgbPixel>,
 {
@@ -321,4 +377,12 @@ impl Phase {
             Self::Finished => (),
         }
     }
+}
+
+/// Fill `line` from the pixel iterator; `None` if it runs out first.
+fn fill_line<I: Iterator<Item = RgbPixel>>(pixels: &mut I, line: &mut [RgbPixel]) -> Option<()> {
+    for slot in line {
+        *slot = pixels.next()?;
+    }
+    Some(())
 }

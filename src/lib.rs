@@ -11,10 +11,12 @@
 #![cfg_attr(not(any(feature = "std", test)), no_std)]
 #![warn(missing_docs)]
 
+#[cfg(feature = "alloc")]
 extern crate alloc;
 
 mod error;
 
+#[cfg(feature = "alloc")]
 mod decoder;
 mod demodulator;
 mod encoder;
@@ -23,6 +25,7 @@ pub mod modes;
 mod synthesizer;
 mod units;
 
+#[cfg(feature = "alloc")]
 pub use decoder::{DecodedImage, Decoder, Event, Events, Images, RgbRow};
 pub use demodulator::Demodulator;
 pub use encoder::Encoder;
