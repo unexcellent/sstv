@@ -30,7 +30,6 @@ where
     I: Iterator<Item = RgbPixel>,
 {
     mode: Mode,
-    layout: Layout,
     pixels: I,
     /// The image lines carried by the current pass through the sequences —
     /// one line for most modes, the line pair for Robot 36 and PD modes.
@@ -60,7 +59,6 @@ where
         }
         Ok(Self {
             mode,
-            layout,
             pixels,
             lines,
             phase: Phase::NotStarted,
@@ -80,14 +78,14 @@ where
     /// `None` once the image runs out of complete line groups.
     fn buffer_next_lines(&mut self) -> Option<()> {
         for line in &mut self.lines {
-            Self::fill_line(&mut self.pixels, line, self.layout.resolution.0)?;
+            Self::fill_line(&mut self.pixels, line, self.mode.layout().resolution.0)?;
         }
         Some(())
     }
 
     /// The pixel value a scan step transmits at horizontal position `x`.
     fn value(&self, sequence: usize, channel: Channel, x: usize) -> u8 {
-        let first_line = sequence * self.layout.lines_per_sequence;
+        let first_line = sequence * self.mode.layout().lines_per_sequence;
         match channel {
             Channel::Red => self.rgb(first_line, x).red(),
             Channel::Green => self.rgb(first_line, x).green(),
@@ -110,7 +108,7 @@ where
     /// One colour-difference component, averaged over all buffered lines
     /// where the mode calls for it (Robot 36 and PD modes).
     fn chroma(&self, line: usize, x: usize, component: fn(YuvPixel) -> u8) -> u8 {
-        match self.layout.color {
+        match self.mode.layout().color {
             ColorMode::YuvAveragedPair | ColorMode::YuvSharedPair => {
                 let sum: u16 = (0..self.lines.len())
                     .map(|buffered| u16::from(component(self.yuv(buffered, x))))
@@ -146,13 +144,13 @@ where
                 step,
                 pixel,
                 ..
-            } => match self.layout.sequences[sequence][step] {
+            } => match self.mode.layout().sequences[sequence][step] {
                 Step::Control(tone) => Some(tone),
                 Step::Scan(channel, duration) => {
                     let value = self.value(sequence, channel, pixel);
                     Some(Tone::new(
                         value_frequency(value),
-                        duration / self.layout.resolution.0 as u32,
+                        duration / self.mode.layout().resolution.0 as u32,
                     ))
                 }
             },
@@ -234,7 +232,7 @@ where
     type Item = Tone;
 
     fn next(&mut self) -> Option<Tone> {
-        self.phase.advance(self.mode, &self.layout);
+        self.phase.advance(self.mode, &self.mode.layout());
 
         let pixel_iterator_is_empty = self.needs_next_lines() && self.buffer_next_lines().is_none();
         if pixel_iterator_is_empty {
