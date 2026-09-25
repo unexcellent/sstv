@@ -190,21 +190,6 @@ where
         })
     }
 
-    /// Whether the phase just moved onto the first tone of a line cycle whose
-    /// lines are not buffered yet. The first cycle's lines are already
-    /// buffered at construction.
-    const fn needs_next_lines(&self) -> bool {
-        matches!(
-            self.phase,
-            Phase::Image {
-                row,
-                sequence: 0,
-                step: 0,
-                pixel: 0,
-            } if row > 0
-        )
-    }
-
     /// The tone belonging to the current phase.
     fn emit(&self) -> Option<Tone> {
         match self.phase {
@@ -312,7 +297,7 @@ where
         self.phase.advance(self.mode, &self.mode.layout());
 
         let pixel_iterator_is_empty =
-            self.needs_next_lines() && self.lines.fill_next(&mut self.pixels).is_none();
+            self.phase.needs_next_lines() && self.lines.fill_next(&mut self.pixels).is_none();
         if pixel_iterator_is_empty {
             self.phase = Phase::Finished;
         }
@@ -399,5 +384,20 @@ impl Phase {
             }
             Self::Finished => (),
         }
+    }
+
+    /// Whether the phase just moved onto the first tone of a line cycle whose
+    /// lines are not buffered yet. The first cycle's lines are already
+    /// buffered at construction.
+    const fn needs_next_lines(&self) -> bool {
+        matches!(
+            self,
+            Self::Image {
+                row,
+                sequence: 0,
+                step: 0,
+                pixel: 0,
+            } if *row > 0
+        )
     }
 }
