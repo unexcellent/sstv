@@ -6,19 +6,18 @@ Install it with `cargo add sstv`. The examples below use the optional `image`, `
 
 Encoding an image file into a WAV takes three steps: load the image with the `image` crate, turn it into a transmission with `Encoder`, and pack the audio into a file. The image is resized to the mode's resolution automatically.
 
-```rust,no_run
+```rust
 use image;
 use sstv::{modes::PD_120, Encoder};
 
 let image = image::open("image.png")?;
 let encoder = Encoder::from_image(PD_120, &image)?;
 std::fs::write("transmission.wav", encoder.to_wav(48_000))?;
-# Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
 To transmit directly instead, feed the encoder into a `Synthesizer` and stream the 16 bit samples to your audio output one by one:
 
-```rust,no_run
+```rust
 use image;
 use sstv::{modes::ROBOT_36, Encoder, Synthesizer};
 
@@ -27,14 +26,13 @@ let encoder = Encoder::from_image(ROBOT_36, &image)?;
 for sample in Synthesizer::new(encoder, 44_100) {
     // hand the sample to your sound card
 }
-# Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
 # Decoding
 
 Decoding is the inverse: construct a `Decoder` from WAV data (or MP3 data, via `Decoder::from_mp3`) and iterate over the images it finds. Each transmission's mode is detected from its header. Pin one with `expect_mode` to skip detection.
 
-```rust,no_run
+```rust
 use sstv::Decoder;
 
 let wav = std::fs::read("transmission.wav")?;
@@ -42,7 +40,6 @@ let decoder = Decoder::from_wav(&wav)?;
 for (index, image) in decoder.rgb_images().enumerate() {
     image.save(format!("{index}.png"))?;
 }
-# Ok::<(), Box<dyn std::error::Error>>(())
 ```
 
 For live decoding, construct the decoder from any sample iterator — for example one fed by your sound card — and consume the event stream instead. Scanlines arrive as they are recovered, so an image can be displayed while its transmission is still on the air:
@@ -50,7 +47,6 @@ For live decoding, construct the decoder from any sample iterator — for exampl
 ```rust
 use sstv::{Decoder, Event};
 
-# fn microphone_samples() -> impl Iterator<Item = i16> { core::iter::empty() }
 let samples = microphone_samples(); // any Iterator<Item = i16>
 for event in Decoder::from_samples(samples, 48_000).events() {
     match event {
@@ -75,14 +71,12 @@ This build cannot use the `std`-based features (`image`, `wav`, `mp3`): work wit
 ```rust
 use sstv::{modes::ROBOT_36, Encoder, RgbPixel, Synthesizer};
 
-# fn camera_rows() -> impl Iterator<Item = RgbPixel> { core::iter::repeat(RgbPixel::new(0, 0, 0)).take(320 * 240) }
 let pixels = camera_rows(); // any Iterator<Item = RgbPixel>, row by row
 let mut buffer = [RgbPixel::new(0, 0, 0); ROBOT_36.encoder_buffer_len()];
 let encoder = Encoder::new_in(ROBOT_36, pixels, &mut buffer)?;
 for sample in Synthesizer::new(encoder, 8_000) {
     // feed the DAC
 }
-# Ok::<(), sstv::Error>(())
 ```
 
 Decoding buffers scanlines and the acquisition window on the heap, so it requires an allocator: enable the `alloc` feature for it. Decoding through `events()` still holds no more than about one line group at a time.
