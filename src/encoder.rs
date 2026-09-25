@@ -73,13 +73,13 @@ impl Storage<'_> {
 }
 
 impl RgbLines<'_> {
-    /// The number of buffered lines.
-    fn line_count(&self) -> usize {
+    /// The number of buffered rows.
+    fn row_count(&self) -> usize {
         self.storage.as_slice().len() / self.width
     }
 
     /// Replace the buffered lines with the next ones from the pixel iterator.
-    /// `None` once the image runs out of complete line groups.
+    /// Returns `None` once the image runs out of complete line groups.
     fn fill_next(&mut self, pixels: &mut impl Iterator<Item = RgbPixel>) -> Option<()> {
         for slot in self.storage.as_mut_slice() {
             *slot = pixels.next()?;
@@ -87,40 +87,40 @@ impl RgbLines<'_> {
         Some(())
     }
 
-    /// The pixel value a scan step transmits at horizontal position `x`,
-    /// reading the channel starting at the buffered line `buffered_line`.
-    fn value(&self, buffered_line: usize, channel: Channel, x: usize) -> u8 {
+    /// The pixel value a scan step transmits at (`row`, `column`), where
+    /// `row` counts within the buffered line group.
+    fn value(&self, row: usize, column: usize, channel: Channel) -> u8 {
         match channel {
-            Channel::Red => self.rgb(buffered_line, x).red(),
-            Channel::Green => self.rgb(buffered_line, x).green(),
-            Channel::Blue => self.rgb(buffered_line, x).blue(),
-            Channel::Y => self.yuv(buffered_line, x).luma(),
-            Channel::YSecond => self.yuv(buffered_line + 1, x).luma(),
-            Channel::RY => self.chroma(buffered_line, x, YuvPixel::chroma_red),
-            Channel::BY => self.chroma(buffered_line, x, YuvPixel::chroma_blue),
+            Channel::Red => self.rgb(row, column).red(),
+            Channel::Green => self.rgb(row, column).green(),
+            Channel::Blue => self.rgb(row, column).blue(),
+            Channel::Y => self.yuv(row, column).luma(),
+            Channel::YSecond => self.yuv(row + 1, column).luma(),
+            Channel::RY => self.chroma(row, column, YuvPixel::chroma_red),
+            Channel::BY => self.chroma(row, column, YuvPixel::chroma_blue),
         }
     }
 
-    fn rgb(&self, line: usize, x: usize) -> RgbPixel {
-        self.storage.as_slice()[line * self.width + x]
+    fn rgb(&self, row: usize, column: usize) -> RgbPixel {
+        self.storage.as_slice()[row * self.width + column]
     }
 
-    fn yuv(&self, line: usize, x: usize) -> YuvPixel {
-        YuvPixel::from(self.rgb(line, x))
+    fn yuv(&self, row: usize, column: usize) -> YuvPixel {
+        YuvPixel::from(self.rgb(row, column))
     }
 
     /// One colour-difference component, averaged over all buffered lines
     /// where the mode calls for it (Robot 36 and PD modes).
-    fn chroma(&self, line: usize, x: usize, component: fn(YuvPixel) -> u8) -> u8 {
+    fn chroma(&self, row: usize, column: usize, component: fn(YuvPixel) -> u8) -> u8 {
         match self.color {
             ColorMode::YuvAveragedPair | ColorMode::YuvSharedPair => {
-                let lines = self.line_count();
-                let sum: u16 = (0..lines)
-                    .map(|buffered| u16::from(component(self.yuv(buffered, x))))
+                let row_count = self.row_count();
+                let sum: u16 = (0..row_count)
+                    .map(|row| u16::from(component(self.yuv(row, column))))
                     .sum();
-                (sum / lines as u16) as u8
+                (sum / row_count as u16) as u8
             }
-            _ => component(self.yuv(line, x)),
+            _ => component(self.yuv(row, column)),
         }
     }
 }
@@ -179,9 +179,11 @@ where
             width: mode.layout().resolution.0,
             color: mode.layout().color,
         };
+
         if lines.fill_next(&mut pixels).is_none() {
             return Err(Error::EmptyImage);
         }
+
         Ok(Self {
             mode,
             pixels,
@@ -200,17 +202,22 @@ where
                 step,
                 pixel,
                 ..
-            } => match self.mode.layout().sequences[sequence][step] {
-                Step::Control(tone) => Some(tone),
-                Step::Scan(channel, duration) => {
-                    let buffered_line = sequence * self.mode.layout().lines_per_sequence;
-                    let value = self.lines.value(buffered_line, channel, pixel);
-                    Some(Tone::new(
-                        value_frequency(value),
-                        duration / self.mode.layout().resolution.0 as u32,
-                    ))
-                }
-            },
+            } => Some(self.emit_image_tone(sequence, step, pixel)),
+        }
+    }
+
+    fn emit_image_tone(&self, sequence: usize, step: usize, pixel: usize) -> Tone {
+        let current_step = self.mode.layout().sequences[sequence][step];
+        match current_step {
+            Step::Control(tone) => tone,
+            Step::Scan(channel, duration) => {
+                let row = sequence * self.mode.layout().lines_per_sequence;
+                let value = self.lines.value(row, pixel, channel);
+                Tone::new(
+                    value_frequency(value),
+                    duration / self.mode.layout().resolution.0 as u32,
+                )
+            }
         }
     }
 }
