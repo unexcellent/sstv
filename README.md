@@ -30,13 +30,13 @@ for sample in Synthesizer::new(encoder, 44_100) {
 
 # Decoding
 
-Decoding is the inverse: construct a `Decoder` from WAV data (or MP3 data, via `Decoder::from_mp3`) and iterate over the images it finds. `Mode::Auto` detects each transmission's mode from its header; pass a specific mode to skip detection.
+Decoding is the inverse: construct a `Decoder` from WAV data (or MP3 data, via `Decoder::from_mp3`) and iterate over the images it finds. Each transmission's mode is detected from its header. Pin one with `expect_mode` to skip detection.
 
 ```rust
-use sstv::{Decoder, Mode};
+use sstv::Decoder;
 
 let wav = std::fs::read("transmission.wav").expect("read wav");
-let decoder = Decoder::from_wav(Mode::Auto, &wav).expect("parse wav");
+let decoder = Decoder::from_wav(&wav).expect("parse wav");
 for (index, image) in decoder.rgb_images().enumerate() {
     image.save(format!("{index}.png")).expect("save image");
 }
@@ -45,10 +45,10 @@ for (index, image) in decoder.rgb_images().enumerate() {
 For live decoding, construct the decoder from any sample iterator — for example one fed by your sound card — and consume the event stream instead. Scanlines arrive as they are recovered, so an image can be displayed while its transmission is still on the air:
 
 ```rust
-use sstv::{Decoder, Event, Mode};
+use sstv::{Decoder, Event};
 
 let samples = microphone_samples(); // any Iterator<Item = i16>
-for event in Decoder::from_samples(Mode::Auto, samples, 48_000).events() {
+for event in Decoder::from_samples(samples, 48_000).events() {
     match event {
         Event::ImageStart(mode) => { /* prepare a canvas for the mode */ }
         Event::Row(row) => { /* draw row.pixels() at line row.index() */ }

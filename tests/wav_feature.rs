@@ -43,7 +43,7 @@ fn round_trips_through_a_wav() {
     let encoder = Encoder::new(Mode::Robot36, image.clone().into_iter()).expect("encode");
     let wav = encoder.to_wav(SAMPLE_RATE);
 
-    let decoded = Decoder::from_wav(Mode::Auto, &wav)
+    let decoded = Decoder::from_wav(&wav)
         .expect("parse wav")
         .images()
         .next()
@@ -77,8 +77,9 @@ fn decodes_stereo_float_wavs() {
     }
     writer.finalize().expect("finalize wav");
 
-    let decoded = Decoder::from_wav(Mode::Robot36, cursor.get_ref())
+    let decoded = Decoder::from_wav(cursor.get_ref())
         .expect("parse wav")
+        .expect_mode(Mode::Robot36)
         .images()
         .next()
         .expect("an image");
@@ -90,7 +91,7 @@ fn decodes_stereo_float_wavs() {
 
 #[test]
 fn malformed_wav_reports_an_error() {
-    assert!(Decoder::from_wav(Mode::Auto, b"not a wav").is_err());
+    assert!(Decoder::from_wav(b"not a wav").is_err());
 }
 
 /// A WAV whose data chunk is shorter than its header declares decodes up to
@@ -104,7 +105,7 @@ fn decodes_a_truncated_wav() {
     // Cut a quarter of the audio without adjusting the header sizes.
     let truncated = &wav[..wav.len() - (wav.len() - 44) / 4];
 
-    let decoded = Decoder::from_wav(Mode::Auto, truncated)
+    let decoded = Decoder::from_wav(truncated)
         .expect("parse truncated wav")
         .images()
         .next()

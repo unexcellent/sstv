@@ -95,7 +95,8 @@ fn mean_abs_error(a: &[RgbPixel], b: &[RgbPixel]) -> f64 {
 
 /// Drive the decoder to completion, grouping its events into images.
 fn decode_images(samples: Vec<i16>) -> Vec<DecodedImage> {
-    Decoder::from_samples(Mode::Robot36, samples.into_iter(), SAMPLE_RATE)
+    Decoder::from_samples(samples.into_iter(), SAMPLE_RATE)
+        .expect_mode(Mode::Robot36)
         .images()
         .collect()
 }
@@ -180,7 +181,8 @@ fn pure_noise_should_not_be_decoded_as_an_image() {
     let pure_noise = add_noise(&vec![0; samples.len()], 0x1);
 
     assert_eq!(
-        Decoder::from_samples(Mode::Robot36, pure_noise.into_iter(), SAMPLE_RATE)
+        Decoder::from_samples(pure_noise.into_iter(), SAMPLE_RATE)
+            .expect_mode(Mode::Robot36)
             .events()
             .next(),
         None

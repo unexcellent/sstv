@@ -34,7 +34,7 @@ fn round_trips_through_an_mp3() {
     let encoder = Encoder::new(Mode::Robot36, image.clone().into_iter()).expect("encode");
     let mp3 = encoder.to_mp3(24_000).expect("encode mp3");
 
-    let decoded = Decoder::from_mp3(Mode::Auto, &mp3)
+    let decoded = Decoder::from_mp3(&mp3)
         .expect("parse mp3")
         .images()
         .next()

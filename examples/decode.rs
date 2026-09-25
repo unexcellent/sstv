@@ -28,7 +28,6 @@ fn has_extension(path: &str, extension: &str) -> bool {
 fn parse_mode(name: &str) -> Mode {
     Mode::ALL
         .into_iter()
-        .chain([Mode::Auto])
         .find(|mode| format!("{mode:?}").eq_ignore_ascii_case(name))
         .unwrap_or_else(|| panic!("unknown mode {name}, expected one of {:?}", Mode::ALL))
 }
@@ -38,14 +37,18 @@ fn main() {
     let usage = "usage: decode <input.wav|input.mp3|input.wav.gz> <output image> [mode]";
     let input = args.next().expect(usage);
     let output = args.next().expect(usage);
-    let mode = args.next().map_or(Mode::Auto, |name| parse_mode(&name));
+    // No mode argument means detecting it from the transmission's header.
+    let mode = args.next().map(|name| parse_mode(&name));
 
     let audio = read_audio(&input);
-    let decoder = if has_extension(&input, "mp3") {
-        Decoder::from_mp3(mode, &audio).expect("parse mp3")
+    let mut decoder = if has_extension(&input, "mp3") {
+        Decoder::from_mp3(&audio).expect("parse mp3")
     } else {
-        Decoder::from_wav(mode, &audio).expect("parse wav")
+        Decoder::from_wav(&audio).expect("parse wav")
     };
+    if let Some(mode) = mode {
+        decoder = decoder.expect_mode(mode);
+    }
 
     let Some(image) = decoder.images().next() else {
         panic!("no image found in {input}");

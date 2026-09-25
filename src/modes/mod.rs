@@ -93,13 +93,10 @@ pub enum Mode {
     Pd240,
     /// An 800x616 colour image in a 289 second transmission.
     Pd290,
-    /// When decoding, detect the transmission's mode from its header. When
-    /// encoding, behaves as [`Robot36`](Mode::Robot36).
-    Auto,
 }
 
 impl Mode {
-    /// Every transmission mode, in the paper's order. Excludes [`Auto`](Mode::Auto).
+    /// Every transmission mode, in the paper's order.
     pub const ALL: [Self; 18] = [
         Self::Scottie1,
         Self::Scottie2,
@@ -125,7 +122,6 @@ impl Mode {
     #[must_use]
     pub const fn vis_code(&self) -> u8 {
         match self {
-            Self::Auto => Self::Robot36.vis_code(),
             Self::Scottie1 => 60,
             Self::Scottie2 => 56,
             Self::ScottieDx => 76,
@@ -177,7 +173,6 @@ impl Mode {
     /// table in the paper.
     pub(crate) const fn layout(self) -> Layout {
         match self {
-            Self::Auto => Self::Robot36.layout(),
             Self::Scottie1 => scottie::SCOTTIE_1,
             Self::Scottie2 => scottie::SCOTTIE_2,
             Self::ScottieDx => scottie::SCOTTIE_DX,

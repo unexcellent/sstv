@@ -41,15 +41,20 @@ fn mean_abs_error(a: &[RgbPixel], b: &[RgbPixel]) -> f64 {
 }
 
 /// Decode `samples` event by event, expecting an image in the given mode with
-/// its rows complete, in order, and close to `image`.
-fn assert_decodes(decoder_mode: Mode, samples: &[i16], mode: Mode, image: &[RgbPixel]) {
+/// its rows complete, in order, and close to `image`. `expected_mode` pins the
+/// decoder's mode; `None` detects it from the header.
+fn assert_decodes(expected_mode: Option<Mode>, samples: &[i16], mode: Mode, image: &[RgbPixel]) {
     let width = mode.image_width() as usize;
     let height = mode.image_height() as usize;
 
+    let mut events = Decoder::from_samples(samples.iter().copied(), SAMPLE_RATE);
+    if let Some(expected) = expected_mode {
+        events = events.expect_mode(expected);
+    }
+
     let mut decoded: Vec<RgbPixel> = Vec::new();
     let mut complete = None;
-    for event in Decoder::from_samples(decoder_mode, samples.iter().copied(), SAMPLE_RATE).events()
-    {
+    for event in events.events() {
         match event {
             Event::ImageStart(started) => assert_eq!(started, mode),
             Event::Row(row) => {
@@ -76,24 +81,8 @@ fn round_trip(mode: Mode) {
     let encoder = Encoder::new(mode, image.clone().into_iter()).expect("construct encoder");
     let samples: Vec<i16> = Synthesizer::new(encoder, SAMPLE_RATE).collect();
 
-    assert_decodes(mode, &samples, mode, &image);
-    assert_decodes(Mode::Auto, &samples, mode, &image);
-}
-
-/// Encoding with `Auto` produces exactly the Robot 36 transmission.
-#[test]
-fn auto_encodes_as_robot36() {
-    let image = test_image(
-        Mode::Robot36.image_width() as usize,
-        Mode::Robot36.image_height() as usize,
-    );
-    let auto: Vec<_> = Encoder::new(Mode::Auto, image.clone().into_iter())
-        .expect("construct encoder")
-        .collect();
-    let robot36: Vec<_> = Encoder::new(Mode::Robot36, image.into_iter())
-        .expect("construct encoder")
-        .collect();
-    assert_eq!(auto, robot36);
+    assert_decodes(Some(mode), &samples, mode, &image);
+    assert_decodes(None, &samples, mode, &image);
 }
 
 #[test]

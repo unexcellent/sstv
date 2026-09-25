@@ -32,14 +32,11 @@ fn encodes_image_buffers_resizing_them_to_the_mode_resolution() {
     }));
     let encoder = Encoder::from_image(Mode::Robot36, &small).expect("encode image");
 
-    let decoded = Decoder::from_samples(
-        Mode::Robot36,
-        Synthesizer::new(encoder, SAMPLE_RATE),
-        SAMPLE_RATE,
-    )
-    .images()
-    .next()
-    .expect("an image");
+    let decoded = Decoder::from_samples(Synthesizer::new(encoder, SAMPLE_RATE), SAMPLE_RATE)
+        .expect_mode(Mode::Robot36)
+        .images()
+        .next()
+        .expect("an image");
     assert!(decoded.complete(), "image should decode completely");
     assert_eq!(decoded.width() as u32, Mode::Robot36.image_width());
     assert_eq!(decoded.height() as u32, Mode::Robot36.image_height());
@@ -49,7 +46,8 @@ fn encodes_image_buffers_resizing_them_to_the_mode_resolution() {
 fn decoded_images_convert_to_image_buffers() {
     let samples = transmission(Mode::Robot36);
 
-    let decoded = Decoder::from_samples(Mode::Robot36, samples.into_iter(), SAMPLE_RATE)
+    let decoded = Decoder::from_samples(samples.into_iter(), SAMPLE_RATE)
+        .expect_mode(Mode::Robot36)
         .images()
         .next()
         .expect("an image");
@@ -68,10 +66,10 @@ fn decoded_images_convert_to_image_buffers() {
 fn decodes_to_image_buffers_and_saves_them() {
     let samples = transmission(Mode::Robot36);
 
-    let images: Vec<image::RgbImage> =
-        Decoder::from_samples(Mode::Robot36, samples.into_iter(), SAMPLE_RATE)
-            .rgb_images()
-            .collect();
+    let images: Vec<image::RgbImage> = Decoder::from_samples(samples.into_iter(), SAMPLE_RATE)
+        .expect_mode(Mode::Robot36)
+        .rgb_images()
+        .collect();
     assert_eq!(images.len(), 1, "expected exactly one image");
     assert_eq!(images[0].width(), Mode::Robot36.image_width());
     assert_eq!(images[0].height(), Mode::Robot36.image_height());

@@ -72,11 +72,14 @@ pub enum Event {
 /// as they are recovered, holding only about one line group in memory, while
 /// [`images`](Self::images) assembles and yields whole images.
 ///
+/// Each image's mode is detected from its header's VIS code; use
+/// [`expect_mode`](Self::expect_mode) to decode in a fixed mode instead.
+///
 /// ```no_run
-/// use sstv::{Decoder, Mode};
+/// use sstv::Decoder;
 ///
 /// # let samples = std::vec::Vec::<i16>::new().into_iter();
-/// for image in Decoder::from_samples(Mode::Auto, samples, 48000).images() {
+/// for image in Decoder::from_samples(samples, 48000).images() {
 ///     let _ = (image.mode(), image.pixels());
 /// }
 /// ```
@@ -87,19 +90,26 @@ pub struct Decoder<I: Iterator<Item = i16>> {
 impl<I: Iterator<Item = i16>> Decoder<I> {
     /// Decode a stream of PCM samples.
     ///
-    /// With [`Mode::Auto`], each image's mode is detected from its header's
-    /// VIS code. `sample_rate` must be greater than zero. Construction never
-    /// fails: finding images is deferred to iteration.
-    pub fn from_samples(mode: Mode, samples: I, sample_rate: u32) -> Self {
+    /// `sample_rate` must be greater than zero. Construction never fails:
+    /// finding images is deferred to iteration.
+    pub fn from_samples(samples: I, sample_rate: u32) -> Self {
         let sample_rate = sample_rate.max(1);
-        Self::from_demodulator(mode, Demodulator::new(samples, sample_rate))
+        Self::from_demodulator(Demodulator::new(samples, sample_rate))
     }
 
     /// Decode the frequency stream of an existing demodulator.
-    pub const fn from_demodulator(mode: Mode, demodulator: Demodulator<I>) -> Self {
+    pub const fn from_demodulator(demodulator: Demodulator<I>) -> Self {
         Self {
-            events: Events::new(mode, demodulator),
+            events: Events::new(demodulator),
         }
+    }
+
+    /// Decode every image in the given mode instead of detecting each image's
+    /// mode from its header.
+    #[must_use]
+    pub const fn expect_mode(mut self, mode: Mode) -> Self {
+        self.events.expected_mode = Some(mode);
+        self
     }
 
     /// Assume the samples begin directly at the image data and skip searching
@@ -108,11 +118,13 @@ impl<I: Iterator<Item = i16>> Decoder<I> {
     /// Decoding starts immediately at the first line's timing sequence. Use
     /// this when the signal carries no detectable header, or when acquisition
     /// has already been performed upstream. After the first image completes,
-    /// the decoder searches for further images as usual. [`Mode::Auto`]
-    /// cannot be detected without a header and decodes as [`Mode::Robot36`].
+    /// the decoder searches for further images as usual. Without a header
+    /// there is no VIS code to detect a mode from, so unless
+    /// [`expect_mode`](Self::expect_mode) names one, the first image decodes
+    /// as [`Mode::Robot36`].
     #[must_use]
-    pub fn without_header(mut self) -> Self {
-        self.events.skip_header();
+    pub const fn without_header(mut self) -> Self {
+        self.events.skip_header = true;
         self
     }
 
@@ -144,7 +156,7 @@ impl Decoder<alloc::vec::IntoIter<i16>> {
     /// # Errors
     ///
     /// Fails if the WAV data is malformed.
-    pub fn from_wav(mode: Mode, wav: &[u8]) -> core::result::Result<Self, hound::Error> {
+    pub fn from_wav(wav: &[u8]) -> core::result::Result<Self, hound::Error> {
         // `hound` reports running out of data mid-sample as an I/O error;
         // treat that as end of stream to tolerate truncated recordings.
         fn or_eof<T>(
@@ -186,11 +198,7 @@ impl Decoder<alloc::vec::IntoIter<i16>> {
             }
         }
 
-        Ok(Self::from_samples(
-            mode,
-            samples.into_iter(),
-            spec.sample_rate,
-        ))
+        Ok(Self::from_samples(samples.into_iter(), spec.sample_rate))
     }
 }
 
@@ -203,7 +211,7 @@ impl Decoder<alloc::vec::IntoIter<i16>> {
     /// # Errors
     ///
     /// Fails if the MP3 data is malformed.
-    pub fn from_mp3(mode: Mode, mp3: &[u8]) -> core::result::Result<Self, minimp3::Error> {
+    pub fn from_mp3(mp3: &[u8]) -> core::result::Result<Self, minimp3::Error> {
         let mut frames = minimp3::Decoder::new(std::io::Cursor::new(mp3));
         let mut samples = Vec::new();
         let mut sample_rate = 0u32;
@@ -219,7 +227,7 @@ impl Decoder<alloc::vec::IntoIter<i16>> {
             }
         }
 
-        Ok(Self::from_samples(mode, samples.into_iter(), sample_rate))
+        Ok(Self::from_samples(samples.into_iter(), sample_rate))
     }
 }
 
@@ -232,10 +240,10 @@ impl<I: Iterator<Item = i16>> Decoder<I> {
     /// [`images`](Self::images) to keep it.
     ///
     /// ```no_run
-    /// use sstv::{Decoder, Mode};
+    /// use sstv::Decoder;
     ///
     /// # let samples = std::vec::Vec::<i16>::new().into_iter();
-    /// for (index, image) in Decoder::from_samples(Mode::Auto, samples, 48000)
+    /// for (index, image) in Decoder::from_samples(samples, 48000)
     ///     .rgb_images()
     ///     .enumerate()
     /// {
@@ -255,8 +263,11 @@ impl<I: Iterator<Item = i16>> Decoder<I> {
 /// frequency track or image.
 pub struct Events<I: Iterator<Item = i16>> {
     stream: FrequencyStream<I>,
-    /// The mode requested at construction, possibly [`Mode::Auto`].
-    requested_mode: Mode,
+    /// The mode pinned via [`Decoder::expect_mode`]; `None` detects each
+    /// image's mode from its header.
+    expected_mode: Option<Mode>,
+    /// Begin decoding immediately instead of searching for the first header.
+    skip_header: bool,
     state: State,
     /// Decoded events waiting to be handed out, oldest first.
     queue: VecDeque<Event>,
@@ -397,30 +408,24 @@ fn value_at<I: Iterator<Item = i16>>(stream: &mut FrequencyStream<I>, position: 
 }
 
 impl<I: Iterator<Item = i16>> Events<I> {
-    const fn new(mode: Mode, demodulator: Demodulator<I>) -> Self {
+    const fn new(demodulator: Demodulator<I>) -> Self {
         Self {
             stream: FrequencyStream::new(demodulator),
-            requested_mode: mode,
+            expected_mode: None,
+            skip_header: false,
             state: State::Searching,
             queue: VecDeque::new(),
         }
     }
 
-    const fn active_mode(&self) -> Mode {
-        match self.requested_mode {
-            Mode::Auto => Mode::Robot36,
-            mode => mode,
-        }
-    }
-
     /// Begin decoding at the first line's timing sequence instead of
-    /// searching for a header.
-    fn skip_header(&mut self) {
-        if matches!(self.state, State::Searching) {
-            let image = ImageState::new(self.active_mode(), 0.0);
-            self.queue.push_back(Event::ImageStart(image.mode));
-            self.state = State::Decoding(image);
-        }
+    /// searching for a header. Without a header there is no VIS code, so an
+    /// unpinned mode falls back to Robot 36.
+    fn start_without_header(&mut self) {
+        let mode = self.expected_mode.unwrap_or(Mode::Robot36);
+        let image = ImageState::new(mode, 0.0);
+        self.queue.push_back(Event::ImageStart(image.mode));
+        self.state = State::Decoding(image);
     }
 
     /// Scan for the next image. On success, queue an [`Event::ImageStart`]
@@ -428,11 +433,10 @@ impl<I: Iterator<Item = i16>> Events<I> {
     fn search(&mut self) {
         self.stream.reset();
 
-        let acquired = if self.requested_mode == Mode::Auto {
-            detect_mode(&mut self.stream)
-        } else {
-            lock_onto_first_line(&mut self.stream, &self.requested_mode.layout())
-                .map(|sequence_start| (self.requested_mode, sequence_start))
+        let acquired = match self.expected_mode {
+            None => detect_mode(&mut self.stream),
+            Some(mode) => lock_onto_first_line(&mut self.stream, &mode.layout())
+                .map(|sequence_start| (mode, sequence_start)),
         };
 
         match acquired {
@@ -484,6 +488,9 @@ impl<I: Iterator<Item = i16>> Iterator for Events<I> {
             }
             match self.state {
                 State::Done => return None,
+                State::Searching if core::mem::take(&mut self.skip_header) => {
+                    self.start_without_header();
+                }
                 State::Searching => self.search(),
                 State::Decoding(_) => self.decode_step(),
             }
@@ -662,10 +669,10 @@ mod tests {
         let mut samples = encode(&image, 48_000);
         samples.extend(encode(&image, 48_000));
 
-        let decoded: Vec<DecodedImage> =
-            Decoder::from_samples(Mode::Robot36, samples.into_iter(), 48_000)
-                .images()
-                .collect();
+        let decoded: Vec<DecodedImage> = Decoder::from_samples(samples.into_iter(), 48_000)
+            .expect_mode(Mode::Robot36)
+            .images()
+            .collect();
 
         assert_eq!(decoded.len(), 2, "expected two images");
         for decoded_image in &decoded {
@@ -681,10 +688,10 @@ mod tests {
         samples.extend(std::vec![0i16; 24_000]);
         samples.extend(encode(&image, 48_000));
 
-        let decoded: Vec<DecodedImage> =
-            Decoder::from_samples(Mode::Robot36, samples.into_iter(), 48_000)
-                .images()
-                .collect();
+        let decoded: Vec<DecodedImage> = Decoder::from_samples(samples.into_iter(), 48_000)
+            .expect_mode(Mode::Robot36)
+            .images()
+            .collect();
 
         assert_eq!(decoded.len(), 2, "expected two images across the gap");
         for decoded_image in &decoded {
@@ -703,7 +710,8 @@ mod tests {
         let mut rows = 0;
         let mut complete = None;
         let mut decoded: Vec<RgbPixel> = Vec::new();
-        let events = Decoder::from_samples(Mode::Robot36, image_samples, 48_000)
+        let events = Decoder::from_samples(image_samples, 48_000)
+            .expect_mode(Mode::Robot36)
             .without_header()
             .events();
         for event in events {
@@ -737,10 +745,9 @@ mod tests {
             .sum();
         let skip = (trimmed * 48_000 / 1_000_000_000) as usize;
 
-        let decoded: Vec<DecodedImage> =
-            Decoder::from_samples(Mode::Auto, full.into_iter().skip(skip), 48_000)
-                .images()
-                .collect();
+        let decoded: Vec<DecodedImage> = Decoder::from_samples(full.into_iter().skip(skip), 48_000)
+            .images()
+            .collect();
 
         assert_eq!(decoded.len(), 1, "expected one image");
         assert_eq!(decoded[0].mode(), Mode::Robot36);
@@ -753,23 +760,24 @@ mod tests {
         let samples = encode(&image, 48_000);
 
         let demodulator = crate::Demodulator::new(samples.clone().into_iter(), 48_000);
-        let from_demodulator: Vec<Event> = Decoder::from_demodulator(Mode::Robot36, demodulator)
+        let from_demodulator: Vec<Event> = Decoder::from_demodulator(demodulator)
+            .expect_mode(Mode::Robot36)
             .events()
             .collect();
-        let from_samples: Vec<Event> =
-            Decoder::from_samples(Mode::Robot36, samples.into_iter(), 48_000)
-                .events()
-                .collect();
+        let from_samples: Vec<Event> = Decoder::from_samples(samples.into_iter(), 48_000)
+            .expect_mode(Mode::Robot36)
+            .events()
+            .collect();
 
         assert_eq!(from_demodulator, from_samples);
     }
 
     #[test]
     fn silence_yields_no_images() {
-        let decoded =
-            Decoder::from_samples(Mode::Robot36, std::vec![0i16; 48_000].into_iter(), 48_000)
-                .images()
-                .next();
+        let decoded = Decoder::from_samples(std::vec![0i16; 48_000].into_iter(), 48_000)
+            .expect_mode(Mode::Robot36)
+            .images()
+            .next();
         assert!(decoded.is_none(), "silence should not produce an image");
     }
 }

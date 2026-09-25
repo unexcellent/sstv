@@ -116,12 +116,13 @@ fn samples(wav: &[u8]) -> (Vec<i16>, u32) {
     (samples, spec.sample_rate)
 }
 
-fn decode(mode: Mode, wav: &[u8]) -> DecodedImage {
-    Decoder::from_wav(mode, wav)
-        .expect("parse wav")
-        .images()
-        .next()
-        .expect("an image")
+/// `expected_mode` pins the decoder's mode; `None` detects it from the header.
+fn decode(expected_mode: Option<Mode>, wav: &[u8]) -> DecodedImage {
+    let mut decoder = Decoder::from_wav(wav).expect("parse wav");
+    if let Some(expected) = expected_mode {
+        decoder = decoder.expect_mode(expected);
+    }
+    decoder.images().next().expect("an image")
 }
 
 /// Mean absolute per-channel error between two images of equal length.
@@ -182,12 +183,12 @@ fn line_timing(samples: &[i16], sample_rate: u32, expected_period: f64) -> (f64,
 fn decodes_the_recordings() {
     for entry in RECORDINGS {
         let wav = recording(entry.path);
-        let decoder_mode = if entry.detectable {
-            Mode::Auto
+        let expected_mode = if entry.detectable {
+            None
         } else {
-            entry.mode
+            Some(entry.mode)
         };
-        let image = decode(decoder_mode, &wav);
+        let image = decode(expected_mode, &wav);
         assert_eq!(image.mode(), entry.mode, "{}", entry.path);
         assert!(image.complete(), "{} should decode completely", entry.path);
     }
@@ -202,7 +203,7 @@ fn reencoding_matches_the_recorded_tones_and_images() {
         let (path, mode, period) = (entry.path, entry.mode, entry.period);
         let wav = recording(path);
         let (recorded_samples, sample_rate) = samples(&wav);
-        let recorded_image = decode(mode, &wav);
+        let recorded_image = decode(Some(mode), &wav);
 
         let encoder = Encoder::new(mode, recorded_image.pixels().to_vec().into_iter())
             .expect("construct encoder");
@@ -239,7 +240,7 @@ fn reencoding_matches_the_recorded_tones_and_images() {
             writer.write_sample(*sample).expect("write sample");
         }
         writer.finalize().expect("finalize wav");
-        let reencoded_image = decode(mode, wav_out.get_ref());
+        let reencoded_image = decode(Some(mode), wav_out.get_ref());
 
         let error = mean_abs_error(&recorded_image, &reencoded_image);
         assert!(error < 10.0, "{path}: mean abs error {error} too high");
