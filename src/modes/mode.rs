@@ -55,7 +55,7 @@ impl Mode {
     /// requires of its buffer.
     #[must_use]
     pub const fn encoder_buffer_len(&self) -> usize {
-        self.layout.lines_per_cycle() * self.layout.resolution.0
+        self.layout.lines_per_sequence * self.layout.resolution.0
     }
 
     /// The image resolution in pixels, as (width, height).
@@ -143,14 +143,20 @@ pub mod testing {
     use crate::units::Duration;
     use crate::us;
 
-    /// Assert that every timing sequence sums to the paper's line period —
-    /// the decoder relies on the sync pulses being evenly spaced.
+    /// Assert that the timing sequence sums to the paper's line period (the
+    /// pair period for two-line sequences), and that its sync pulses are
+    /// evenly spaced — the decoder relies on that to acquire and re-align.
     pub fn assert_line_period(mode: Mode, expected: Duration) {
-        for sequence in mode.layout().sequences {
-            let sum = sequence
-                .iter()
-                .fold(us!(0), |sum, step| sum + step.duration());
-            assert_eq!(sum, expected);
+        let layout = mode.layout();
+        let sum = layout
+            .sequence
+            .iter()
+            .fold(us!(0), |sum, step| sum + step.duration());
+        assert_eq!(sum, expected);
+
+        let first_sync = layout.sync_pulse().0;
+        for (index, offset) in layout.sync_offsets().enumerate() {
+            assert_eq!(offset, first_sync + layout.sync_spacing() * index as u32);
         }
     }
 

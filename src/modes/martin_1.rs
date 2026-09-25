@@ -15,7 +15,7 @@ pub const MARTIN_1: Mode = Mode {
     starting_sync_pulse: false,
     layout: Layout {
         resolution: (320, 256),
-        sequences: &[&SEQUENCE],
+        sequence: &SEQUENCE,
         lines_per_sequence: 1,
         color: ColorMode::Rgb,
     },

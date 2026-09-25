@@ -3,7 +3,7 @@
 //! of its line sync pulses when the mode is known.
 
 use crate::Frequency;
-use crate::modes::layout::Layout;
+use crate::modes::layout::{Layout, Step};
 use crate::modes::{LEADER_FREQUENCY, Mode, SYNC_FREQUENCY, VisCode};
 
 use super::stream::FrequencyStream;
@@ -27,17 +27,18 @@ const fn is_leader(frequency: Frequency) -> bool {
 /// exclude the header's longer tones). An over-long run's tail is also a
 /// candidate: the VIS stop bit runs directly into the first line's sync
 /// pulse, merging both into one run. Three candidates evenly spaced one
-/// sequence period apart — the later two being clean, properly sized runs —
+/// sync spacing apart — the later two being clean, properly sized runs —
 /// are the line syncs of consecutive lines; noise does not produce that
 /// pattern. The image begins one sync offset before the first of them (zero
-/// for most modes — Scottie places the sync pulse mid-sequence).
+/// for most modes — Scottie places the sync pulse mid-sequence), phase
+/// resolved for sequences carrying several sync pulses (Robot 36).
 pub(super) fn lock_onto_first_line<I: Iterator<Item = i16>>(
     stream: &mut FrequencyStream<I>,
     layout: &Layout,
 ) -> Option<f64> {
     let (sync_offset, sync_duration) = layout.sync_pulse();
     let sync_len = stream.samples_in(sync_duration);
-    let period = stream.samples_in(layout.sequence_duration());
+    let period = stream.samples_in(layout.sync_spacing());
 
     let min_run = (sync_len * 0.5) as usize;
     let max_run = (sync_len * 2.0) as usize;
@@ -75,7 +76,10 @@ pub(super) fn lock_onto_first_line<I: Iterator<Item = i16>>(
                 }
                 for &(a, _) in candidates.iter().rev() {
                     if a < b && spaced(a, b) {
-                        return Some(a as f64 - stream.samples_in(sync_offset));
+                        if layout.sync_count() == 1 {
+                            return Some(a as f64 - stream.samples_in(sync_offset));
+                        }
+                        return Some(resolve_phase(stream, layout, a as f64));
                     }
                 }
             }
@@ -86,6 +90,58 @@ pub(super) fn lock_onto_first_line<I: Iterator<Item = i16>>(
         // triple with future syncs.
         candidates.retain(|&(p, _)| (index - p) as f64 <= period * 2.5);
     }
+}
+
+/// The sequence start implied by a locked sync at `sync_position`, for
+/// layouts whose sequence carries several sync pulses (Robot 36's line
+/// pair). The lock could be on any of them: every alignment is tried, and
+/// the one whose control tones match the layout best wins — otherwise a
+/// decode entering at a pair's second line would swap the colour
+/// differences. An alignment before the stream's start shifts forward by a
+/// whole sequence.
+fn resolve_phase<I: Iterator<Item = i16>>(
+    stream: &mut FrequencyStream<I>,
+    layout: &Layout,
+    sync_position: f64,
+) -> f64 {
+    let sequence_len = stream.samples_in(layout.sequence_duration());
+    let mut best = (0usize, sync_position);
+    for sync_offset in layout.sync_offsets() {
+        let mut start = sync_position - stream.samples_in(sync_offset);
+        if start < 0.0 {
+            start += sequence_len;
+        }
+        let score = phase_score(stream, layout, start);
+        if score > best.0 {
+            best = (score, start);
+        }
+    }
+    best.1
+}
+
+/// How many of the sequence's non-sync control tones match the layout when
+/// the sequence is assumed to start at `start`.
+fn phase_score<I: Iterator<Item = i16>>(
+    stream: &mut FrequencyStream<I>,
+    layout: &Layout,
+    start: f64,
+) -> usize {
+    let mut score = 0;
+    for (offset, step) in layout.step_offsets() {
+        let Step::Control(tone) = step else { continue };
+        if tone.frequency == SYNC_FREQUENCY {
+            continue;
+        }
+        let len = stream.samples_in(tone.duration);
+        let centre = start + stream.samples_in(offset) + len / 2.0;
+        let Some(sampled) = stream.peek(centre as usize) else {
+            continue;
+        };
+        if sampled.hz().abs_diff(tone.frequency.hz()) <= TONE_TOLERANCE_HZ {
+            score += 1;
+        }
+    }
+    score
 }
 
 /// Buffer frequencies until a calibration header is found, returning the

@@ -17,7 +17,7 @@ pub const SCOTTIE_2: Mode = Mode {
     starting_sync_pulse: true,
     layout: Layout {
         resolution: (320, 256),
-        sequences: &[&SEQUENCE],
+        sequence: &SEQUENCE,
         lines_per_sequence: 1,
         color: ColorMode::Rgb,
     },

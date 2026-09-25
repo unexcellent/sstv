@@ -295,19 +295,16 @@ struct ImageState {
     mode: Mode,
     /// Fractional sample position at which the next timing sequence begins.
     sequence_start: f64,
-    /// Which of the mode's timing sequences the next line uses.
-    sequence_index: usize,
     /// Index of the next image line to decode.
     row_index: usize,
     assembler: Assembler,
 }
 
 impl ImageState {
-    fn new(mode: Mode, sequence_start: f64) -> Self {
+    const fn new(mode: Mode, sequence_start: f64) -> Self {
         Self {
             mode,
             sequence_start,
-            sequence_index: 0,
             row_index: 0,
             assembler: Assembler::new(&mode.layout()),
         }
@@ -327,7 +324,7 @@ impl ImageState {
         stream: &mut FrequencyStream<I>,
     ) -> Option<SequenceData> {
         let layout = self.mode.layout();
-        let sequence = layout.sequences[self.sequence_index];
+        let sequence = layout.sequence;
         let width = layout.resolution.0;
         let expected_scans = sequence
             .iter()
@@ -335,7 +332,6 @@ impl ImageState {
             .count();
         let mut t = self.sequence_start;
         let mut scans = Vec::with_capacity(4);
-        let mut tone_hz = Vec::with_capacity(4);
         let mut stream_ended = false;
 
         'steps: for step in sequence {
@@ -351,9 +347,7 @@ impl ImageState {
                 }
                 Step::Control(tone) => {
                     let len = stream.samples_in(tone.duration);
-                    if let Some(frequency) = stream.advance_to(t + len / 2.0) {
-                        tone_hz.push(frequency.hz());
-                    } else {
+                    if stream.advance_to(t + len / 2.0).is_none() {
                         stream_ended = true;
                         break 'steps;
                     }
@@ -386,8 +380,7 @@ impl ImageState {
             return None;
         }
         self.sequence_start = t;
-        self.sequence_index = (self.sequence_index + 1) % layout.sequences.len();
-        Some(SequenceData { scans, tone_hz })
+        Some(SequenceData { scans })
     }
 }
 
@@ -662,6 +655,33 @@ mod tests {
         assert!(decoded.complete(), "image should decode completely");
         assert_eq!(decoded.pixels().len(), WIDTH * HEIGHT);
         let error = mean_abs_error(image, decoded.pixels());
+        assert!(error < 12.0, "mean abs error {error} too high");
+    }
+
+    /// Entering the stream at a pair's second line must not swap the colour
+    /// differences: acquisition resolves which of the sequence's two sync
+    /// pulses it locked onto and aligns to the next full pair.
+    #[test]
+    fn sync_lock_on_an_odd_line_does_not_swap_colours() {
+        let image = test_image();
+        let full = encode(&image, 48_000);
+
+        // Drop the header and the pair's first 150ms line, so the stream
+        // begins at an odd line's sync pulse.
+        let line_samples = (48_000.0 * 0.150) as usize;
+        let skip = header_sample_count(48_000) + line_samples;
+
+        let decoded: Vec<DecodedImage> = Decoder::from_samples(full.into_iter().skip(skip), 48_000)
+            .expect_mode(ROBOT_36)
+            .images()
+            .collect();
+
+        assert_eq!(decoded.len(), 1, "expected one image");
+        // Decoding aligns to the next full pair, so the image shifts up by
+        // the two dropped lines; the last two rows stay unfilled.
+        let decoded_rows = &decoded[0].pixels()[..WIDTH * (HEIGHT - 2)];
+        let original_rows = &image[WIDTH * 2..];
+        let error = mean_abs_error(original_rows, decoded_rows);
         assert!(error < 12.0, "mean abs error {error} too high");
     }
 

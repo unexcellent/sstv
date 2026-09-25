@@ -87,17 +87,17 @@ impl RgbLines<'_> {
         Some(())
     }
 
-    /// The pixel value a scan step transmits at (`row`, `column`), where
-    /// `row` counts within the buffered line group.
-    fn value(&self, row: usize, column: usize, channel: Channel) -> u8 {
+    /// The pixel value a scan step transmits at horizontal position `column`.
+    /// The channel determines which buffered row it reads.
+    fn value(&self, column: usize, channel: Channel) -> u8 {
         match channel {
-            Channel::Red => self.rgb(row, column).red(),
-            Channel::Green => self.rgb(row, column).green(),
-            Channel::Blue => self.rgb(row, column).blue(),
-            Channel::Y => self.yuv(row, column).luma(),
-            Channel::YSecond => self.yuv(row + 1, column).luma(),
-            Channel::RY => self.chroma(row, column, YuvPixel::chroma_red),
-            Channel::BY => self.chroma(row, column, YuvPixel::chroma_blue),
+            Channel::Red => self.rgb(0, column).red(),
+            Channel::Green => self.rgb(0, column).green(),
+            Channel::Blue => self.rgb(0, column).blue(),
+            Channel::Y => self.yuv(0, column).luma(),
+            Channel::YSecond => self.yuv(1, column).luma(),
+            Channel::RY => self.chroma(column, YuvPixel::chroma_red),
+            Channel::BY => self.chroma(column, YuvPixel::chroma_blue),
         }
     }
 
@@ -111,16 +111,16 @@ impl RgbLines<'_> {
 
     /// One colour-difference component, averaged over all buffered lines
     /// where the mode calls for it (Robot 36 and PD modes).
-    fn chroma(&self, row: usize, column: usize, component: fn(YuvPixel) -> u8) -> u8 {
+    fn chroma(&self, column: usize, component: fn(YuvPixel) -> u8) -> u8 {
         match self.color {
-            ColorMode::YuvAveragedPair | ColorMode::YuvSharedPair => {
+            ColorMode::YuvSharedPair => {
                 let row_count = self.row_count();
                 let sum: u16 = (0..row_count)
                     .map(|row| u16::from(component(self.yuv(row, column))))
                     .sum();
                 (sum / row_count as u16) as u8
             }
-            _ => component(self.yuv(row, column)),
+            _ => component(self.yuv(0, column)),
         }
     }
 }
@@ -197,22 +197,16 @@ where
         match self.state {
             State::NotStarted | State::Finished => None,
             State::Header(index) => self.mode.header_tone(index),
-            State::Image {
-                sequence,
-                step,
-                pixel,
-                ..
-            } => Some(self.emit_image_tone(sequence, step, pixel)),
+            State::Image { step, pixel, .. } => Some(self.emit_image_tone(step, pixel)),
         }
     }
 
-    fn emit_image_tone(&self, sequence: usize, step: usize, pixel: usize) -> Tone {
-        let current_step = self.mode.layout().sequences[sequence][step];
+    fn emit_image_tone(&self, step: usize, pixel: usize) -> Tone {
+        let current_step = self.mode.layout().sequence[step];
         match current_step {
             Step::Control(tone) => tone,
             Step::Scan(channel, duration) => {
-                let row = sequence * self.mode.layout().lines_per_sequence;
-                let value = self.lines.value(row, pixel, channel);
+                let value = self.lines.value(pixel, channel);
                 Tone::new(
                     value_frequency(value),
                     duration / self.mode.layout().resolution.0 as u32,
@@ -321,9 +315,7 @@ enum State {
     Image {
         /// The first image row of the currently buffered line group.
         row: usize,
-        /// Which of the mode's timing sequences the pass is in.
-        sequence: usize,
-        /// The position within that sequence's steps.
+        /// The position within the timing sequence's steps.
         step: usize,
         /// The horizontal position within a scan step.
         pixel: usize,
@@ -342,46 +334,30 @@ impl State {
                 } else {
                     Self::Image {
                         row: 0,
-                        sequence: 0,
                         step: 0,
                         pixel: 0,
                     }
                 };
             }
-            Self::Image {
-                row,
-                sequence,
-                step,
-                pixel,
-            } => {
-                let steps = layout.sequences[sequence];
+            Self::Image { row, step, pixel } => {
+                let steps = layout.sequence;
                 let mid_scan =
                     matches!(steps[step], Step::Scan(..)) && pixel + 1 < layout.resolution.0;
                 *self = if mid_scan {
                     Self::Image {
                         row,
-                        sequence,
                         step,
                         pixel: pixel + 1,
                     }
                 } else if step + 1 < steps.len() {
                     Self::Image {
                         row,
-                        sequence,
                         step: step + 1,
                         pixel: 0,
                     }
-                } else if sequence + 1 < layout.sequences.len() {
+                } else if row + layout.lines_per_sequence < layout.resolution.1 {
                     Self::Image {
-                        row,
-                        sequence: sequence + 1,
-                        step: 0,
-                        pixel: 0,
-                    }
-                } else if row + layout.lines_per_cycle() < layout.resolution.1 {
-                    Self::Image {
-                        row: row + layout.lines_per_cycle(),
-                        sequence: 0,
+                        row: row + layout.lines_per_sequence,
                         step: 0,
                         pixel: 0,
                     }
@@ -393,15 +369,14 @@ impl State {
         }
     }
 
-    /// Whether the state just moved onto the first tone of a line cycle whose
-    /// lines are not buffered yet. The first cycle's lines are already
+    /// Whether the state just moved onto the first tone of a line group whose
+    /// lines are not buffered yet. The first group's lines are already
     /// buffered at construction.
     const fn needs_next_lines(&self) -> bool {
         matches!(
             self,
             Self::Image {
                 row,
-                sequence: 0,
                 step: 0,
                 pixel: 0,
             } if *row > 0

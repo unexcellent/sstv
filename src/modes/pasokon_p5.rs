@@ -17,7 +17,7 @@ pub const PASOKON_P5: Mode = Mode {
     starting_sync_pulse: false,
     layout: Layout {
         resolution: (640, 496),
-        sequences: &[&SEQUENCE],
+        sequence: &SEQUENCE,
         lines_per_sequence: 1,
         color: ColorMode::Rgb,
     },

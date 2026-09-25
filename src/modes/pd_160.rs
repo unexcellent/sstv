@@ -17,7 +17,7 @@ pub const PD_160: Mode = Mode {
     starting_sync_pulse: false,
     layout: Layout {
         resolution: (512, 400),
-        sequences: &[&SEQUENCE],
+        sequence: &SEQUENCE,
         lines_per_sequence: 2,
         color: ColorMode::YuvSharedPair,
     },
