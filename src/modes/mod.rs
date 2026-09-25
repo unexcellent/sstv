@@ -18,7 +18,7 @@ mod wrasse;
 
 use crate::synthesizer::Tone;
 use crate::units::{Duration, Frequency};
-use crate::{Hz, ms};
+use crate::{Hz, ms, tone};
 use layout::Layout;
 
 /// The sync pulse frequency, shared by every mode.
@@ -43,14 +43,14 @@ pub fn value_frequency(value: u8) -> Frequency {
 /// Tuning (VOX) tones customarily sent ahead of the calibration header to
 /// open receiver squelch. They are not part of the paper's specification.
 const VOX_TONES: [Tone; 8] = [
-    Tone::new(Hz!(1900), ms!(100)),
-    Tone::new(Hz!(1500), ms!(100)),
-    Tone::new(Hz!(1900), ms!(100)),
-    Tone::new(Hz!(1500), ms!(100)),
-    Tone::new(Hz!(2300), ms!(100)),
-    Tone::new(Hz!(1500), ms!(100)),
-    Tone::new(Hz!(2300), ms!(100)),
-    Tone::new(Hz!(1500), ms!(100)),
+    tone!(1900 Hz, 100 ms),
+    tone!(1500 Hz, 100 ms),
+    tone!(1900 Hz, 100 ms),
+    tone!(1500 Hz, 100 ms),
+    tone!(2300 Hz, 100 ms),
+    tone!(1500 Hz, 100 ms),
+    tone!(2300 Hz, 100 ms),
+    tone!(1500 Hz, 100 ms),
 ];
 
 /// A specific protocol for encoding an image as a tone sequence.
@@ -257,35 +257,34 @@ mod tests {
     use std::vec::Vec;
 
     use super::*;
-    use crate::synthesizer::Tone;
-    use crate::{Hz, ms, us};
+    use crate::{ms, tone, us};
 
     #[test]
     fn header_tones_robot36() {
         assert_eq!(
             Mode::Robot36.header_tones().collect::<Vec<_>>(),
             std::vec![
-                Tone::new(Hz!(1900), ms!(100)),
-                Tone::new(Hz!(1500), ms!(100)),
-                Tone::new(Hz!(1900), ms!(100)),
-                Tone::new(Hz!(1500), ms!(100)),
-                Tone::new(Hz!(2300), ms!(100)),
-                Tone::new(Hz!(1500), ms!(100)),
-                Tone::new(Hz!(2300), ms!(100)),
-                Tone::new(Hz!(1500), ms!(100)),
-                Tone::new(Hz!(1900), ms!(300)),
-                Tone::new(Hz!(1200), ms!(10)),
-                Tone::new(Hz!(1900), ms!(300)),
-                Tone::new(Hz!(1200), ms!(30)),
-                Tone::new(Hz!(1300), ms!(30)),
-                Tone::new(Hz!(1300), ms!(30)),
-                Tone::new(Hz!(1300), ms!(30)),
-                Tone::new(Hz!(1100), ms!(30)),
-                Tone::new(Hz!(1300), ms!(30)),
-                Tone::new(Hz!(1300), ms!(30)),
-                Tone::new(Hz!(1300), ms!(30)),
-                Tone::new(Hz!(1100), ms!(30)),
-                Tone::new(Hz!(1200), ms!(30)),
+                tone!(1900 Hz, 100 ms),
+                tone!(1500 Hz, 100 ms),
+                tone!(1900 Hz, 100 ms),
+                tone!(1500 Hz, 100 ms),
+                tone!(2300 Hz, 100 ms),
+                tone!(1500 Hz, 100 ms),
+                tone!(2300 Hz, 100 ms),
+                tone!(1500 Hz, 100 ms),
+                tone!(1900 Hz, 300 ms),
+                tone!(1200 Hz, 10 ms),
+                tone!(1900 Hz, 300 ms),
+                tone!(1200 Hz, 30 ms),
+                tone!(1300 Hz, 30 ms),
+                tone!(1300 Hz, 30 ms),
+                tone!(1300 Hz, 30 ms),
+                tone!(1100 Hz, 30 ms),
+                tone!(1300 Hz, 30 ms),
+                tone!(1300 Hz, 30 ms),
+                tone!(1300 Hz, 30 ms),
+                tone!(1100 Hz, 30 ms),
+                tone!(1200 Hz, 30 ms),
             ]
         );
     }

@@ -37,9 +37,9 @@ impl Tone {
 ///
 /// It can be used with a single `Tone` as well.
 /// ```rust
-/// use sstv::{Synthesizer, Tone, Hz, us};
+/// use sstv::{Synthesizer, tone};
 ///
-/// let tone = Tone::new(Hz!(1500), us!(1000));
+/// let tone = tone!(1500 Hz, 1000 us);
 /// for sample in Synthesizer::new([tone].into_iter(), 8000) {
 ///     // ...
 /// }
@@ -170,6 +170,7 @@ impl<I: Iterator<Item = Tone>> Iterator for Synthesizer<I> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tone;
     use core::f64::consts::PI;
 
     // The 16 bit sample should not differ from the pure sinewave ground truth by more than 2%.
@@ -197,7 +198,7 @@ mod tests {
     #[cfg(feature = "wav")]
     #[test]
     fn to_wav_wraps_the_samples() {
-        let tones = [Tone::new(Frequency::from_hz(1500), Duration::from_ms(50))];
+        let tones = [tone!(1500 Hz, 50 ms)];
         let samples: Vec<i16> = Synthesizer::new(tones.into_iter(), 8_000).collect();
 
         let wav = Synthesizer::new(tones.into_iter(), 8_000).to_wav();
@@ -217,9 +218,9 @@ mod tests {
     fn synthesizer_matches_pure_sine_wave() {
         let sample_rate = 48000u32;
         let tones = [
-            Tone::new(Frequency::from_hz(1200), Duration::from_ms(10)),
-            Tone::new(Frequency::from_hz(1500), Duration::from_ms(10)),
-            Tone::new(Frequency::from_hz(2300), Duration::from_ms(10)),
+            tone!(1200 Hz, 10 ms),
+            tone!(1500 Hz, 10 ms),
+            tone!(2300 Hz, 10 ms),
         ];
 
         let dds: Vec<i16> = Synthesizer::new(tones.into_iter(), sample_rate).collect();

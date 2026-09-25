@@ -199,3 +199,27 @@ macro_rules! ms {
         $crate::Duration::from_ms($value)
     };
 }
+
+#[macro_export]
+/// Construct a [`Tone`](crate::Tone) from a frequency in Hertz and a duration
+/// in any supported unit (`ns`, `us` or `ms`).
+///
+/// ```rust
+/// use sstv::{tone, Tone, Hz, ms};
+///
+/// assert_eq!(
+///     tone!(1500 Hz, 30 ms),
+///     Tone::new(Hz!(1500), ms!(30)),
+/// );
+/// ```
+macro_rules! tone {
+    ($frequency:literal Hz, $duration:literal ns) => {
+        $crate::Tone::new($crate::Hz!($frequency), $crate::ns!($duration))
+    };
+    ($frequency:literal Hz, $duration:literal us) => {
+        $crate::Tone::new($crate::Hz!($frequency), $crate::us!($duration))
+    };
+    ($frequency:literal Hz, $duration:literal ms) => {
+        $crate::Tone::new($crate::Hz!($frequency), $crate::ms!($duration))
+    };
+}
