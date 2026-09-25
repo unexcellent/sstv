@@ -10,6 +10,20 @@ use super::layout::{Channel, ColorMode, Layout, Step};
 use crate::units::Duration;
 use crate::{Hz, ms, us};
 
+/// A 320x256 colour image in a 269 second transmission: 256 lines of 1050.3ms each.
+pub const SCOTTIE_DX: Mode = Mode {
+    name: "ScottieDx",
+    vis_code: 76,
+    starting_sync_pulse: true,
+    layout: Layout {
+        width: 320,
+        height: 256,
+        sequences: &[&SEQUENCE],
+        lines_per_sequence: 1,
+        color: ColorMode::Rgb,
+    },
+};
+
 const SYNC_PULSE: Step = Step::control(Hz!(1200), ms!(9));
 const SYNC_PORCH: Step = Step::control(Hz!(1500), us!(1_500));
 const SEPARATOR_PULSE: Step = Step::control(Hz!(1500), us!(1_500));
@@ -24,17 +38,3 @@ const SEQUENCE: [Step; 7] = [
     SYNC_PORCH,
     Step::scan(Channel::Red, SCAN),
 ];
-
-/// A 320x256 colour image in a 269 second transmission: 256 lines of 1050.3ms each.
-pub const SCOTTIE_DX: Mode = Mode {
-    name: "ScottieDx",
-    vis_code: 76,
-    starting_sync_pulse: true,
-    layout: Layout {
-        width: 320,
-        height: 256,
-        sequences: &[&SEQUENCE],
-        lines_per_sequence: 1,
-        color: ColorMode::Rgb,
-    },
-};

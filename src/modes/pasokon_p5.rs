@@ -10,6 +10,20 @@ use super::layout::{Channel, ColorMode, Layout, Step};
 use crate::units::Duration;
 use crate::{Hz, us};
 
+/// A 640x496 colour image in a 305 second transmission: 496 lines of 614.065ms each.
+pub const PASOKON_P5: Mode = Mode {
+    name: "PasokonP5",
+    vis_code: 114,
+    starting_sync_pulse: false,
+    layout: Layout {
+        width: 640,
+        height: 496,
+        sequences: &[&SEQUENCE],
+        lines_per_sequence: 1,
+        color: ColorMode::Rgb,
+    },
+};
+
 const SYNC_PULSE: Step = Step::control(Hz!(1200), us!(7_813));
 const PORCH: Step = Step::control(Hz!(1500), us!(1_563));
 const SCAN: Duration = us!(200_000);
@@ -24,17 +38,3 @@ const SEQUENCE: [Step; 8] = [
     Step::scan(Channel::Blue, SCAN),
     PORCH,
 ];
-
-/// A 640x496 colour image in a 305 second transmission: 496 lines of 614.065ms each.
-pub const PASOKON_P5: Mode = Mode {
-    name: "PasokonP5",
-    vis_code: 114,
-    starting_sync_pulse: false,
-    layout: Layout {
-        width: 640,
-        height: 496,
-        sequences: &[&SEQUENCE],
-        lines_per_sequence: 1,
-        color: ColorMode::Rgb,
-    },
-};

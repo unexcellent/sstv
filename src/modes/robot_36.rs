@@ -11,6 +11,20 @@ use super::Mode;
 use super::layout::{Channel, ColorMode, Layout, Step};
 use crate::{Hz, ms, us};
 
+/// A 320x240 colour image in a 36 second transmission: 240 lines of 150ms each.
+pub const ROBOT_36: Mode = Mode {
+    name: "Robot36",
+    vis_code: 8,
+    starting_sync_pulse: false,
+    layout: Layout {
+        width: 320,
+        height: 240,
+        sequences: &[&EVEN_SEQUENCE, &ODD_SEQUENCE],
+        lines_per_sequence: 1,
+        color: ColorMode::YuvAveragedPair,
+    },
+};
+
 const SYNC_PULSE: Step = Step::control(Hz!(1200), ms!(9));
 const SYNC_PORCH: Step = Step::control(Hz!(1500), ms!(3));
 const PORCH: Step = Step::control(Hz!(1900), us!(1_500));
@@ -34,17 +48,3 @@ const ODD_SEQUENCE: [Step; 6] = [
     PORCH,
     Step::scan(Channel::BY, ms!(44)),
 ];
-
-/// A 320x240 colour image in a 36 second transmission: 240 lines of 150ms each.
-pub const ROBOT_36: Mode = Mode {
-    name: "Robot36",
-    vis_code: 8,
-    starting_sync_pulse: false,
-    layout: Layout {
-        width: 320,
-        height: 240,
-        sequences: &[&EVEN_SEQUENCE, &ODD_SEQUENCE],
-        lines_per_sequence: 1,
-        color: ColorMode::YuvAveragedPair,
-    },
-};

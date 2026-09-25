@@ -10,19 +10,6 @@ use super::layout::{Channel, ColorMode, Layout, Step};
 use crate::units::Duration;
 use crate::{Hz, ms, us};
 
-const SYNC_PULSE: Step = Step::control(Hz!(1200), ms!(20));
-const PORCH: Step = Step::control(Hz!(1500), us!(2_080));
-const SCAN: Duration = us!(91_520);
-
-const SEQUENCE: [Step; 6] = [
-    SYNC_PULSE,
-    PORCH,
-    Step::scan(Channel::Y, SCAN),
-    Step::scan(Channel::RY, SCAN),
-    Step::scan(Channel::BY, SCAN),
-    Step::scan(Channel::YSecond, SCAN),
-];
-
 /// A 320x256 colour image in a 50 second transmission: 128 line pairs of 388.16ms each.
 pub const PD_50: Mode = Mode {
     name: "Pd50",
@@ -36,3 +23,16 @@ pub const PD_50: Mode = Mode {
         color: ColorMode::YuvSharedPair,
     },
 };
+
+const SYNC_PULSE: Step = Step::control(Hz!(1200), ms!(20));
+const PORCH: Step = Step::control(Hz!(1500), us!(2_080));
+const SCAN: Duration = us!(91_520);
+
+const SEQUENCE: [Step; 6] = [
+    SYNC_PULSE,
+    PORCH,
+    Step::scan(Channel::Y, SCAN),
+    Step::scan(Channel::RY, SCAN),
+    Step::scan(Channel::BY, SCAN),
+    Step::scan(Channel::YSecond, SCAN),
+];
