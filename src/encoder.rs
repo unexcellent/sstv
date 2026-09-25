@@ -88,16 +88,16 @@ impl RgbLines<'_> {
     }
 
     /// The pixel value a scan step transmits at horizontal position `x`,
-    /// reading from the buffered line group starting at `first_line`.
-    fn value(&self, first_line: usize, channel: Channel, x: usize) -> u8 {
+    /// reading the channel starting at the buffered line `buffered_line`.
+    fn value(&self, buffered_line: usize, channel: Channel, x: usize) -> u8 {
         match channel {
-            Channel::Red => self.rgb(first_line, x).red(),
-            Channel::Green => self.rgb(first_line, x).green(),
-            Channel::Blue => self.rgb(first_line, x).blue(),
-            Channel::Y => self.yuv(first_line, x).luma(),
-            Channel::YSecond => self.yuv(first_line + 1, x).luma(),
-            Channel::RY => self.chroma(first_line, x, YuvPixel::chroma_red),
-            Channel::BY => self.chroma(first_line, x, YuvPixel::chroma_blue),
+            Channel::Red => self.rgb(buffered_line, x).red(),
+            Channel::Green => self.rgb(buffered_line, x).green(),
+            Channel::Blue => self.rgb(buffered_line, x).blue(),
+            Channel::Y => self.yuv(buffered_line, x).luma(),
+            Channel::YSecond => self.yuv(buffered_line + 1, x).luma(),
+            Channel::RY => self.chroma(buffered_line, x, YuvPixel::chroma_red),
+            Channel::BY => self.chroma(buffered_line, x, YuvPixel::chroma_blue),
         }
     }
 
@@ -196,12 +196,12 @@ where
     const fn needs_next_lines(&self) -> bool {
         matches!(
             self.phase,
-            Phase::Line {
-                line,
+            Phase::Image {
+                row,
                 sequence: 0,
                 step: 0,
                 pixel: 0,
-            } if line > 0
+            } if row > 0
         )
     }
 
@@ -210,7 +210,7 @@ where
         match self.phase {
             Phase::NotStarted | Phase::Finished => None,
             Phase::Header(index) => self.mode.header_tone(index),
-            Phase::Line {
+            Phase::Image {
                 sequence,
                 step,
                 pixel,
@@ -218,8 +218,8 @@ where
             } => match self.mode.layout().sequences[sequence][step] {
                 Step::Control(tone) => Some(tone),
                 Step::Scan(channel, duration) => {
-                    let first_line = sequence * self.mode.layout().lines_per_sequence;
-                    let value = self.lines.value(first_line, channel, pixel);
+                    let buffered_line = sequence * self.mode.layout().lines_per_sequence;
+                    let value = self.lines.value(buffered_line, channel, pixel);
                     Some(Tone::new(
                         value_frequency(value),
                         duration / self.mode.layout().resolution.0 as u32,
@@ -325,14 +325,15 @@ where
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum Phase {
     NotStarted,
-    /// Emitting the mode's header tones.
     Header(usize),
-    /// Emitting the repeating timing sequences. `line` is the index of the
-    /// first image line buffered for the current pass through the sequences.
-    Line {
-        line: usize,
+    Image {
+        /// The first image row of the currently buffered line group.
+        row: usize,
+        /// Which of the mode's timing sequences the pass is in.
         sequence: usize,
+        /// The position within that sequence's steps.
         step: usize,
+        /// The horizontal position within a scan step.
         pixel: usize,
     },
     Finished,
@@ -347,16 +348,16 @@ impl Phase {
                 *self = if mode.header_tone(index + 1).is_some() {
                     Self::Header(index + 1)
                 } else {
-                    Self::Line {
-                        line: 0,
+                    Self::Image {
+                        row: 0,
                         sequence: 0,
                         step: 0,
                         pixel: 0,
                     }
                 };
             }
-            Self::Line {
-                line,
+            Self::Image {
+                row,
                 sequence,
                 step,
                 pixel,
@@ -365,29 +366,29 @@ impl Phase {
                 let mid_scan =
                     matches!(steps[step], Step::Scan(..)) && pixel + 1 < layout.resolution.0;
                 *self = if mid_scan {
-                    Self::Line {
-                        line,
+                    Self::Image {
+                        row,
                         sequence,
                         step,
                         pixel: pixel + 1,
                     }
                 } else if step + 1 < steps.len() {
-                    Self::Line {
-                        line,
+                    Self::Image {
+                        row,
                         sequence,
                         step: step + 1,
                         pixel: 0,
                     }
                 } else if sequence + 1 < layout.sequences.len() {
-                    Self::Line {
-                        line,
+                    Self::Image {
+                        row,
                         sequence: sequence + 1,
                         step: 0,
                         pixel: 0,
                     }
-                } else if line + layout.lines_per_cycle() < layout.resolution.1 {
-                    Self::Line {
-                        line: line + layout.lines_per_cycle(),
+                } else if row + layout.lines_per_cycle() < layout.resolution.1 {
+                    Self::Image {
+                        row: row + layout.lines_per_cycle(),
                         sequence: 0,
                         step: 0,
                         pixel: 0,
