@@ -105,6 +105,13 @@ impl<I: Iterator<Item = i16>> Decoder<I> {
 
     /// Decode every image in the given mode instead of detecting each image's
     /// mode from its header.
+    ///
+    /// ```no_run
+    /// use sstv::{modes::ROBOT_36, Decoder};
+    ///
+    /// # let samples = std::vec::Vec::<i16>::new().into_iter();
+    /// let decoder = Decoder::from_samples(samples, 48000).expect_mode(ROBOT_36);
+    /// ```
     #[must_use]
     pub const fn expect_mode(mut self, mode: Mode) -> Self {
         self.events.expected_mode = Some(mode);

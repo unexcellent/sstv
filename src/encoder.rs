@@ -12,10 +12,10 @@ use crate::{Error, Result};
 /// you want to encode, supplied row by row, top to bottom. The image must be
 /// [`Mode::resolution`] pixels in size.
 /// ```rust
-/// use sstv::{modes, Encoder, Error, RgbPixel};
+/// use sstv::{modes::ROBOT_36, Encoder, Error, RgbPixel};
 ///
 /// let image = [RgbPixel::new(0, 0, 0); 320 * 240];
-/// let encoder = Encoder::new(modes::ROBOT_36, image.into_iter()).expect("error during encoding");
+/// let encoder = Encoder::new(ROBOT_36, image.into_iter()).expect("error during encoding");
 /// for tone in encoder {
 ///     // emit or save the tones
 /// }
@@ -195,10 +195,10 @@ impl Encoder<alloc::vec::IntoIter<RgbPixel>> {
     /// stretching it to fit.
     ///
     /// ```no_run
-    /// use sstv::{modes, Encoder};
+    /// use sstv::{modes::ROBOT_36, Encoder};
     ///
     /// let image = image::open("image.png").expect("load image");
-    /// let encoder = Encoder::from_image(modes::ROBOT_36, &image).expect("encode image");
+    /// let encoder = Encoder::from_image(ROBOT_36, &image).expect("encode image");
     /// ```
     ///
     /// # Errors

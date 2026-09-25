@@ -17,11 +17,11 @@ const BIT_DURATION: Duration = ms!(30);
 /// [`vis_code!`](crate::vis_code) to validate at compile time.
 ///
 /// ```rust
-/// use sstv::{Mode, modes, vis_code};
+/// use sstv::{modes::ROBOT_36, Mode, vis_code};
 ///
 /// assert_eq!(
 ///     Mode::try_from(vis_code!(8)),
-///     Ok(modes::ROBOT_36),
+///     Ok(ROBOT_36),
 /// );
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

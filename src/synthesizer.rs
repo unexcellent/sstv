@@ -26,10 +26,10 @@ impl Tone {
 ///
 /// You would usually use it to encode an image into single samples to emit them via an audio device.
 /// ```rust
-/// use sstv::{modes, Encoder, RgbPixel, Synthesizer};
+/// use sstv::{modes::ROBOT_36, Encoder, RgbPixel, Synthesizer};
 ///
 /// let image = [RgbPixel::new(0, 0, 0); 320 * 240];
-/// let encoder = Encoder::new(modes::ROBOT_36, image.into_iter()).expect("error during encoding");
+/// let encoder = Encoder::new(ROBOT_36, image.into_iter()).expect("error during encoding");
 /// for sample in Synthesizer::new(encoder, 8000) {
 ///     // ...
 /// }
