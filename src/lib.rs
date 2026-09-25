@@ -10,7 +10,7 @@ mod error;
 #[cfg(feature = "alloc")]
 mod decoder;
 mod demodulator;
-mod encoder;
+mod encode;
 mod image;
 pub mod modes;
 mod synthesizer;
@@ -19,7 +19,7 @@ mod units;
 #[cfg(feature = "alloc")]
 pub use decoder::{DecodedImage, Decoder, Event, Events, Images, RgbRow};
 pub use demodulator::Demodulator;
-pub use encoder::Encoder;
+pub use encode::Encoder;
 pub use error::{Error, Result};
 pub use image::{RgbPixel, YuvPixel};
 pub use modes::{Mode, VisCode};
