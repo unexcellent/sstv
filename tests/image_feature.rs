@@ -5,7 +5,7 @@
 //! Tests for the `image` feature: converting decoded images into `image`
 //! crate buffers.
 
-use sstv::{Decoder, Encoder, Mode, RgbPixel, Synthesizer};
+use sstv::{Decoder, Encoder, Mode, RgbPixel, Synthesizer, modes};
 
 const SAMPLE_RATE: u32 = 24_000;
 
@@ -30,24 +30,24 @@ fn encodes_image_buffers_resizing_them_to_the_mode_resolution() {
     let small = image::DynamicImage::ImageRgb8(image::RgbImage::from_fn(100, 80, |x, y| {
         image::Rgb([(x * 2) as u8, (y * 3) as u8, 128])
     }));
-    let encoder = Encoder::from_image(Mode::Robot36, &small).expect("encode image");
+    let encoder = Encoder::from_image(modes::ROBOT_36, &small).expect("encode image");
 
     let decoded = Decoder::from_samples(Synthesizer::new(encoder, SAMPLE_RATE), SAMPLE_RATE)
-        .expect_mode(Mode::Robot36)
+        .expect_mode(modes::ROBOT_36)
         .images()
         .next()
         .expect("an image");
     assert!(decoded.complete(), "image should decode completely");
-    assert_eq!(decoded.width() as u32, Mode::Robot36.image_width());
-    assert_eq!(decoded.height() as u32, Mode::Robot36.image_height());
+    assert_eq!(decoded.width() as u32, modes::ROBOT_36.image_width());
+    assert_eq!(decoded.height() as u32, modes::ROBOT_36.image_height());
 }
 
 #[test]
 fn decoded_images_convert_to_image_buffers() {
-    let samples = transmission(Mode::Robot36);
+    let samples = transmission(modes::ROBOT_36);
 
     let decoded = Decoder::from_samples(samples.into_iter(), SAMPLE_RATE)
-        .expect_mode(Mode::Robot36)
+        .expect_mode(modes::ROBOT_36)
         .images()
         .next()
         .expect("an image");
@@ -64,15 +64,15 @@ fn decoded_images_convert_to_image_buffers() {
 
 #[test]
 fn decodes_to_image_buffers_and_saves_them() {
-    let samples = transmission(Mode::Robot36);
+    let samples = transmission(modes::ROBOT_36);
 
     let images: Vec<image::RgbImage> = Decoder::from_samples(samples.into_iter(), SAMPLE_RATE)
-        .expect_mode(Mode::Robot36)
+        .expect_mode(modes::ROBOT_36)
         .rgb_images()
         .collect();
     assert_eq!(images.len(), 1, "expected exactly one image");
-    assert_eq!(images[0].width(), Mode::Robot36.image_width());
-    assert_eq!(images[0].height(), Mode::Robot36.image_height());
+    assert_eq!(images[0].width(), modes::ROBOT_36.image_width());
+    assert_eq!(images[0].height(), modes::ROBOT_36.image_height());
 
     let path = std::env::temp_dir().join("sstv-image-feature-test.png");
     images[0].save(&path).expect("save decoded image");

@@ -5,6 +5,7 @@
 //! and then the second line's luminance. The sub-modes differ only in scan
 //! time and resolution.
 
+use super::Mode;
 use super::layout::{Channel, ColorMode, Layout, Step};
 use crate::units::Duration;
 use crate::{Hz, ms, us};
@@ -22,11 +23,16 @@ const SEQUENCE: [Step; 6] = [
     Step::scan(Channel::YSecond, SCAN),
 ];
 
-/// 128 line pairs of 703.04ms each: a 90 second transmission.
-pub const PD_90: Layout = Layout {
-    width: 320,
-    height: 256,
-    sequences: &[&SEQUENCE],
-    lines_per_sequence: 2,
-    color: ColorMode::YuvSharedPair,
+/// A 320x256 colour image in a 90 second transmission: 128 line pairs of 703.04ms each.
+pub const PD_90: Mode = Mode {
+    name: "Pd90",
+    vis_code: 99,
+    starting_sync_pulse: false,
+    layout: Layout {
+        width: 320,
+        height: 256,
+        sequences: &[&SEQUENCE],
+        lines_per_sequence: 2,
+        color: ColorMode::YuvSharedPair,
+    },
 };

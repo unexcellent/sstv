@@ -8,10 +8,10 @@ Encoding an image file into a WAV takes three steps: load the image with the `im
 
 ```rust
 use image;
-use sstv::{Encoder, Mode};
+use sstv::{modes, Encoder};
 
 let image = image::open("image.png").expect("load image");
-let encoder = Encoder::from_image(Mode::Pd120, &image).expect("encode image");
+let encoder = Encoder::from_image(modes::PD_120, &image).expect("encode image");
 std::fs::write("transmission.wav", encoder.to_wav(48_000)).expect("write wav");
 ```
 
@@ -19,10 +19,10 @@ To transmit directly instead, feed the encoder into a `Synthesizer` and stream t
 
 ```rust
 use image;
-use sstv::{Encoder, Mode, Synthesizer};
+use sstv::{modes, Encoder, Synthesizer};
 
 let image = image::open("image.png").expect("load image");
-let encoder = Encoder::from_image(Mode::Robot36, &image).expect("encode image");
+let encoder = Encoder::from_image(modes::ROBOT_36, &image).expect("encode image");
 for sample in Synthesizer::new(encoder, 44_100) {
     // hand the sample to your sound card
 }
@@ -69,10 +69,10 @@ sstv = { version = "*", default-features = false }
 This build cannot use the `std`-based features (`image`, `wav`, `mp3`): work with pixel iterators and samples directly, which also keeps memory bounded. The encoder allocates only at construction and holds no more than one line group at a time, and the same is true for decoding through `events()`:
 
 ```rust
-use sstv::{Encoder, Mode, RgbPixel, Synthesizer};
+use sstv::{modes, Encoder, RgbPixel, Synthesizer};
 
 let pixels = camera_rows(); // any Iterator<Item = RgbPixel>, row by row
-let encoder = Encoder::new(Mode::Robot36, pixels).expect("encode");
+let encoder = Encoder::new(modes::ROBOT_36, pixels).expect("encode");
 for sample in Synthesizer::new(encoder, 8_000) {
     // feed the DAC
 }

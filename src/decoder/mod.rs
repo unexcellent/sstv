@@ -5,8 +5,8 @@ mod stream;
 use alloc::collections::VecDeque;
 use alloc::{vec, vec::Vec};
 
-use crate::modes::layout::{Layout, Step};
-use crate::modes::{BLACK_FREQUENCY, Mode, SYNC_FREQUENCY, WHITE_FREQUENCY};
+use crate::modes::layout::Step;
+use crate::modes::{BLACK_FREQUENCY, Mode, ROBOT_36, SYNC_FREQUENCY, WHITE_FREQUENCY};
 use crate::{Demodulator, RgbPixel};
 
 use acquire::{detect_mode, is_sync, lock_onto_first_line};
@@ -121,7 +121,7 @@ impl<I: Iterator<Item = i16>> Decoder<I> {
     /// the decoder searches for further images as usual. Without a header
     /// there is no VIS code to detect a mode from, so unless
     /// [`expect_mode`](Self::expect_mode) names one, the first image decodes
-    /// as [`Mode::Robot36`].
+    /// as [`modes::ROBOT_36`](crate::modes::ROBOT_36).
     #[must_use]
     pub const fn without_header(mut self) -> Self {
         self.events.skip_header = true;
@@ -286,7 +286,6 @@ enum State {
 /// Everything needed to decode the image currently being worked on.
 struct ImageState {
     mode: Mode,
-    layout: Layout,
     /// Fractional sample position at which the next timing sequence begins.
     sequence_start: f64,
     /// Which of the mode's timing sequences the next line uses.
@@ -298,14 +297,12 @@ struct ImageState {
 
 impl ImageState {
     fn new(mode: Mode, sequence_start: f64) -> Self {
-        let layout = mode.layout();
         Self {
             mode,
-            layout,
             sequence_start,
             sequence_index: 0,
             row_index: 0,
-            assembler: Assembler::new(&layout),
+            assembler: Assembler::new(&mode.layout()),
         }
     }
 
@@ -322,8 +319,9 @@ impl ImageState {
         &mut self,
         stream: &mut FrequencyStream<I>,
     ) -> Option<SequenceData> {
-        let sequence = self.layout.sequences[self.sequence_index];
-        let width = self.layout.width;
+        let layout = self.mode.layout();
+        let sequence = layout.sequences[self.sequence_index];
+        let width = layout.width;
         let expected_scans = sequence
             .iter()
             .filter(|step| matches!(step, Step::Scan(..)))
@@ -381,7 +379,7 @@ impl ImageState {
             return None;
         }
         self.sequence_start = t;
-        self.sequence_index = (self.sequence_index + 1) % self.layout.sequences.len();
+        self.sequence_index = (self.sequence_index + 1) % layout.sequences.len();
         Some(SequenceData { scans, tone_hz })
     }
 }
@@ -422,7 +420,7 @@ impl<I: Iterator<Item = i16>> Events<I> {
     /// searching for a header. Without a header there is no VIS code, so an
     /// unpinned mode falls back to Robot 36.
     fn start_without_header(&mut self) {
-        let mode = self.expected_mode.unwrap_or(Mode::Robot36);
+        let mode = self.expected_mode.unwrap_or(ROBOT_36);
         let image = ImageState::new(mode, 0.0);
         self.queue.push_back(Event::ImageStart(image.mode));
         self.state = State::Decoding(image);
@@ -459,7 +457,7 @@ impl<I: Iterator<Item = i16>> Events<I> {
             return;
         };
 
-        if image.row_index >= image.layout.height {
+        if image.row_index >= image.mode.layout().height {
             self.queue.push_back(Event::ImageEnd { complete: true });
             self.state = State::Searching;
             return;
@@ -629,7 +627,7 @@ mod tests {
         // `to_vec` is required: `Encoder::new` needs an owned (`'static`)
         // iterator, so borrowing with `iter().copied()` would not compile.
         #[allow(clippy::unnecessary_to_owned)]
-        let encoder = Encoder::new(Mode::Robot36, image.to_vec().into_iter()).unwrap();
+        let encoder = Encoder::new(ROBOT_36, image.to_vec().into_iter()).unwrap();
         Synthesizer::new(encoder, sample_rate).collect()
     }
 
@@ -649,10 +647,7 @@ mod tests {
 
     /// The number of samples occupied by our encoder's header at a sample rate.
     fn header_sample_count(sample_rate: u32) -> usize {
-        let total_ns: u64 = Mode::Robot36
-            .header_tones()
-            .map(|tone| tone.duration.ns())
-            .sum();
+        let total_ns: u64 = ROBOT_36.header_tones().map(|tone| tone.duration.ns()).sum();
         (total_ns * u64::from(sample_rate) / 1_000_000_000) as usize
     }
 
@@ -670,7 +665,7 @@ mod tests {
         samples.extend(encode(&image, 48_000));
 
         let decoded: Vec<DecodedImage> = Decoder::from_samples(samples.into_iter(), 48_000)
-            .expect_mode(Mode::Robot36)
+            .expect_mode(ROBOT_36)
             .images()
             .collect();
 
@@ -689,7 +684,7 @@ mod tests {
         samples.extend(encode(&image, 48_000));
 
         let decoded: Vec<DecodedImage> = Decoder::from_samples(samples.into_iter(), 48_000)
-            .expect_mode(Mode::Robot36)
+            .expect_mode(ROBOT_36)
             .images()
             .collect();
 
@@ -711,12 +706,12 @@ mod tests {
         let mut complete = None;
         let mut decoded: Vec<RgbPixel> = Vec::new();
         let events = Decoder::from_samples(image_samples, 48_000)
-            .expect_mode(Mode::Robot36)
+            .expect_mode(ROBOT_36)
             .without_header()
             .events();
         for event in events {
             match event {
-                Event::ImageStart(mode) => assert_eq!(mode, Mode::Robot36),
+                Event::ImageStart(mode) => assert_eq!(mode, ROBOT_36),
                 Event::Row(row) => {
                     assert_eq!(row.index(), rows, "row out of order");
                     rows += 1;
@@ -741,7 +736,7 @@ mod tests {
         // the VOX tones, first leader and break, leaving the second leader
         // running straight into the VIS bits. Auto detection must still lock on.
         let trimmed: u64 = (0..=9)
-            .map(|index| Mode::Robot36.header_tone(index).unwrap().duration.ns())
+            .map(|index| ROBOT_36.header_tone(index).unwrap().duration.ns())
             .sum();
         let skip = (trimmed * 48_000 / 1_000_000_000) as usize;
 
@@ -750,7 +745,7 @@ mod tests {
             .collect();
 
         assert_eq!(decoded.len(), 1, "expected one image");
-        assert_eq!(decoded[0].mode(), Mode::Robot36);
+        assert_eq!(decoded[0].mode(), ROBOT_36);
         assert_matches(&decoded[0], &image);
     }
 
@@ -761,11 +756,11 @@ mod tests {
 
         let demodulator = crate::Demodulator::new(samples.clone().into_iter(), 48_000);
         let from_demodulator: Vec<Event> = Decoder::from_demodulator(demodulator)
-            .expect_mode(Mode::Robot36)
+            .expect_mode(ROBOT_36)
             .events()
             .collect();
         let from_samples: Vec<Event> = Decoder::from_samples(samples.into_iter(), 48_000)
-            .expect_mode(Mode::Robot36)
+            .expect_mode(ROBOT_36)
             .events()
             .collect();
 
@@ -775,7 +770,7 @@ mod tests {
     #[test]
     fn silence_yields_no_images() {
         let decoded = Decoder::from_samples(std::vec![0i16; 48_000].into_iter(), 48_000)
-            .expect_mode(Mode::Robot36)
+            .expect_mode(ROBOT_36)
             .images()
             .next();
         assert!(decoded.is_none(), "silence should not produce an image");

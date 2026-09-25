@@ -9,7 +9,7 @@
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 
-use sstv::{Encoder, Mode, RgbPixel, Synthesizer};
+use sstv::{Encoder, RgbPixel, Synthesizer, modes};
 
 /// Wraps the system allocator, counting every allocation and reallocation
 /// made by the current thread. The count is thread-local so that harness
@@ -49,7 +49,7 @@ static ALLOCATOR: CountingAllocator = CountingAllocator;
 
 #[test]
 fn encoding_does_not_allocate_after_construction() {
-    let mode = Mode::Robot36;
+    let mode = modes::ROBOT_36;
     let (width, height) = (mode.image_width(), mode.image_height());
     let image =
         (0..width * height).map(|i| RgbPixel::new(i as u8, (i >> 8) as u8, (i >> 16) as u8));

@@ -17,7 +17,7 @@ use std::env;
 use std::fs::File;
 use std::io::Read;
 
-use sstv::{Decoder, Mode};
+use sstv::{Decoder, Mode, modes};
 
 fn has_extension(path: &str, extension: &str) -> bool {
     std::path::Path::new(path)
@@ -26,10 +26,10 @@ fn has_extension(path: &str, extension: &str) -> bool {
 }
 
 fn parse_mode(name: &str) -> Mode {
-    Mode::ALL
+    modes::ALL
         .into_iter()
         .find(|mode| format!("{mode:?}").eq_ignore_ascii_case(name))
-        .unwrap_or_else(|| panic!("unknown mode {name}, expected one of {:?}", Mode::ALL))
+        .unwrap_or_else(|| panic!("unknown mode {name}, expected one of {:?}", modes::ALL))
 }
 
 fn main() {

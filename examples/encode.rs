@@ -8,14 +8,14 @@
 //! cargo run --features image,wav --example encode -- local/encoded.wav [mode] [sample_rate]
 //! ```
 
-use sstv::{Encoder, Mode};
+use sstv::{Encoder, Mode, modes};
 use std::env;
 
 fn parse_mode(name: &str) -> Mode {
-    Mode::ALL
+    modes::ALL
         .into_iter()
         .find(|mode| format!("{mode:?}").eq_ignore_ascii_case(name))
-        .unwrap_or_else(|| panic!("unknown mode {name}, expected one of {:?}", Mode::ALL))
+        .unwrap_or_else(|| panic!("unknown mode {name}, expected one of {:?}", modes::ALL))
 }
 
 fn main() {
@@ -23,7 +23,9 @@ fn main() {
     let output = args
         .next()
         .expect("usage: encode <output.wav> [mode] [sample_rate]");
-    let mode = args.next().map_or(Mode::Robot36, |name| parse_mode(&name));
+    let mode = args
+        .next()
+        .map_or(modes::ROBOT_36, |name| parse_mode(&name));
     let sample_rate: u32 = args.next().map_or(48_000, |s| {
         s.parse().expect("sample rate must be an integer")
     });

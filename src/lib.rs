@@ -10,7 +10,7 @@ mod decoder;
 mod demodulator;
 mod encoder;
 mod image;
-mod modes;
+pub mod modes;
 mod synthesizer;
 mod units;
 

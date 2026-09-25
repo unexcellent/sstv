@@ -3,11 +3,11 @@
 //! forum, 20 May 2000.
 //!
 //! Each mode lives in its own module, transcribing its timing table from the
-//! paper into a [`Layout`]. Everything shared between modes — the frequency
+//! paper into a `Layout`. Everything shared between modes — the frequency
 //! range, the calibration header and the VIS code — is defined here, as in
 //! the paper's common sections.
 
-pub mod layout;
+pub(crate) mod layout;
 
 mod martin_1;
 mod martin_2;
@@ -33,14 +33,55 @@ use crate::units::{Duration, Frequency};
 use crate::{Hz, ms, tone};
 use layout::Layout;
 
+pub use martin_1::MARTIN_1;
+pub use martin_2::MARTIN_2;
+pub use pasokon_p3::PASOKON_P3;
+pub use pasokon_p5::PASOKON_P5;
+pub use pasokon_p7::PASOKON_P7;
+pub use pd_50::PD_50;
+pub use pd_90::PD_90;
+pub use pd_120::PD_120;
+pub use pd_160::PD_160;
+pub use pd_180::PD_180;
+pub use pd_240::PD_240;
+pub use pd_290::PD_290;
+pub use robot_36::ROBOT_36;
+pub use robot_72::ROBOT_72;
+pub use scottie_1::SCOTTIE_1;
+pub use scottie_2::SCOTTIE_2;
+pub use scottie_dx::SCOTTIE_DX;
+pub use wrasse_sc2_180::WRASSE_SC2_180;
+
+/// Every transmission mode, in the paper's order.
+pub const ALL: [Mode; 18] = [
+    SCOTTIE_1,
+    SCOTTIE_2,
+    SCOTTIE_DX,
+    MARTIN_1,
+    MARTIN_2,
+    ROBOT_36,
+    ROBOT_72,
+    WRASSE_SC2_180,
+    PASOKON_P3,
+    PASOKON_P5,
+    PASOKON_P7,
+    PD_50,
+    PD_90,
+    PD_120,
+    PD_160,
+    PD_180,
+    PD_240,
+    PD_290,
+];
+
 /// The sync pulse frequency, shared by every mode.
-pub const SYNC_FREQUENCY: Frequency = Hz!(1200);
+pub(crate) const SYNC_FREQUENCY: Frequency = Hz!(1200);
 /// Pure black — the lower end of the luminance range.
-pub const BLACK_FREQUENCY: Frequency = Hz!(1500);
+pub(crate) const BLACK_FREQUENCY: Frequency = Hz!(1500);
 /// Pure white — the upper end of the luminance range.
-pub const WHITE_FREQUENCY: Frequency = Hz!(2300);
+pub(crate) const WHITE_FREQUENCY: Frequency = Hz!(2300);
 /// The leader tone of the calibration header.
-pub const LEADER_FREQUENCY: Frequency = Hz!(1900);
+pub(crate) const LEADER_FREQUENCY: Frequency = Hz!(1900);
 const VIS_ONE_FREQUENCY: Frequency = Hz!(1100);
 const VIS_ZERO_FREQUENCY: Frequency = Hz!(1300);
 /// Every VIS bit (start, data, parity, stop) lasts 30ms.
@@ -48,7 +89,7 @@ const VIS_BIT_DURATION: Duration = ms!(30);
 
 /// The frequency representing a pixel value, mapped linearly onto the
 /// luminance range.
-pub fn value_frequency(value: u8) -> Frequency {
+pub(crate) fn value_frequency(value: u8) -> Frequency {
     BLACK_FREQUENCY + (WHITE_FREQUENCY - BLACK_FREQUENCY) * u32::from(value) / 255
 }
 
@@ -66,162 +107,58 @@ const VOX_TONES: [Tone; 8] = [
 ];
 
 /// A specific protocol for encoding an image as a tone sequence.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-#[non_exhaustive]
-pub enum Mode {
-    /// A 320x256 colour image in a 110 second transmission.
-    Scottie1,
-    /// A 320x256 colour image in a 71 second transmission.
-    Scottie2,
-    /// A 320x256 colour image in a 269 second transmission.
-    ScottieDx,
-    /// A 320x256 colour image in a 114 second transmission.
-    Martin1,
-    /// A 320x256 colour image in a 58 second transmission.
-    Martin2,
-    /// A 320x240 colour image in a 36 second transmission.
-    Robot36,
-    /// A 320x240 colour image in a 72 second transmission.
-    Robot72,
-    /// A 320x256 colour image in a 182 second transmission.
-    WrasseSc2180,
-    /// A 640x496 colour image in a 203 second transmission.
-    PasokonP3,
-    /// A 640x496 colour image in a 305 second transmission.
-    PasokonP5,
-    /// A 640x496 colour image in a 406 second transmission.
-    PasokonP7,
-    /// A 320x256 colour image in a 50 second transmission.
-    Pd50,
-    /// A 320x256 colour image in a 90 second transmission.
-    Pd90,
-    /// A 640x496 colour image in a 126 second transmission.
-    Pd120,
-    /// A 512x400 colour image in a 161 second transmission.
-    Pd160,
-    /// A 640x496 colour image in a 187 second transmission.
-    Pd180,
-    /// A 640x496 colour image in a 248 second transmission.
-    Pd240,
-    /// An 800x616 colour image in a 289 second transmission.
-    Pd290,
+///
+/// The modes themselves are constants in [`modes`](crate::modes)
+/// ([`modes::ROBOT_36`](crate::modes::ROBOT_36),
+/// [`modes::SCOTTIE_1`](crate::modes::SCOTTIE_1), …), each defined in its own
+/// module.
+#[derive(Clone, Copy)]
+pub struct Mode {
+    /// The mode's name, as [`Debug`](core::fmt::Debug) prints it.
+    name: &'static str,
+    /// The 7-bit VIS code identifying the mode to a receiving system.
+    vis_code: u8,
+    /// Whether one extra sync pulse precedes the first line (Scottie modes).
+    starting_sync_pulse: bool,
+    /// The scanline structure specified by the mode's timing-sequence table.
+    layout: Layout,
 }
 
 impl Mode {
-    /// Every transmission mode, in the paper's order.
-    pub const ALL: [Self; 18] = [
-        Self::Scottie1,
-        Self::Scottie2,
-        Self::ScottieDx,
-        Self::Martin1,
-        Self::Martin2,
-        Self::Robot36,
-        Self::Robot72,
-        Self::WrasseSc2180,
-        Self::PasokonP3,
-        Self::PasokonP5,
-        Self::PasokonP7,
-        Self::Pd50,
-        Self::Pd90,
-        Self::Pd120,
-        Self::Pd160,
-        Self::Pd180,
-        Self::Pd240,
-        Self::Pd290,
-    ];
-
     /// The mode's 7-bit VIS code, identifying it to a receiving system.
     #[must_use]
     pub const fn vis_code(&self) -> u8 {
-        match self {
-            Self::Scottie1 => 60,
-            Self::Scottie2 => 56,
-            Self::ScottieDx => 76,
-            Self::Martin1 => 44,
-            Self::Martin2 => 40,
-            Self::Robot36 => 8,
-            Self::Robot72 => 12,
-            Self::WrasseSc2180 => 55,
-            Self::PasokonP3 => 113,
-            Self::PasokonP5 => 114,
-            Self::PasokonP7 => 115,
-            Self::Pd50 => 93,
-            Self::Pd90 => 99,
-            Self::Pd120 => 95,
-            Self::Pd160 => 98,
-            Self::Pd180 => 96,
-            Self::Pd240 => 97,
-            Self::Pd290 => 94,
-        }
+        self.vis_code
     }
 
     /// Look up a mode by its 7-bit VIS code.
     #[must_use]
-    pub const fn from_vis_code(code: u8) -> Option<Self> {
-        match code {
-            60 => Some(Self::Scottie1),
-            56 => Some(Self::Scottie2),
-            76 => Some(Self::ScottieDx),
-            44 => Some(Self::Martin1),
-            40 => Some(Self::Martin2),
-            8 => Some(Self::Robot36),
-            12 => Some(Self::Robot72),
-            55 => Some(Self::WrasseSc2180),
-            113 => Some(Self::PasokonP3),
-            114 => Some(Self::PasokonP5),
-            115 => Some(Self::PasokonP7),
-            93 => Some(Self::Pd50),
-            99 => Some(Self::Pd90),
-            95 => Some(Self::Pd120),
-            98 => Some(Self::Pd160),
-            96 => Some(Self::Pd180),
-            97 => Some(Self::Pd240),
-            94 => Some(Self::Pd290),
-            _ => None,
-        }
+    pub fn from_vis_code(code: u8) -> Option<Self> {
+        ALL.into_iter().find(|mode| mode.vis_code == code)
     }
 
     /// The mode's scanline structure as specified by its timing-sequence
     /// table in the paper.
     pub(crate) const fn layout(self) -> Layout {
-        match self {
-            Self::Scottie1 => scottie_1::SCOTTIE_1,
-            Self::Scottie2 => scottie_2::SCOTTIE_2,
-            Self::ScottieDx => scottie_dx::SCOTTIE_DX,
-            Self::Martin1 => martin_1::MARTIN_1,
-            Self::Martin2 => martin_2::MARTIN_2,
-            Self::Robot36 => robot_36::ROBOT_36,
-            Self::Robot72 => robot_72::ROBOT_72,
-            Self::WrasseSc2180 => wrasse_sc2_180::WRASSE_SC2_180,
-            Self::PasokonP3 => pasokon_p3::PASOKON_P3,
-            Self::PasokonP5 => pasokon_p5::PASOKON_P5,
-            Self::PasokonP7 => pasokon_p7::PASOKON_P7,
-            Self::Pd50 => pd_50::PD_50,
-            Self::Pd90 => pd_90::PD_90,
-            Self::Pd120 => pd_120::PD_120,
-            Self::Pd160 => pd_160::PD_160,
-            Self::Pd180 => pd_180::PD_180,
-            Self::Pd240 => pd_240::PD_240,
-            Self::Pd290 => pd_290::PD_290,
-        }
+        self.layout
     }
 
     /// The horizontal resolution in pixels.
     #[must_use]
     pub const fn image_width(&self) -> u32 {
-        self.layout().width as u32
+        self.layout.width as u32
     }
 
     /// The vertical resolution in pixels.
     #[must_use]
     pub const fn image_height(&self) -> u32 {
-        self.layout().height as u32
+        self.layout.height as u32
     }
 
     /// Whether the mode transmits one extra sync pulse between the header and
     /// the first line. Only Scottie modes do.
     pub(crate) const fn has_starting_sync_pulse(self) -> bool {
-        matches!(self, Self::Scottie1 | Self::Scottie2 | Self::ScottieDx)
+        self.starting_sync_pulse
     }
 
     /// The tones sent before the image: the VOX tuning tones, the calibration
@@ -258,6 +195,28 @@ impl Mode {
     }
 }
 
+// The VIS code is unique to each mode, so it serves as the mode's identity —
+// comparing the layouts would walk their timing sequences.
+impl PartialEq for Mode {
+    fn eq(&self, other: &Self) -> bool {
+        self.vis_code == other.vis_code
+    }
+}
+
+impl Eq for Mode {}
+
+impl core::hash::Hash for Mode {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self.vis_code.hash(state);
+    }
+}
+
+impl core::fmt::Debug for Mode {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(self.name)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     extern crate std;
@@ -269,7 +228,7 @@ mod tests {
     #[test]
     fn header_tones_robot36() {
         assert_eq!(
-            Mode::Robot36.header_tones().collect::<Vec<_>>(),
+            ROBOT_36.header_tones().collect::<Vec<_>>(),
             std::vec![
                 tone!(1900 Hz, 100 ms),
                 tone!(1500 Hz, 100 ms),
@@ -298,7 +257,7 @@ mod tests {
 
     #[test]
     fn vis_codes_round_trip() {
-        for mode in Mode::ALL {
+        for mode in ALL {
             let code = mode.vis_code();
             assert_eq!(Mode::from_vis_code(code), Some(mode));
             assert!(code < 128, "VIS codes are 7 bit");
@@ -309,7 +268,7 @@ mod tests {
     /// the sync pulses being evenly spaced.
     #[test]
     fn sequences_are_equally_long() {
-        for mode in Mode::ALL {
+        for mode in ALL {
             let layout = mode.layout();
             let duration = layout.sequence_duration();
             for sequence in layout.sequences {
@@ -325,7 +284,7 @@ mod tests {
     /// 36 seconds — 150.0ms per line.
     #[test]
     fn robot36_line_duration_matches_paper() {
-        assert_eq!(Mode::Robot36.layout().sequence_duration(), ms!(150));
+        assert_eq!(ROBOT_36.layout().sequence_duration(), ms!(150));
     }
 
     /// The paper publishes each mode's total transmission time (excluding the
@@ -335,24 +294,24 @@ mod tests {
     #[test]
     fn transmission_times_match_paper() {
         let expected_seconds = [
-            (Mode::Scottie1, 109.6),
-            (Mode::Scottie2, 71.1),
-            (Mode::ScottieDx, 268.9),
-            (Mode::Martin1, 114.3),
-            (Mode::Martin2, 58.06),
-            (Mode::Robot36, 36.0),
-            (Mode::Robot72, 72.0),
-            (Mode::WrasseSc2180, 182.0),
-            (Mode::PasokonP3, 203.0),
-            (Mode::PasokonP5, 304.6),
-            (Mode::PasokonP7, 406.1),
-            (Mode::Pd50, 49.7),
-            (Mode::Pd90, 90.0),
-            (Mode::Pd120, 126.1),
-            (Mode::Pd160, 160.9),
-            (Mode::Pd180, 187.1),
-            (Mode::Pd240, 248.0),
-            (Mode::Pd290, 288.7),
+            (SCOTTIE_1, 109.6),
+            (SCOTTIE_2, 71.1),
+            (SCOTTIE_DX, 268.9),
+            (MARTIN_1, 114.3),
+            (MARTIN_2, 58.06),
+            (ROBOT_36, 36.0),
+            (ROBOT_72, 72.0),
+            (WRASSE_SC2_180, 182.0),
+            (PASOKON_P3, 203.0),
+            (PASOKON_P5, 304.6),
+            (PASOKON_P7, 406.1),
+            (PD_50, 49.7),
+            (PD_90, 90.0),
+            (PD_120, 126.1),
+            (PD_160, 160.9),
+            (PD_180, 187.1),
+            (PD_240, 248.0),
+            (PD_290, 288.7),
         ];
         for (mode, expected) in expected_seconds {
             let layout = mode.layout();

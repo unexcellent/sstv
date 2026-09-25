@@ -4,7 +4,7 @@
 
 //! Tests for the `wav` feature: encoding to and decoding from in-memory WAVs.
 
-use sstv::{Decoder, Encoder, Mode, RgbPixel, Synthesizer};
+use sstv::{Decoder, Encoder, Mode, RgbPixel, Synthesizer, modes};
 
 const SAMPLE_RATE: u32 = 24_000;
 
@@ -39,8 +39,8 @@ fn mean_abs_error(a: &[RgbPixel], b: &[RgbPixel]) -> f64 {
 
 #[test]
 fn round_trips_through_a_wav() {
-    let image = test_image(Mode::Robot36);
-    let encoder = Encoder::new(Mode::Robot36, image.clone().into_iter()).expect("encode");
+    let image = test_image(modes::ROBOT_36);
+    let encoder = Encoder::new(modes::ROBOT_36, image.clone().into_iter()).expect("encode");
     let wav = encoder.to_wav(SAMPLE_RATE);
 
     let decoded = Decoder::from_wav(&wav)
@@ -49,7 +49,7 @@ fn round_trips_through_a_wav() {
         .next()
         .expect("an image");
 
-    assert_eq!(decoded.mode(), Mode::Robot36);
+    assert_eq!(decoded.mode(), modes::ROBOT_36);
     assert!(decoded.complete(), "image should decode completely");
     let error = mean_abs_error(&image, decoded.pixels());
     assert!(error < 12.0, "mean abs error {error} too high");
@@ -58,8 +58,8 @@ fn round_trips_through_a_wav() {
 /// Stereo float WAVs are down-converted: first channel, scaled to 16 bit.
 #[test]
 fn decodes_stereo_float_wavs() {
-    let image = test_image(Mode::Robot36);
-    let encoder = Encoder::new(Mode::Robot36, image.clone().into_iter()).expect("encode");
+    let image = test_image(modes::ROBOT_36);
+    let encoder = Encoder::new(modes::ROBOT_36, image.clone().into_iter()).expect("encode");
     let samples: Vec<i16> = Synthesizer::new(encoder, SAMPLE_RATE).collect();
 
     let spec = hound::WavSpec {
@@ -79,7 +79,7 @@ fn decodes_stereo_float_wavs() {
 
     let decoded = Decoder::from_wav(cursor.get_ref())
         .expect("parse wav")
-        .expect_mode(Mode::Robot36)
+        .expect_mode(modes::ROBOT_36)
         .images()
         .next()
         .expect("an image");
@@ -98,8 +98,8 @@ fn malformed_wav_reports_an_error() {
 /// the cut, with the missing rows left black.
 #[test]
 fn decodes_a_truncated_wav() {
-    let image = test_image(Mode::Robot36);
-    let encoder = Encoder::new(Mode::Robot36, image.clone().into_iter()).expect("encode");
+    let image = test_image(modes::ROBOT_36);
+    let encoder = Encoder::new(modes::ROBOT_36, image.clone().into_iter()).expect("encode");
     let wav = encoder.to_wav(SAMPLE_RATE);
 
     // Cut a quarter of the audio without adjusting the header sizes.
@@ -111,14 +111,14 @@ fn decodes_a_truncated_wav() {
         .next()
         .expect("an image");
 
-    assert_eq!(decoded.mode(), Mode::Robot36);
+    assert_eq!(decoded.mode(), modes::ROBOT_36);
     assert!(!decoded.complete(), "a truncated image is not complete");
     let pixels = decoded.pixels();
     let last = pixels.last().expect("pixels");
     assert_eq!((last.red(), last.green(), last.blue()), (0, 0, 0));
 
-    let decoded_rows = pixels.len() / Mode::Robot36.image_width() as usize;
-    assert_eq!(decoded_rows, Mode::Robot36.image_height() as usize);
+    let decoded_rows = pixels.len() / modes::ROBOT_36.image_width() as usize;
+    assert_eq!(decoded_rows, modes::ROBOT_36.image_height() as usize);
     let error = mean_abs_error(&image[..pixels.len() / 2], &pixels[..pixels.len() / 2]);
     assert!(error < 12.0, "mean abs error {error} too high");
 }

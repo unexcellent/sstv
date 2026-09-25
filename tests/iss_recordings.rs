@@ -8,7 +8,7 @@
 //! The recordings stay outside the git history; the first test run fetches
 //! them (~130 MB) via `tests/scripts/fetch_iss_recordings.py`.
 
-use sstv::{DecodedImage, Decoder, Demodulator, Encoder, Mode, Synthesizer};
+use sstv::{DecodedImage, Decoder, Demodulator, Encoder, Mode, Synthesizer, modes};
 
 const PD_120_PERIOD: f64 = 0.508_48;
 const PD_180_PERIOD: f64 = 0.754_24;
@@ -27,43 +27,43 @@ struct Recording {
 const RECORDINGS: &[Recording] = &[
     Recording {
         path: "tests/assets/iss/pd180-gagarin-80.wav",
-        mode: Mode::Pd180,
+        mode: modes::PD_180,
         period: PD_180_PERIOD,
         detectable: true,
     },
     Recording {
         path: "tests/assets/iss/pd180-apollo-soyuz.wav",
-        mode: Mode::Pd180,
+        mode: modes::PD_180,
         period: PD_180_PERIOD,
         detectable: true,
     },
     Recording {
         path: "tests/assets/iss/pd180-ariss-qso-astros.wav",
-        mode: Mode::Pd180,
+        mode: modes::PD_180,
         period: PD_180_PERIOD,
         detectable: true,
     },
     Recording {
         path: "tests/assets/iss/pd180-ariss-qso-cristoforetti.wav",
-        mode: Mode::Pd180,
+        mode: modes::PD_180,
         period: PD_180_PERIOD,
         detectable: false,
     },
     Recording {
         path: "tests/assets/iss/pd180-mai75-suitsat.wav",
-        mode: Mode::Pd180,
+        mode: modes::PD_180,
         period: PD_180_PERIOD,
         detectable: true,
     },
     Recording {
         path: "tests/assets/iss/pd120-ariss-20-year-1.wav",
-        mode: Mode::Pd120,
+        mode: modes::PD_120,
         period: PD_120_PERIOD,
         detectable: true,
     },
     Recording {
         path: "tests/assets/iss/pd120-ariss-20-year-2.wav",
-        mode: Mode::Pd120,
+        mode: modes::PD_120,
         period: PD_120_PERIOD,
         detectable: true,
     },

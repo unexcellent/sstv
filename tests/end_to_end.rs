@@ -8,7 +8,7 @@
 
 use rand::SeedableRng;
 use rand_distr::{Distribution, Normal};
-use sstv::{DecodedImage, Decoder, Encoder, Mode, RgbPixel, Synthesizer};
+use sstv::{DecodedImage, Decoder, Encoder, RgbPixel, Synthesizer, modes};
 
 /// Robot36 resolution.
 const WIDTH: usize = 320;
@@ -44,7 +44,7 @@ fn encode(image: &[RgbPixel]) -> Vec<i16> {
     // `to_vec` is required: `Encoder::new` needs an owned (`'static`)
     // iterator, so borrowing with `iter().copied()` would not compile.
     #[allow(clippy::unnecessary_to_owned)]
-    let encoder = Encoder::new(Mode::Robot36, image.to_vec().into_iter()).unwrap();
+    let encoder = Encoder::new(modes::ROBOT_36, image.to_vec().into_iter()).unwrap();
     Synthesizer::new(encoder, SAMPLE_RATE).collect()
 }
 
@@ -96,7 +96,7 @@ fn mean_abs_error(a: &[RgbPixel], b: &[RgbPixel]) -> f64 {
 /// Drive the decoder to completion, grouping its events into images.
 fn decode_images(samples: Vec<i16>) -> Vec<DecodedImage> {
     Decoder::from_samples(samples.into_iter(), SAMPLE_RATE)
-        .expect_mode(Mode::Robot36)
+        .expect_mode(modes::ROBOT_36)
         .images()
         .collect()
 }
@@ -182,7 +182,7 @@ fn pure_noise_should_not_be_decoded_as_an_image() {
 
     assert_eq!(
         Decoder::from_samples(pure_noise.into_iter(), SAMPLE_RATE)
-            .expect_mode(Mode::Robot36)
+            .expect_mode(modes::ROBOT_36)
             .events()
             .next(),
         None

@@ -5,7 +5,7 @@
 //! Round-trip test for every mode: encode a test image, decode the samples
 //! back, and compare against the original.
 
-use sstv::{Decoder, Encoder, Event, Mode, RgbPixel, Synthesizer};
+use sstv::{Decoder, Encoder, Event, Mode, RgbPixel, Synthesizer, modes};
 
 const SAMPLE_RATE: u32 = 24_000;
 
@@ -87,90 +87,90 @@ fn round_trip(mode: Mode) {
 
 #[test]
 fn scottie_1() {
-    round_trip(Mode::Scottie1);
+    round_trip(modes::SCOTTIE_1);
 }
 
 #[test]
 fn scottie_2() {
-    round_trip(Mode::Scottie2);
+    round_trip(modes::SCOTTIE_2);
 }
 
 #[test]
 fn scottie_dx() {
-    round_trip(Mode::ScottieDx);
+    round_trip(modes::SCOTTIE_DX);
 }
 
 #[test]
 fn martin_1() {
-    round_trip(Mode::Martin1);
+    round_trip(modes::MARTIN_1);
 }
 
 #[test]
 fn martin_2() {
-    round_trip(Mode::Martin2);
+    round_trip(modes::MARTIN_2);
 }
 
 #[test]
 fn robot_36() {
-    round_trip(Mode::Robot36);
+    round_trip(modes::ROBOT_36);
 }
 
 #[test]
 fn robot_72() {
-    round_trip(Mode::Robot72);
+    round_trip(modes::ROBOT_72);
 }
 
 #[test]
 fn wrasse_sc2_180() {
-    round_trip(Mode::WrasseSc2180);
+    round_trip(modes::WRASSE_SC2_180);
 }
 
 #[test]
 fn pasokon_p3() {
-    round_trip(Mode::PasokonP3);
+    round_trip(modes::PASOKON_P3);
 }
 
 #[test]
 fn pasokon_p5() {
-    round_trip(Mode::PasokonP5);
+    round_trip(modes::PASOKON_P5);
 }
 
 #[test]
 fn pasokon_p7() {
-    round_trip(Mode::PasokonP7);
+    round_trip(modes::PASOKON_P7);
 }
 
 #[test]
 fn pd_50() {
-    round_trip(Mode::Pd50);
+    round_trip(modes::PD_50);
 }
 
 #[test]
 fn pd_90() {
-    round_trip(Mode::Pd90);
+    round_trip(modes::PD_90);
 }
 
 #[test]
 fn pd_120() {
-    round_trip(Mode::Pd120);
+    round_trip(modes::PD_120);
 }
 
 #[test]
 fn pd_160() {
-    round_trip(Mode::Pd160);
+    round_trip(modes::PD_160);
 }
 
 #[test]
 fn pd_180() {
-    round_trip(Mode::Pd180);
+    round_trip(modes::PD_180);
 }
 
 #[test]
 fn pd_240() {
-    round_trip(Mode::Pd240);
+    round_trip(modes::PD_240);
 }
 
 #[test]
 fn pd_290() {
-    round_trip(Mode::Pd290);
+    round_trip(modes::PD_290);
 }

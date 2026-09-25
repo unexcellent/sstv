@@ -3,6 +3,7 @@
 //! Martin modes transmit green, blue and red scans of every line, with the
 //! sync pulse at the line break and a short separator pulse after each scan.
 
+use super::Mode;
 use super::layout::{Channel, ColorMode, Layout, Step};
 use crate::units::Duration;
 use crate::{Hz, us};
@@ -23,11 +24,16 @@ const SEQUENCE: [Step; 8] = [
     SEPARATOR_PULSE,
 ];
 
-/// 256 lines of 226.798ms each: a 58 second transmission.
-pub const MARTIN_2: Layout = Layout {
-    width: 320,
-    height: 256,
-    sequences: &[&SEQUENCE],
-    lines_per_sequence: 1,
-    color: ColorMode::Rgb,
+/// A 320x256 colour image in a 58 second transmission: 256 lines of 226.798ms each.
+pub const MARTIN_2: Mode = Mode {
+    name: "Martin2",
+    vis_code: 40,
+    starting_sync_pulse: false,
+    layout: Layout {
+        width: 320,
+        height: 256,
+        sequences: &[&SEQUENCE],
+        lines_per_sequence: 1,
+        color: ColorMode::Rgb,
+    },
 };

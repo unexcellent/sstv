@@ -5,6 +5,7 @@
 //! with the sub-mode: they were chosen to divide evenly into standard RS232
 //! clock rates.
 
+use super::Mode;
 use super::layout::{Channel, ColorMode, Layout, Step};
 use crate::units::Duration;
 use crate::{Hz, us};
@@ -24,11 +25,16 @@ const SEQUENCE: [Step; 8] = [
     PORCH,
 ];
 
-/// 496 lines of 818.747ms each: a 406 second transmission.
-pub const PASOKON_P7: Layout = Layout {
-    width: 640,
-    height: 496,
-    sequences: &[&SEQUENCE],
-    lines_per_sequence: 1,
-    color: ColorMode::Rgb,
+/// A 640x496 colour image in a 406 second transmission: 496 lines of 818.747ms each.
+pub const PASOKON_P7: Mode = Mode {
+    name: "PasokonP7",
+    vis_code: 115,
+    starting_sync_pulse: false,
+    layout: Layout {
+        width: 640,
+        height: 496,
+        sequences: &[&SEQUENCE],
+        lines_per_sequence: 1,
+        color: ColorMode::Rgb,
+    },
 };

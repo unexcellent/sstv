@@ -6,12 +6,12 @@ pub enum Error {
     /// Emitted if now enough pixels could be fetched from the image.
     ///
     /// ```rust
-    /// use sstv::{Encoder, Error, Mode, RgbPixel};
+    /// use sstv::{modes, Encoder, Error, RgbPixel};
     ///
     /// let empty_image: Vec<RgbPixel> = vec![];
     ///
     /// assert!(matches!(
-    ///     Encoder::new(Mode::Robot36, empty_image.into_iter()),
+    ///     Encoder::new(modes::ROBOT_36, empty_image.into_iter()),
     ///     Err(Error::EmptyImage)
     /// ));
     /// ```

@@ -7,6 +7,7 @@
 //! separator pulse marking the parity (1500hz on even lines, 2300hz on odd
 //! lines).
 
+use super::Mode;
 use super::layout::{Channel, ColorMode, Layout, Step};
 use crate::{Hz, ms, us};
 
@@ -34,11 +35,16 @@ const ODD_SEQUENCE: [Step; 6] = [
     Step::scan(Channel::BY, ms!(44)),
 ];
 
-/// 240 lines of 150ms each: a 36 second transmission.
-pub const ROBOT_36: Layout = Layout {
-    width: 320,
-    height: 240,
-    sequences: &[&EVEN_SEQUENCE, &ODD_SEQUENCE],
-    lines_per_sequence: 1,
-    color: ColorMode::YuvAveragedPair,
+/// A 320x240 colour image in a 36 second transmission: 240 lines of 150ms each.
+pub const ROBOT_36: Mode = Mode {
+    name: "Robot36",
+    vis_code: 8,
+    starting_sync_pulse: false,
+    layout: Layout {
+        width: 320,
+        height: 240,
+        sequences: &[&EVEN_SEQUENCE, &ODD_SEQUENCE],
+        lines_per_sequence: 1,
+        color: ColorMode::YuvAveragedPair,
+    },
 };

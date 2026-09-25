@@ -9,7 +9,7 @@
 use std::io::{Cursor, Read};
 use std::path::Path;
 
-use sstv::{Decoder, Mode, RgbPixel};
+use sstv::{Decoder, RgbPixel, modes};
 
 /// A real off-air recording captured by a ground station (32 kHz, mono),
 /// stored gzip-compressed to keep the repository small.
@@ -77,7 +77,7 @@ fn decodes_real_ground_station_recording() {
     let (samples, sample_rate) = read_wav_gz(REAL_RECORDING);
 
     let decoded = Decoder::from_samples(samples.into_iter(), sample_rate)
-        .expect_mode(Mode::Robot36)
+        .expect_mode(modes::ROBOT_36)
         .images()
         .next()
         .expect("an image in the recording");
