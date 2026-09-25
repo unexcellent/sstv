@@ -9,7 +9,7 @@
 
 use super::Mode;
 use super::layout::{Channel, ColorMode, Layout, Step};
-use crate::{Hz, ms, us};
+use crate::{ms, tone};
 
 /// A 320x240 colour image in a 36 second transmission: 240 lines of 150ms each.
 pub const ROBOT_36: Mode = Mode {
@@ -25,26 +25,26 @@ pub const ROBOT_36: Mode = Mode {
     },
 };
 
-const SYNC_PULSE: Step = Step::control(Hz!(1200), ms!(9));
-const SYNC_PORCH: Step = Step::control(Hz!(1500), ms!(3));
-const PORCH: Step = Step::control(Hz!(1900), us!(1_500));
+const SYNC_PULSE: Step = Step::Control(tone!(1200 Hz, 9 ms));
+const SYNC_PORCH: Step = Step::Control(tone!(1500 Hz, 3 ms));
+const PORCH: Step = Step::Control(tone!(1900 Hz, 1_500 us));
 
 /// The even line of a pair.
 const EVEN_SEQUENCE: [Step; 6] = [
     SYNC_PULSE,
     SYNC_PORCH,
-    Step::scan(Channel::Y, ms!(88)),
-    Step::control(Hz!(1500), us!(4_500)), // even-line separator pulse
+    Step::Scan(Channel::Y, ms!(88)),
+    Step::Control(tone!(1500 Hz, 4_500 us)), // even-line separator pulse
     PORCH,
-    Step::scan(Channel::RY, ms!(44)),
+    Step::Scan(Channel::RY, ms!(44)),
 ];
 
 /// The odd line of a pair.
 const ODD_SEQUENCE: [Step; 6] = [
     SYNC_PULSE,
     SYNC_PORCH,
-    Step::scan(Channel::Y, ms!(88)),
-    Step::control(Hz!(2300), us!(4_500)), // odd-line separator pulse
+    Step::Scan(Channel::Y, ms!(88)),
+    Step::Control(tone!(2300 Hz, 4_500 us)), // odd-line separator pulse
     PORCH,
-    Step::scan(Channel::BY, ms!(44)),
+    Step::Scan(Channel::BY, ms!(44)),
 ];

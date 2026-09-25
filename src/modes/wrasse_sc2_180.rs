@@ -5,7 +5,7 @@
 
 use super::Mode;
 use super::layout::{Channel, ColorMode, Layout, Step};
-use crate::{Hz, ms, ns, us};
+use crate::{ms, tone};
 
 /// A 320x256 colour image in a 182 second transmission: 256 lines of 711.0225ms each.
 pub const WRASSE_SC2_180: Mode = Mode {
@@ -22,9 +22,9 @@ pub const WRASSE_SC2_180: Mode = Mode {
 };
 
 const SEQUENCE: [Step; 5] = [
-    Step::control(Hz!(1200), ns!(5_522_500)),
-    Step::control(Hz!(1500), us!(500)),
-    Step::scan(Channel::Red, ms!(235)),
-    Step::scan(Channel::Green, ms!(235)),
-    Step::scan(Channel::Blue, ms!(235)),
+    Step::Control(tone!(1200 Hz, 5_522_500 ns)),
+    Step::Control(tone!(1500 Hz, 500 us)),
+    Step::Scan(Channel::Red, ms!(235)),
+    Step::Scan(Channel::Green, ms!(235)),
+    Step::Scan(Channel::Blue, ms!(235)),
 ];

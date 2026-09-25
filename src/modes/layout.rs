@@ -3,7 +3,7 @@
 //! (sync pulses, porches, separator pulses) and channel scans.
 
 use crate::synthesizer::Tone;
-use crate::units::{Duration, Frequency};
+use crate::units::Duration;
 
 /// The image values carried by a scan step.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -32,14 +32,6 @@ pub enum Step {
 }
 
 impl Step {
-    pub(crate) const fn control(frequency: Frequency, duration: Duration) -> Self {
-        Self::Control(Tone::new(frequency, duration))
-    }
-
-    pub(crate) const fn scan(channel: Channel, duration: Duration) -> Self {
-        Self::Scan(channel, duration)
-    }
-
     pub(crate) const fn duration(&self) -> Duration {
         match self {
             Self::Control(tone) => tone.duration,

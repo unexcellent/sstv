@@ -8,7 +8,7 @@
 use super::Mode;
 use super::layout::{Channel, ColorMode, Layout, Step};
 use crate::units::Duration;
-use crate::{Hz, us};
+use crate::{tone, us};
 
 /// A 640x496 colour image in a 203 second transmission: 496 lines of 409.375ms each.
 pub const PASOKON_P3: Mode = Mode {
@@ -24,17 +24,17 @@ pub const PASOKON_P3: Mode = Mode {
     },
 };
 
-const SYNC_PULSE: Step = Step::control(Hz!(1200), us!(5_208));
-const PORCH: Step = Step::control(Hz!(1500), us!(1_042));
+const SYNC_PULSE: Step = Step::Control(tone!(1200 Hz, 5_208 us));
+const PORCH: Step = Step::Control(tone!(1500 Hz, 1_042 us));
 const SCAN: Duration = us!(133_333);
 
 const SEQUENCE: [Step; 8] = [
     SYNC_PULSE,
     PORCH,
-    Step::scan(Channel::Red, SCAN),
+    Step::Scan(Channel::Red, SCAN),
     PORCH,
-    Step::scan(Channel::Green, SCAN),
+    Step::Scan(Channel::Green, SCAN),
     PORCH,
-    Step::scan(Channel::Blue, SCAN),
+    Step::Scan(Channel::Blue, SCAN),
     PORCH,
 ];

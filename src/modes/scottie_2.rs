@@ -8,7 +8,7 @@
 use super::Mode;
 use super::layout::{Channel, ColorMode, Layout, Step};
 use crate::units::Duration;
-use crate::{Hz, ms, us};
+use crate::{tone, us};
 
 /// A 320x256 colour image in a 71 second transmission: 256 lines of 277.692ms each.
 pub const SCOTTIE_2: Mode = Mode {
@@ -24,17 +24,17 @@ pub const SCOTTIE_2: Mode = Mode {
     },
 };
 
-const SYNC_PULSE: Step = Step::control(Hz!(1200), ms!(9));
-const SYNC_PORCH: Step = Step::control(Hz!(1500), us!(1_500));
-const SEPARATOR_PULSE: Step = Step::control(Hz!(1500), us!(1_500));
+const SYNC_PULSE: Step = Step::Control(tone!(1200 Hz, 9 ms));
+const SYNC_PORCH: Step = Step::Control(tone!(1500 Hz, 1_500 us));
+const SEPARATOR_PULSE: Step = Step::Control(tone!(1500 Hz, 1_500 us));
 const SCAN: Duration = us!(88_064);
 
 const SEQUENCE: [Step; 7] = [
     SEPARATOR_PULSE,
-    Step::scan(Channel::Green, SCAN),
+    Step::Scan(Channel::Green, SCAN),
     SEPARATOR_PULSE,
-    Step::scan(Channel::Blue, SCAN),
+    Step::Scan(Channel::Blue, SCAN),
     SYNC_PULSE,
     SYNC_PORCH,
-    Step::scan(Channel::Red, SCAN),
+    Step::Scan(Channel::Red, SCAN),
 ];
