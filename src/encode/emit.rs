@@ -96,7 +96,12 @@ impl State {
     }
 
     /// The state after the given position within the image.
-    fn advance_image(mode: Mode, row_index: usize, step_index: usize, pixel_index: usize) -> Self {
+    const fn advance_image(
+        mode: Mode,
+        row_index: usize,
+        step_index: usize,
+        pixel_index: usize,
+    ) -> Self {
         let current_step = mode.sequence[step_index];
         let image_width = mode.resolution().0 as usize;
         let image_height = mode.resolution().1 as usize;
