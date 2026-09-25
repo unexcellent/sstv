@@ -51,9 +51,6 @@ const ODD_SEQUENCE: [Step; 6] = [
 
 #[cfg(test)]
 mod tests {
-    extern crate std;
-    use std::vec::Vec;
-
     use super::*;
     use crate::modes::testing::{
         assert_line_period, assert_mode_can_be_constructed_from_vis_code, assert_transmission_time,
@@ -72,35 +69,5 @@ mod tests {
     #[test]
     fn mode_constructed_from_vis_code() {
         assert_mode_can_be_constructed_from_vis_code(ROBOT_36);
-    }
-
-    #[test]
-    fn header_tones_match_the_vis_encoding() {
-        assert_eq!(
-            ROBOT_36.header_tones().collect::<Vec<_>>(),
-            std::vec![
-                tone!(1900 Hz, 100 ms),
-                tone!(1500 Hz, 100 ms),
-                tone!(1900 Hz, 100 ms),
-                tone!(1500 Hz, 100 ms),
-                tone!(2300 Hz, 100 ms),
-                tone!(1500 Hz, 100 ms),
-                tone!(2300 Hz, 100 ms),
-                tone!(1500 Hz, 100 ms),
-                tone!(1900 Hz, 300 ms),
-                tone!(1200 Hz, 10 ms),
-                tone!(1900 Hz, 300 ms),
-                tone!(1200 Hz, 30 ms),
-                tone!(1300 Hz, 30 ms),
-                tone!(1300 Hz, 30 ms),
-                tone!(1300 Hz, 30 ms),
-                tone!(1100 Hz, 30 ms),
-                tone!(1300 Hz, 30 ms),
-                tone!(1300 Hz, 30 ms),
-                tone!(1300 Hz, 30 ms),
-                tone!(1100 Hz, 30 ms),
-                tone!(1200 Hz, 30 ms),
-            ]
-        );
     }
 }

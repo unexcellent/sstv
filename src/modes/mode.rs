@@ -127,10 +127,14 @@ impl core::fmt::Debug for Mode {
     }
 }
 
-/// The shared assertions behind every mode's tests.
+/// The shared assertions behind every mode's tests, and the tests of the
+/// mode-independent header structure.
 #[cfg(test)]
 pub mod testing {
-    use super::Mode;
+    extern crate std;
+    use std::vec::Vec;
+
+    use super::*;
     use crate::units::Duration;
     use crate::us;
 
@@ -162,5 +166,23 @@ pub mod testing {
     /// collision between two modes fails the lookup.
     pub fn assert_mode_can_be_constructed_from_vis_code(mode: Mode) {
         assert_eq!(Mode::try_from(mode.vis_code()), Ok(mode));
+    }
+
+    #[test]
+    fn header_tones_are_vox_leader_and_vis_code() {
+        let expected: Vec<_> = VOX_TONES
+            .into_iter()
+            .chain([
+                tone!(1900 Hz, 300 ms), // leader
+                tone!(1200 Hz, 10 ms),  // break
+                tone!(1900 Hz, 300 ms), // leader
+            ])
+            .chain(crate::modes::ROBOT_36.vis_code().tones())
+            .collect();
+
+        assert_eq!(
+            crate::modes::ROBOT_36.header_tones().collect::<Vec<_>>(),
+            expected
+        );
     }
 }
