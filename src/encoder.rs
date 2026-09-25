@@ -32,9 +32,6 @@ where
 {
     mode: Mode,
     pixels: I,
-    /// The image lines carried by the current pass through the sequences —
-    /// one line for most modes, the line pair for Robot 36 and PD modes —
-    /// stored line after line.
     lines: Lines<'a>,
     phase: Phase,
 }
@@ -262,14 +259,18 @@ impl Encoder<'static, alloc::vec::IntoIter<RgbPixel>> {
     /// [`Error::EmptyImage`] if the mode has no pixels, which cannot happen
     /// for the supported modes.
     pub fn from_image(mode: Mode, image: &image::DynamicImage) -> Result<Self> {
-        let (width, height) = mode.resolution();
-        let image = if (image.width(), image.height()) == (width, height) {
-            image.to_rgb8()
-        } else {
-            image
-                .resize_exact(width, height, image::imageops::FilterType::Triangle)
-                .to_rgb8()
-        };
+        let mut image = image.to_rgb8();
+
+        let image_resolution = (image.width(), image.height());
+        if image_resolution != mode.resolution() {
+            image = image::imageops::resize(
+                &image,
+                mode.resolution().0,
+                mode.resolution().1,
+                image::imageops::FilterType::Triangle,
+            );
+        }
+
         // The pixels must outlive the image buffer this function drops, so
         // collecting them is not needless.
         #[allow(clippy::needless_collect)]
@@ -277,6 +278,7 @@ impl Encoder<'static, alloc::vec::IntoIter<RgbPixel>> {
             .pixels()
             .map(|pixel| RgbPixel::new(pixel[0], pixel[1], pixel[2]))
             .collect();
+
         Self::new(mode, pixels.into_iter())
     }
 }
