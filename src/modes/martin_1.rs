@@ -41,9 +41,7 @@ const SEQUENCE: [Step; 8] = [
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::modes::testing::{
-        assert_line_period, assert_transmission_time, assert_vis_code_round_trips,
-    };
+    use crate::modes::testing::{assert_line_period, assert_transmission_time};
 
     #[test]
     fn line_period_matches_the_paper() {
@@ -56,7 +54,7 @@ mod tests {
     }
 
     #[test]
-    fn vis_code_round_trips() {
-        assert_vis_code_round_trips(MARTIN_1);
+    fn mode_constructed_from_vis_code() {
+        assert_eq!(Mode::try_from(vis_code!(44)), Ok(MARTIN_1));
     }
 }

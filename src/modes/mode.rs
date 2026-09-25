@@ -174,10 +174,4 @@ pub mod testing {
             "{seconds}s instead of {expected_seconds}s",
         );
     }
-
-    /// Assert that the mode's VIS code round-trips through the lookup — a
-    /// collision between two modes fails the round trip.
-    pub fn assert_vis_code_round_trips(mode: Mode) {
-        assert_eq!(Mode::try_from(mode.vis_code()), Ok(mode));
-    }
 }
