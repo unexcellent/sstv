@@ -157,4 +157,10 @@ pub mod testing {
             "{seconds}s instead of {expected_seconds}s",
         );
     }
+
+    /// Assert that looking up the mode's VIS code yields the mode again — a
+    /// collision between two modes fails the lookup.
+    pub fn assert_mode_can_be_constructed_from_vis_code(mode: Mode) {
+        assert_eq!(Mode::try_from(mode.vis_code()), Ok(mode));
+    }
 }

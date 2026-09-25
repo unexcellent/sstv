@@ -42,7 +42,9 @@ const SEQUENCE: [Step; 8] = [
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::modes::testing::{assert_line_period, assert_transmission_time};
+    use crate::modes::testing::{
+        assert_line_period, assert_mode_can_be_constructed_from_vis_code, assert_transmission_time,
+    };
 
     #[test]
     fn line_period_matches_the_paper() {
@@ -56,6 +58,6 @@ mod tests {
 
     #[test]
     fn mode_constructed_from_vis_code() {
-        assert_eq!(Mode::try_from(vis_code!(115)), Ok(PASOKON_P7));
+        assert_mode_can_be_constructed_from_vis_code(PASOKON_P7);
     }
 }

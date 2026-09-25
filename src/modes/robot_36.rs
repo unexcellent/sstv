@@ -55,7 +55,9 @@ mod tests {
     use std::vec::Vec;
 
     use super::*;
-    use crate::modes::testing::{assert_line_period, assert_transmission_time};
+    use crate::modes::testing::{
+        assert_line_period, assert_mode_can_be_constructed_from_vis_code, assert_transmission_time,
+    };
 
     #[test]
     fn line_period_matches_the_paper() {
@@ -69,7 +71,7 @@ mod tests {
 
     #[test]
     fn mode_constructed_from_vis_code() {
-        assert_eq!(Mode::try_from(vis_code!(8)), Ok(ROBOT_36));
+        assert_mode_can_be_constructed_from_vis_code(ROBOT_36);
     }
 
     #[test]
