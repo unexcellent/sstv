@@ -1,4 +1,3 @@
-use alloc::boxed::Box;
 use alloc::vec::Vec;
 
 use crate::image::{RgbPixel, YuvPixel};
@@ -21,179 +20,11 @@ use crate::{Error, Result};
 ///     // emit or save the tones
 /// }
 /// ```
-pub struct Encoder {
-    inner: Box<dyn Iterator<Item = Tone>>,
-}
-
-impl Encoder {
-    /// Construct an `Encoder` from the mode and a pixel iterator.
-    ///
-    /// # Errors
-    ///
-    /// [`Error::EmptyImage`] if the iterator cannot fill the mode's first
-    /// lines.
-    pub fn new<I>(mode: Mode, pixels: I) -> Result<Self>
-    where
-        I: Iterator<Item = RgbPixel> + 'static,
-    {
-        Ok(Self {
-            inner: Box::new(LineEncoder::new(mode, pixels)?),
-        })
-    }
-
-    /// The transmission as a complete mono 16-bit PCM WAV at the given sample
-    /// rate; see [`Synthesizer::to_wav`].
-    #[cfg(feature = "wav")]
-    #[must_use]
-    pub fn to_wav(self, sample_rate: u32) -> Vec<u8> {
-        crate::Synthesizer::new(self, sample_rate).to_wav()
-    }
-
-    /// The transmission as a complete mono 128 kbps MP3 at the given sample
-    /// rate; see [`Synthesizer::to_mp3`].
-    ///
-    /// # Errors
-    ///
-    /// Fails if LAME rejects the sample rate.
-    #[cfg(feature = "mp3")]
-    pub fn to_mp3(
-        self,
-        sample_rate: u32,
-    ) -> core::result::Result<Vec<u8>, mp3lame_encoder::BuildError> {
-        crate::Synthesizer::new(self, sample_rate).to_mp3()
-    }
-}
-
-#[cfg(feature = "image")]
-impl Encoder {
-    /// Encode an image loaded with the `image` crate.
-    ///
-    /// The image is resized to the mode's resolution if it does not match,
-    /// stretching it to fit.
-    ///
-    /// ```no_run
-    /// use sstv::{modes, Encoder};
-    ///
-    /// let image = image::open("image.png").expect("load image");
-    /// let encoder = Encoder::from_image(modes::ROBOT_36, &image).expect("encode image");
-    /// ```
-    ///
-    /// # Errors
-    ///
-    /// [`Error::EmptyImage`] if the mode has no pixels, which cannot happen
-    /// for the supported modes.
-    pub fn from_image(mode: Mode, image: &image::DynamicImage) -> Result<Self> {
-        let (width, height) = mode.resolution();
-        let image = if (image.width(), image.height()) == (width, height) {
-            image.to_rgb8()
-        } else {
-            image
-                .resize_exact(width, height, image::imageops::FilterType::Triangle)
-                .to_rgb8()
-        };
-        // `Encoder::new` needs an owned (`'static`) iterator, so the pixels
-        // cannot be borrowed from the image buffer.
-        #[allow(clippy::needless_collect)]
-        let pixels: Vec<RgbPixel> = image
-            .pixels()
-            .map(|pixel| RgbPixel::new(pixel[0], pixel[1], pixel[2]))
-            .collect();
-        Self::new(mode, pixels.into_iter())
-    }
-}
-
-impl Iterator for Encoder {
-    type Item = Tone;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        self.inner.next()
-    }
-}
-
-/// Where the encoder is within the transmission.
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum Phase {
-    NotStarted,
-    /// Emitting the mode's header tones.
-    Header(usize),
-    /// Emitting the repeating timing sequences. `line` is the index of the
-    /// first image line buffered for the current pass through the sequences.
-    Line {
-        line: usize,
-        sequence: usize,
-        step: usize,
-        pixel: usize,
-    },
-    Finished,
-}
-
-impl Phase {
-    /// Step to the phase that emits the next tone.
-    fn advance(&mut self, mode: Mode, layout: &Layout) {
-        match *self {
-            Self::NotStarted => *self = Self::Header(0),
-            Self::Header(index) => {
-                *self = if mode.header_tone(index + 1).is_some() {
-                    Self::Header(index + 1)
-                } else {
-                    Self::Line {
-                        line: 0,
-                        sequence: 0,
-                        step: 0,
-                        pixel: 0,
-                    }
-                };
-            }
-            Self::Line {
-                line,
-                sequence,
-                step,
-                pixel,
-            } => {
-                let steps = layout.sequences[sequence];
-                let mid_scan =
-                    matches!(steps[step], Step::Scan(..)) && pixel + 1 < layout.resolution.0;
-                *self = if mid_scan {
-                    Self::Line {
-                        line,
-                        sequence,
-                        step,
-                        pixel: pixel + 1,
-                    }
-                } else if step + 1 < steps.len() {
-                    Self::Line {
-                        line,
-                        sequence,
-                        step: step + 1,
-                        pixel: 0,
-                    }
-                } else if sequence + 1 < layout.sequences.len() {
-                    Self::Line {
-                        line,
-                        sequence: sequence + 1,
-                        step: 0,
-                        pixel: 0,
-                    }
-                } else if line + layout.lines_per_cycle() < layout.resolution.1 {
-                    Self::Line {
-                        line: line + layout.lines_per_cycle(),
-                        sequence: 0,
-                        step: 0,
-                        pixel: 0,
-                    }
-                } else {
-                    Self::Finished
-                };
-            }
-            Self::Finished => (),
-        }
-    }
-}
-
-/// Encodes any mode by walking its [`Layout`]: the header, then for each
+///
+/// It encodes any mode by walking its layout: the header, then for each
 /// group of buffered lines the mode's timing sequences, emitting fixed tones
 /// verbatim and expanding each scan step into one tone per pixel.
-struct LineEncoder<I>
+pub struct Encoder<I>
 where
     I: Iterator<Item = RgbPixel>,
 {
@@ -206,11 +37,17 @@ where
     phase: Phase,
 }
 
-impl<I> LineEncoder<I>
+impl<I> Encoder<I>
 where
     I: Iterator<Item = RgbPixel>,
 {
-    fn new(mode: Mode, mut pixels: I) -> Result<Self> {
+    /// Construct an `Encoder` from the mode and a pixel iterator.
+    ///
+    /// # Errors
+    ///
+    /// [`Error::EmptyImage`] if the iterator cannot fill the mode's first
+    /// lines.
+    pub fn new(mode: Mode, mut pixels: I) -> Result<Self> {
         let layout = mode.layout();
         let mut lines = Vec::with_capacity(layout.lines_per_cycle());
         for _ in 0..layout.lines_per_cycle() {
@@ -322,7 +159,73 @@ where
     }
 }
 
-impl<I> Iterator for LineEncoder<I>
+/// The transmission as a whole, packed into common audio containers.
+impl<I> Encoder<I>
+where
+    I: Iterator<Item = RgbPixel>,
+{
+    /// The transmission as a complete mono 16-bit PCM WAV at the given sample
+    /// rate; see [`Synthesizer::to_wav`].
+    #[cfg(feature = "wav")]
+    #[must_use]
+    pub fn to_wav(self, sample_rate: u32) -> Vec<u8> {
+        crate::Synthesizer::new(self, sample_rate).to_wav()
+    }
+
+    /// The transmission as a complete mono 128 kbps MP3 at the given sample
+    /// rate; see [`Synthesizer::to_mp3`].
+    ///
+    /// # Errors
+    ///
+    /// Fails if LAME rejects the sample rate.
+    #[cfg(feature = "mp3")]
+    pub fn to_mp3(
+        self,
+        sample_rate: u32,
+    ) -> core::result::Result<Vec<u8>, mp3lame_encoder::BuildError> {
+        crate::Synthesizer::new(self, sample_rate).to_mp3()
+    }
+}
+
+#[cfg(feature = "image")]
+impl Encoder<alloc::vec::IntoIter<RgbPixel>> {
+    /// Encode an image loaded with the `image` crate.
+    ///
+    /// The image is resized to the mode's resolution if it does not match,
+    /// stretching it to fit.
+    ///
+    /// ```no_run
+    /// use sstv::{modes, Encoder};
+    ///
+    /// let image = image::open("image.png").expect("load image");
+    /// let encoder = Encoder::from_image(modes::ROBOT_36, &image).expect("encode image");
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// [`Error::EmptyImage`] if the mode has no pixels, which cannot happen
+    /// for the supported modes.
+    pub fn from_image(mode: Mode, image: &image::DynamicImage) -> Result<Self> {
+        let (width, height) = mode.resolution();
+        let image = if (image.width(), image.height()) == (width, height) {
+            image.to_rgb8()
+        } else {
+            image
+                .resize_exact(width, height, image::imageops::FilterType::Triangle)
+                .to_rgb8()
+        };
+        // The pixels must outlive the image buffer this function drops, so
+        // collecting them is not needless.
+        #[allow(clippy::needless_collect)]
+        let pixels: Vec<RgbPixel> = image
+            .pixels()
+            .map(|pixel| RgbPixel::new(pixel[0], pixel[1], pixel[2]))
+            .collect();
+        Self::new(mode, pixels.into_iter())
+    }
+}
+
+impl<I> Iterator for Encoder<I>
 where
     I: Iterator<Item = RgbPixel>,
 {
@@ -337,5 +240,85 @@ where
         }
 
         self.emit()
+    }
+}
+
+/// Where the encoder is within the transmission.
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum Phase {
+    NotStarted,
+    /// Emitting the mode's header tones.
+    Header(usize),
+    /// Emitting the repeating timing sequences. `line` is the index of the
+    /// first image line buffered for the current pass through the sequences.
+    Line {
+        line: usize,
+        sequence: usize,
+        step: usize,
+        pixel: usize,
+    },
+    Finished,
+}
+
+impl Phase {
+    /// Step to the phase that emits the next tone.
+    fn advance(&mut self, mode: Mode, layout: &Layout) {
+        match *self {
+            Self::NotStarted => *self = Self::Header(0),
+            Self::Header(index) => {
+                *self = if mode.header_tone(index + 1).is_some() {
+                    Self::Header(index + 1)
+                } else {
+                    Self::Line {
+                        line: 0,
+                        sequence: 0,
+                        step: 0,
+                        pixel: 0,
+                    }
+                };
+            }
+            Self::Line {
+                line,
+                sequence,
+                step,
+                pixel,
+            } => {
+                let steps = layout.sequences[sequence];
+                let mid_scan =
+                    matches!(steps[step], Step::Scan(..)) && pixel + 1 < layout.resolution.0;
+                *self = if mid_scan {
+                    Self::Line {
+                        line,
+                        sequence,
+                        step,
+                        pixel: pixel + 1,
+                    }
+                } else if step + 1 < steps.len() {
+                    Self::Line {
+                        line,
+                        sequence,
+                        step: step + 1,
+                        pixel: 0,
+                    }
+                } else if sequence + 1 < layout.sequences.len() {
+                    Self::Line {
+                        line,
+                        sequence: sequence + 1,
+                        step: 0,
+                        pixel: 0,
+                    }
+                } else if line + layout.lines_per_cycle() < layout.resolution.1 {
+                    Self::Line {
+                        line: line + layout.lines_per_cycle(),
+                        sequence: 0,
+                        step: 0,
+                        pixel: 0,
+                    }
+                } else {
+                    Self::Finished
+                };
+            }
+            Self::Finished => (),
+        }
     }
 }
