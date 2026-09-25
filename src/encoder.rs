@@ -326,47 +326,63 @@ enum State {
 impl State {
     /// Step to the state that emits the next tone.
     fn advance(&mut self, mode: Mode) {
-        match *self {
-            Self::NotStarted => *self = Self::Header(0),
-            Self::Header(index) => {
-                *self = if mode.header_tone(index + 1).is_some() {
-                    Self::Header(index + 1)
-                } else {
-                    Self::Image {
-                        row: 0,
-                        step: 0,
-                        pixel: 0,
-                    }
-                };
-            }
-            Self::Image { row, step, pixel } => {
-                let steps = mode.sequence;
-                let mid_scan =
-                    matches!(steps[step], Step::Scan(..)) && pixel + 1 < mode.resolution.0;
-                *self = if mid_scan {
-                    Self::Image {
-                        row,
-                        step,
-                        pixel: pixel + 1,
-                    }
-                } else if step + 1 < steps.len() {
-                    Self::Image {
-                        row,
-                        step: step + 1,
-                        pixel: 0,
-                    }
-                } else if row + mode.lines_per_sequence < mode.resolution.1 {
-                    Self::Image {
-                        row: row + mode.lines_per_sequence,
-                        step: 0,
-                        pixel: 0,
-                    }
-                } else {
-                    Self::Finished
-                };
-            }
-            Self::Finished => (),
+        *self = match *self {
+            Self::NotStarted => Self::Header(0),
+            Self::Header(index) => Self::advance_header(mode, index),
+            Self::Image { row, step, pixel } => Self::advance_image(mode, row, step, pixel),
+            Self::Finished => Self::Finished,
+        };
+    }
+
+    /// The state after the `index`-th header tone.
+    fn advance_header(mode: Mode, index: usize) -> Self {
+        let header_has_more_tones = mode.header_tone(index + 1).is_some();
+
+        if header_has_more_tones {
+            return Self::Header(index + 1);
         }
+
+        Self::Image {
+            row: 0,
+            step: 0,
+            pixel: 0,
+        }
+    }
+
+    /// The state after the given position within the image.
+    fn advance_image(mode: Mode, row_index: usize, step_index: usize, pixel_index: usize) -> Self {
+        let current_step = mode.sequence[step_index];
+        let image_width = mode.resolution().0 as usize;
+        let image_height = mode.resolution().1 as usize;
+
+        let scan_is_ongoing = current_step.is_scan() && pixel_index + 1 < image_width;
+        if scan_is_ongoing {
+            return Self::Image {
+                row: row_index,
+                step: step_index,
+                pixel: pixel_index + 1,
+            };
+        }
+
+        let sequence_is_ongoing = step_index + 1 < mode.sequence.len();
+        if sequence_is_ongoing {
+            return Self::Image {
+                row: row_index,
+                step: step_index + 1,
+                pixel: 0,
+            };
+        }
+
+        let image_is_ongoing = row_index + mode.lines_per_sequence < image_height;
+        if image_is_ongoing {
+            return Self::Image {
+                row: row_index + mode.lines_per_sequence,
+                step: 0,
+                pixel: 0,
+            };
+        }
+
+        Self::Finished
     }
 
     /// Whether the state just moved onto the first tone of a line group whose

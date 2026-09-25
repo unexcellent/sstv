@@ -38,6 +38,13 @@ impl Step {
             Self::Scan(_, duration) => *duration,
         }
     }
+
+    pub(crate) const fn is_scan(&self) -> bool {
+        match self {
+            Self::Control(_) => false,
+            Self::Scan(..) => true,
+        }
+    }
 }
 
 /// How the scans of one timing sequence combine into image pixels.
