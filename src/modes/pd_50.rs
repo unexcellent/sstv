@@ -8,12 +8,12 @@
 use super::Mode;
 use super::layout::{Channel, ColorMode, Layout, Step};
 use crate::units::Duration;
-use crate::{tone, us};
+use crate::{tone, us, vis_code};
 
 /// A 320x256 colour image in a 50 second transmission: 128 line pairs of 388.16ms each.
 pub const PD_50: Mode = Mode {
     name: "Pd50",
-    vis_code: 93,
+    vis_code: vis_code!(93),
     starting_sync_pulse: false,
     layout: Layout {
         width: 320,

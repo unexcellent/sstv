@@ -8,12 +8,12 @@
 use super::Mode;
 use super::layout::{Channel, ColorMode, Layout, Step};
 use crate::units::Duration;
-use crate::{tone, us};
+use crate::{tone, us, vis_code};
 
 /// A 320x256 colour image in a 71 second transmission: 256 lines of 277.692ms each.
 pub const SCOTTIE_2: Mode = Mode {
     name: "Scottie2",
-    vis_code: 56,
+    vis_code: vis_code!(56),
     starting_sync_pulse: true,
     layout: Layout {
         width: 320,

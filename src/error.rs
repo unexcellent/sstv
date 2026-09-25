@@ -1,6 +1,6 @@
 use core::fmt;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 /// An error generated while encoding or decoding.
 pub enum Error {
     /// Emitted if now enough pixels could be fetched from the image.
@@ -16,6 +16,12 @@ pub enum Error {
     /// ));
     /// ```
     EmptyImage,
+    /// Emitted by [`VisCode::try_new`](crate::VisCode::try_new) if the value
+    /// does not fit in 7 bits.
+    BadVisCode,
+    /// Emitted by `Mode::try_from` if the VIS code does not identify a known
+    /// mode.
+    UnknownMode,
 }
 
 impl fmt::Display for Error {
@@ -25,6 +31,8 @@ impl fmt::Display for Error {
                 f,
                 "The supplied image is empty. Was the pixel iterator already used?"
             ),
+            Self::BadVisCode => write!(f, "VIS codes are 7 bit; the value does not fit."),
+            Self::UnknownMode => write!(f, "The VIS code does not identify a known mode."),
         }
     }
 }

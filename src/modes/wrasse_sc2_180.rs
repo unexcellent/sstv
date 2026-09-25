@@ -5,12 +5,12 @@
 
 use super::Mode;
 use super::layout::{Channel, ColorMode, Layout, Step};
-use crate::{ms, tone};
+use crate::{ms, tone, vis_code};
 
 /// A 320x256 colour image in a 182 second transmission: 256 lines of 711.0225ms each.
 pub const WRASSE_SC2_180: Mode = Mode {
     name: "WrasseSc2180",
-    vis_code: 55,
+    vis_code: vis_code!(55),
     starting_sync_pulse: false,
     layout: Layout {
         width: 320,

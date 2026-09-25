@@ -28,6 +28,7 @@ mod scottie_2;
 mod scottie_dx;
 mod wrasse_sc2_180;
 
+use crate::Error;
 use crate::synthesizer::Tone;
 use crate::units::{Duration, Frequency};
 use crate::{Hz, ms, tone};
@@ -93,6 +94,111 @@ pub(crate) fn value_frequency(value: u8) -> Frequency {
     BLACK_FREQUENCY + (WHITE_FREQUENCY - BLACK_FREQUENCY) * u32::from(value) / 255
 }
 
+/// A 7-bit VIS (Vertical Interval Signaling) code, transmitted in the
+/// calibration header to identify the mode to a receiving system.
+///
+/// Construct one with [`VisCode::try_new`], or with
+/// [`vis_code!`](crate::vis_code) to validate at compile time.
+///
+/// ```rust
+/// use sstv::{Mode, modes, vis_code};
+///
+/// assert_eq!(
+///     Mode::try_from(vis_code!(8)),
+///     Ok(modes::ROBOT_36),
+/// );
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct VisCode(u8);
+
+impl VisCode {
+    /// Whether the value fits in the 7 bits of a VIS code.
+    ///
+    /// ```rust
+    /// use sstv::VisCode;
+    ///
+    /// assert!(VisCode::is_valid(8));
+    /// assert!(!VisCode::is_valid(200));
+    /// ```
+    #[must_use]
+    pub const fn is_valid(code: u8) -> bool {
+        code < 128
+    }
+
+    /// Construct a `VisCode` from its value.
+    ///
+    /// ```rust
+    /// use sstv::{Error, VisCode, vis_code};
+    ///
+    /// assert_eq!(
+    ///     VisCode::try_new(8),
+    ///     Ok(vis_code!(8)),
+    /// );
+    /// assert_eq!(
+    ///     VisCode::try_new(200),
+    ///     Err(Error::BadVisCode),
+    /// );
+    /// ```
+    ///
+    /// # Errors
+    ///
+    /// [`Error::BadVisCode`] if the value does not fit in 7 bits.
+    pub const fn try_new(code: u8) -> Result<Self, Error> {
+        if Self::is_valid(code) {
+            Ok(Self(code))
+        } else {
+            Err(Error::BadVisCode)
+        }
+    }
+
+    /// `vis_code!` machinery; use [`VisCode::try_new`] or
+    /// [`vis_code!`](crate::vis_code) instead. Masks the value to 7 bits —
+    /// the macro asserts validity beforehand, so the mask never alters it.
+    #[doc(hidden)]
+    #[must_use]
+    pub const fn new_masked(code: u8) -> Self {
+        Self(code & 0x7F)
+    }
+}
+
+/// The code's value.
+///
+/// ```rust
+/// use sstv::vis_code;
+///
+/// assert_eq!(u8::from(vis_code!(8)), 8);
+/// ```
+impl From<VisCode> for u8 {
+    fn from(code: VisCode) -> Self {
+        code.0
+    }
+}
+
+#[macro_export]
+/// Construct a [`VisCode`](crate::VisCode), validated at compile time.
+///
+/// ```rust
+/// use sstv::vis_code;
+///
+/// let code = vis_code!(8);
+/// ```
+///
+/// A value that does not fit in 7 bits fails to compile:
+///
+/// ```compile_fail
+/// use sstv::vis_code;
+///
+/// let code = vis_code!(200);
+/// ```
+macro_rules! vis_code {
+    ($code:expr) => {
+        const {
+            assert!($crate::VisCode::is_valid($code), "VIS codes are 7 bit");
+            $crate::VisCode::new_masked($code)
+        }
+    };
+}
+
 /// Tuning (VOX) tones customarily sent ahead of the calibration header to
 /// open receiver squelch. They are not part of the paper's specification.
 const VOX_TONES: [Tone; 8] = [
@@ -116,8 +222,8 @@ const VOX_TONES: [Tone; 8] = [
 pub struct Mode {
     /// The mode's name, as [`Debug`](core::fmt::Debug) prints it.
     name: &'static str,
-    /// The 7-bit VIS code identifying the mode to a receiving system.
-    vis_code: u8,
+    /// The VIS code identifying the mode to a receiving system.
+    vis_code: VisCode,
     /// Whether one extra sync pulse precedes the first line (Scottie modes).
     starting_sync_pulse: bool,
     /// The scanline structure specified by the mode's timing-sequence table.
@@ -125,16 +231,10 @@ pub struct Mode {
 }
 
 impl Mode {
-    /// The mode's 7-bit VIS code, identifying it to a receiving system.
+    /// The mode's VIS code, identifying it to a receiving system.
     #[must_use]
-    pub const fn vis_code(&self) -> u8 {
+    pub const fn vis_code(&self) -> VisCode {
         self.vis_code
-    }
-
-    /// Look up a mode by its 7-bit VIS code.
-    #[must_use]
-    pub fn from_vis_code(code: u8) -> Option<Self> {
-        ALL.into_iter().find(|mode| mode.vis_code == code)
     }
 
     /// The mode's scanline structure as specified by its timing-sequence
@@ -171,7 +271,7 @@ impl Mode {
 
     /// The `index`-th header tone, or `None` past the end of the header.
     pub(crate) fn header_tone(self, index: usize) -> Option<Tone> {
-        let code = self.vis_code();
+        let code = u8::from(self.vis_code);
         let bit = |one: bool| {
             let frequency = if one {
                 VIS_ONE_FREQUENCY
@@ -192,6 +292,20 @@ impl Mode {
             }
             _ => None,
         }
+    }
+}
+
+/// Look up the mode a [`VisCode`] identifies.
+impl TryFrom<VisCode> for Mode {
+    type Error = Error;
+
+    /// # Errors
+    ///
+    /// [`Error::UnknownMode`] if no mode carries the code.
+    fn try_from(code: VisCode) -> Result<Self, Error> {
+        ALL.into_iter()
+            .find(|mode| mode.vis_code == code)
+            .ok_or(Error::UnknownMode)
     }
 }
 
@@ -247,10 +361,9 @@ pub(crate) mod testing {
         );
     }
 
-    /// Assert that the mode's VIS code is 7 bit and round-trips through the
-    /// lookup — a collision between two modes fails the round trip.
+    /// Assert that the mode's VIS code round-trips through the lookup — a
+    /// collision between two modes fails the round trip.
     pub fn assert_vis_code_round_trips(mode: Mode) {
-        assert!(mode.vis_code() < 128, "VIS codes are 7 bit");
-        assert_eq!(Mode::from_vis_code(mode.vis_code()), Some(mode));
+        assert_eq!(Mode::try_from(mode.vis_code()), Ok(mode));
     }
 }

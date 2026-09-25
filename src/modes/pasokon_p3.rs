@@ -8,12 +8,12 @@
 use super::Mode;
 use super::layout::{Channel, ColorMode, Layout, Step};
 use crate::units::Duration;
-use crate::{tone, us};
+use crate::{tone, us, vis_code};
 
 /// A 640x496 colour image in a 203 second transmission: 496 lines of 409.375ms each.
 pub const PASOKON_P3: Mode = Mode {
     name: "PasokonP3",
-    vis_code: 113,
+    vis_code: vis_code!(113),
     starting_sync_pulse: false,
     layout: Layout {
         width: 640,

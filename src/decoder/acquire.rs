@@ -4,7 +4,7 @@
 
 use crate::Frequency;
 use crate::modes::layout::Layout;
-use crate::modes::{LEADER_FREQUENCY, Mode, SYNC_FREQUENCY};
+use crate::modes::{LEADER_FREQUENCY, Mode, SYNC_FREQUENCY, VisCode};
 
 use super::stream::FrequencyStream;
 
@@ -219,7 +219,7 @@ fn read_vis_bits<I: Iterator<Item = i16>>(
         return None;
     }
 
-    let mode = Mode::from_vis_code(code)?;
+    let mode = Mode::try_from(VisCode::try_new(code).ok()?).ok()?;
     // The ten bits span 300ms; image data follows the stop bit.
     let mut sequence_start = start_bit as f64 + samples(300.0);
     if mode.has_starting_sync_pulse() {

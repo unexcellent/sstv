@@ -19,6 +19,6 @@ pub use demodulator::Demodulator;
 pub use encoder::Encoder;
 pub use error::{Error, Result};
 pub use image::{RgbPixel, YuvPixel};
-pub use modes::Mode;
+pub use modes::{Mode, VisCode};
 pub use synthesizer::{Synthesizer, Tone};
 pub use units::{Duration, Frequency};

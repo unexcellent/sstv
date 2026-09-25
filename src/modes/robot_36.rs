@@ -9,12 +9,12 @@
 
 use super::Mode;
 use super::layout::{Channel, ColorMode, Layout, Step};
-use crate::{ms, tone};
+use crate::{ms, tone, vis_code};
 
 /// A 320x240 colour image in a 36 second transmission: 240 lines of 150ms each.
 pub const ROBOT_36: Mode = Mode {
     name: "Robot36",
-    vis_code: 8,
+    vis_code: vis_code!(8),
     starting_sync_pulse: false,
     layout: Layout {
         width: 320,
