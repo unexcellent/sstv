@@ -10,7 +10,7 @@ const SAMPLE_RATE: u32 = 24_000;
 
 /// A test image with variation in all three channels.
 fn test_image(mode: Mode) -> Vec<RgbPixel> {
-    let (width, height) = (mode.image_width(), mode.image_height());
+    let (width, height) = mode.resolution();
     let mut pixels = Vec::with_capacity((width * height) as usize);
     for y in 0..height {
         for x in 0..width {
@@ -117,8 +117,9 @@ fn decodes_a_truncated_wav() {
     let last = pixels.last().expect("pixels");
     assert_eq!((last.red(), last.green(), last.blue()), (0, 0, 0));
 
-    let decoded_rows = pixels.len() / modes::ROBOT_36.image_width() as usize;
-    assert_eq!(decoded_rows, modes::ROBOT_36.image_height() as usize);
+    let (width, height) = modes::ROBOT_36.resolution();
+    let decoded_rows = pixels.len() / width as usize;
+    assert_eq!(decoded_rows, height as usize);
     let error = mean_abs_error(&image[..pixels.len() / 2], &pixels[..pixels.len() / 2]);
     assert!(error < 12.0, "mean abs error {error} too high");
 }

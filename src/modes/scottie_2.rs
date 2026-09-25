@@ -16,8 +16,7 @@ pub const SCOTTIE_2: Mode = Mode {
     vis_code: vis_code!(56),
     starting_sync_pulse: true,
     layout: Layout {
-        width: 320,
-        height: 256,
+        resolution: (320, 256),
         sequences: &[&SEQUENCE],
         lines_per_sequence: 1,
         color: ColorMode::Rgb,

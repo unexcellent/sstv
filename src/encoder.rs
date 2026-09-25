@@ -11,7 +11,7 @@ use crate::{Error, Result};
 ///
 /// Construct `Encoder` with your desired mode and an iterator over the pixels
 /// you want to encode, supplied row by row, top to bottom. The image must be
-/// [`Mode::image_width`] pixels wide and [`Mode::image_height`] pixels tall.
+/// [`Mode::resolution`] pixels in size.
 /// ```rust
 /// use sstv::{modes, Encoder, Error, RgbPixel};
 ///
@@ -83,7 +83,7 @@ impl Encoder {
     /// [`Error::EmptyImage`] if the mode has no pixels, which cannot happen
     /// for the supported modes.
     pub fn from_image(mode: Mode, image: &image::DynamicImage) -> Result<Self> {
-        let (width, height) = (mode.image_width(), mode.image_height());
+        let (width, height) = mode.resolution();
         let image = if (image.width(), image.height()) == (width, height) {
             image.to_rgb8()
         } else {
@@ -151,7 +151,8 @@ impl Phase {
                 pixel,
             } => {
                 let steps = layout.sequences[sequence];
-                let mid_scan = matches!(steps[step], Step::Scan(..)) && pixel + 1 < layout.width;
+                let mid_scan =
+                    matches!(steps[step], Step::Scan(..)) && pixel + 1 < layout.resolution.0;
                 *self = if mid_scan {
                     Self::Line {
                         line,
@@ -173,7 +174,7 @@ impl Phase {
                         step: 0,
                         pixel: 0,
                     }
-                } else if line + layout.lines_per_cycle() < layout.height {
+                } else if line + layout.lines_per_cycle() < layout.resolution.1 {
                     Self::Line {
                         line: line + layout.lines_per_cycle(),
                         sequence: 0,
@@ -213,8 +214,8 @@ where
         let layout = mode.layout();
         let mut lines = Vec::with_capacity(layout.lines_per_cycle());
         for _ in 0..layout.lines_per_cycle() {
-            let mut line = Vec::with_capacity(layout.width);
-            if Self::fill_line(&mut pixels, &mut line, layout.width).is_none() {
+            let mut line = Vec::with_capacity(layout.resolution.0);
+            if Self::fill_line(&mut pixels, &mut line, layout.resolution.0).is_none() {
                 return Err(Error::EmptyImage);
             }
             lines.push(line);
@@ -241,7 +242,7 @@ where
     /// `None` once the image runs out of complete line groups.
     fn buffer_next_lines(&mut self) -> Option<()> {
         for line in &mut self.lines {
-            Self::fill_line(&mut self.pixels, line, self.layout.width)?;
+            Self::fill_line(&mut self.pixels, line, self.layout.resolution.0)?;
         }
         Some(())
     }
@@ -313,7 +314,7 @@ where
                     let value = self.value(sequence, channel, pixel);
                     Some(Tone::new(
                         value_frequency(value),
-                        duration / self.layout.width as u32,
+                        duration / self.layout.resolution.0 as u32,
                     ))
                 }
             },

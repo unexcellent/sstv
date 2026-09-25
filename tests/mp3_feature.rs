@@ -22,8 +22,8 @@ fn encodes_a_transmission_into_an_mp3() {
 #[test]
 fn round_trips_through_an_mp3() {
     let (width, height) = (
-        modes::ROBOT_36.image_width(),
-        modes::ROBOT_36.image_height(),
+        modes::ROBOT_36.resolution().0,
+        modes::ROBOT_36.resolution().1,
     );
     let mut image = Vec::with_capacity((width * height) as usize);
     for y in 0..height {

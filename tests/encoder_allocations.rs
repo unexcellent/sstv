@@ -50,7 +50,7 @@ static ALLOCATOR: CountingAllocator = CountingAllocator;
 #[test]
 fn encoding_does_not_allocate_after_construction() {
     let mode = modes::ROBOT_36;
-    let (width, height) = (mode.image_width(), mode.image_height());
+    let (width, height) = mode.resolution();
     let image =
         (0..width * height).map(|i| RgbPixel::new(i as u8, (i >> 8) as u8, (i >> 16) as u8));
 

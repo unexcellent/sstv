@@ -44,8 +44,8 @@ fn mean_abs_error(a: &[RgbPixel], b: &[RgbPixel]) -> f64 {
 /// its rows complete, in order, and close to `image`. `expected_mode` pins the
 /// decoder's mode; `None` detects it from the header.
 fn assert_decodes(expected_mode: Option<Mode>, samples: &[i16], mode: Mode, image: &[RgbPixel]) {
-    let width = mode.image_width() as usize;
-    let height = mode.image_height() as usize;
+    let (width, height) = mode.resolution();
+    let (width, height) = (width as usize, height as usize);
 
     let mut events = Decoder::from_samples(samples.iter().copied(), SAMPLE_RATE);
     if let Some(expected) = expected_mode {
@@ -74,8 +74,8 @@ fn assert_decodes(expected_mode: Option<Mode>, samples: &[i16], mode: Mode, imag
 /// Encode an image, then decode it back — once with the mode given explicitly
 /// and once detecting it from the header.
 fn round_trip(mode: Mode) {
-    let width = mode.image_width() as usize;
-    let height = mode.image_height() as usize;
+    let (width, height) = mode.resolution();
+    let (width, height) = (width as usize, height as usize);
     let image = test_image(width, height);
 
     let encoder = Encoder::new(mode, image.clone().into_iter()).expect("construct encoder");

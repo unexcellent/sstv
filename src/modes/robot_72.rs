@@ -14,8 +14,7 @@ pub const ROBOT_72: Mode = Mode {
     vis_code: vis_code!(12),
     starting_sync_pulse: false,
     layout: Layout {
-        width: 320,
-        height: 240,
+        resolution: (320, 240),
         sequences: &[&SEQUENCE],
         lines_per_sequence: 1,
         color: ColorMode::Yuv,

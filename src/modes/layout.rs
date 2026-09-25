@@ -60,10 +60,8 @@ pub enum ColorMode {
 /// geometry they carry.
 #[derive(Debug, Clone, Copy)]
 pub struct Layout {
-    /// The horizontal resolution in pixels.
-    pub width: usize,
-    /// The number of image lines in a full transmission.
-    pub height: usize,
+    /// The horizontal and vertical resolution in pixels.
+    pub resolution: (usize, usize),
     /// The repeating timing sequences; lines cycle through them in order.
     /// All sequences of a mode are equally long. Most modes have exactly one;
     /// Robot 36 alternates an even-line and an odd-line sequence.

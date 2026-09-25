@@ -11,7 +11,7 @@ const SAMPLE_RATE: u32 = 24_000;
 
 /// A full transmission of a test image with variation in all three channels.
 fn transmission(mode: Mode) -> Vec<i16> {
-    let (width, height) = (mode.image_width(), mode.image_height());
+    let (width, height) = mode.resolution();
     let mut pixels = Vec::with_capacity((width * height) as usize);
     for y in 0..height {
         for x in 0..width {
@@ -38,8 +38,9 @@ fn encodes_image_buffers_resizing_them_to_the_mode_resolution() {
         .next()
         .expect("an image");
     assert!(decoded.complete(), "image should decode completely");
-    assert_eq!(decoded.width() as u32, modes::ROBOT_36.image_width());
-    assert_eq!(decoded.height() as u32, modes::ROBOT_36.image_height());
+    let (width, height) = modes::ROBOT_36.resolution();
+    assert_eq!(decoded.width() as u32, width);
+    assert_eq!(decoded.height() as u32, height);
 }
 
 #[test]
@@ -71,8 +72,9 @@ fn decodes_to_image_buffers_and_saves_them() {
         .rgb_images()
         .collect();
     assert_eq!(images.len(), 1, "expected exactly one image");
-    assert_eq!(images[0].width(), modes::ROBOT_36.image_width());
-    assert_eq!(images[0].height(), modes::ROBOT_36.image_height());
+    let (width, height) = modes::ROBOT_36.resolution();
+    assert_eq!(images[0].width(), width);
+    assert_eq!(images[0].height(), height);
 
     let path = std::env::temp_dir().join("sstv-image-feature-test.png");
     images[0].save(&path).expect("save decoded image");

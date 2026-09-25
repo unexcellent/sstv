@@ -50,16 +50,13 @@ impl Mode {
         self.layout
     }
 
-    /// The horizontal resolution in pixels.
+    /// The image resolution in pixels, as (width, height).
     #[must_use]
-    pub const fn image_width(&self) -> u32 {
-        self.layout.width as u32
-    }
-
-    /// The vertical resolution in pixels.
-    #[must_use]
-    pub const fn image_height(&self) -> u32 {
-        self.layout.height as u32
+    pub const fn resolution(&self) -> (u32, u32) {
+        (
+            self.layout.resolution.0 as u32,
+            self.layout.resolution.1 as u32,
+        )
     }
 
     /// Whether the mode transmits one extra sync pulse between the header and
@@ -154,7 +151,7 @@ pub mod testing {
     /// timings — this catches a transcription mistake in any single step.
     pub fn assert_transmission_time(mode: Mode, expected_seconds: f64) {
         let layout = mode.layout();
-        let passes = (layout.height / layout.lines_per_sequence) as f64;
+        let passes = (layout.resolution.1 / layout.lines_per_sequence) as f64;
         let seconds = passes * layout.sequence_duration().ns() as f64 / 1e9;
         assert!(
             (seconds - expected_seconds).abs() < 0.1,

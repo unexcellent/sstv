@@ -16,8 +16,7 @@ pub const PASOKON_P7: Mode = Mode {
     vis_code: vis_code!(115),
     starting_sync_pulse: false,
     layout: Layout {
-        width: 640,
-        height: 496,
+        resolution: (640, 496),
         sequences: &[&SEQUENCE],
         lines_per_sequence: 1,
         color: ColorMode::Rgb,

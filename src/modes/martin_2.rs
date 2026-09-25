@@ -14,8 +14,7 @@ pub const MARTIN_2: Mode = Mode {
     vis_code: vis_code!(40),
     starting_sync_pulse: false,
     layout: Layout {
-        width: 320,
-        height: 256,
+        resolution: (320, 256),
         sequences: &[&SEQUENCE],
         lines_per_sequence: 1,
         color: ColorMode::Rgb,

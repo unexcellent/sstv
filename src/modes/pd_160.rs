@@ -16,8 +16,7 @@ pub const PD_160: Mode = Mode {
     vis_code: vis_code!(98),
     starting_sync_pulse: false,
     layout: Layout {
-        width: 512,
-        height: 400,
+        resolution: (512, 400),
         sequences: &[&SEQUENCE],
         lines_per_sequence: 2,
         color: ColorMode::YuvSharedPair,

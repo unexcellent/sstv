@@ -44,8 +44,7 @@ impl RgbRow {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
     /// A new image in the given mode has been acquired; its rows follow. The
-    /// image dimensions are the mode's [`image_width`](Mode::image_width) and
-    /// [`image_height`](Mode::image_height).
+    /// image dimensions are the mode's [`resolution`](Mode::resolution).
     ImageStart(Mode),
     /// One decoded scanline of the current image.
     Row(RgbRow),
@@ -321,7 +320,7 @@ impl ImageState {
     ) -> Option<SequenceData> {
         let layout = self.mode.layout();
         let sequence = layout.sequences[self.sequence_index];
-        let width = layout.width;
+        let width = layout.resolution.0;
         let expected_scans = sequence
             .iter()
             .filter(|step| matches!(step, Step::Scan(..)))
@@ -457,7 +456,7 @@ impl<I: Iterator<Item = i16>> Events<I> {
             return;
         };
 
-        if image.row_index >= image.mode.layout().height {
+        if image.row_index >= image.mode.layout().resolution.1 {
             self.queue.push_back(Event::ImageEnd { complete: true });
             self.state = State::Searching;
             return;
@@ -511,8 +510,8 @@ impl<I: Iterator<Item = i16>> Iterator for Images<I> {
                 break mode;
             }
         };
-        let width = mode.image_width() as usize;
-        let height = mode.image_height() as usize;
+        let (width, height) = mode.resolution();
+        let (width, height) = (width as usize, height as usize);
 
         let mut pixels = vec![RgbPixel::new(0, 0, 0); width * height];
         let mut complete = false;
