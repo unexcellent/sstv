@@ -4,13 +4,7 @@
 use super::layout::Layout;
 use super::{ALL, LEADER_FREQUENCY, SYNC_FREQUENCY, VisCode};
 use crate::synthesizer::Tone;
-use crate::units::{Duration, Frequency};
-use crate::{Error, Hz, ms, tone};
-
-const VIS_ONE_FREQUENCY: Frequency = Hz!(1100);
-const VIS_ZERO_FREQUENCY: Frequency = Hz!(1300);
-/// Every VIS bit (start, data, parity, stop) lasts 30ms.
-const VIS_BIT_DURATION: Duration = ms!(30);
+use crate::{Error, ms, tone};
 
 /// Tuning (VOX) tones customarily sent ahead of the calibration header to
 /// open receiver squelch. They are not part of the paper's specification.
@@ -84,22 +78,11 @@ impl Mode {
 
     /// The `index`-th header tone, or `None` past the end of the header.
     pub(crate) fn header_tone(self, index: usize) -> Option<Tone> {
-        let code = u8::from(self.vis_code);
-        let bit = |one: bool| {
-            let frequency = if one {
-                VIS_ONE_FREQUENCY
-            } else {
-                VIS_ZERO_FREQUENCY
-            };
-            Tone::new(frequency, VIS_BIT_DURATION)
-        };
         match index {
             0..=7 => Some(VOX_TONES[index]),
             8 | 10 => Some(Tone::new(LEADER_FREQUENCY, ms!(300))),
             9 => Some(Tone::new(SYNC_FREQUENCY, ms!(10))), // break
-            11 | 20 => Some(Tone::new(SYNC_FREQUENCY, VIS_BIT_DURATION)), // start and stop bits
-            12..=18 => Some(bit((code >> (index - 12)) & 1 == 1)), // code bits, least significant first
-            19 => Some(bit(code.count_ones() % 2 == 1)),           // even parity
+            11..=20 => self.vis_code.tone(index - 11),
             21 if self.has_starting_sync_pulse() => {
                 Some(Tone::new(SYNC_FREQUENCY, self.layout().sync_pulse().1))
             }
