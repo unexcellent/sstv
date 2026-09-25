@@ -1,4 +1,13 @@
-#![doc = "Slow-Scan Television Encoding With Minimal Memory Usage"]
+// The README examples use the `image` and `wav` features; without them the
+// crate falls back to a plain description so its doctests always compile.
+#![cfg_attr(
+    all(feature = "image", feature = "wav"),
+    doc = include_str!("../README.md")
+)]
+#![cfg_attr(
+    not(all(feature = "image", feature = "wav")),
+    doc = "Slow-Scan Television Encoding With Minimal Memory Usage"
+)]
 #![cfg_attr(not(any(feature = "std", test)), no_std)]
 #![warn(missing_docs)]
 
