@@ -184,6 +184,12 @@ pub mod testing {
         assert_eq!(actual_duration, expected_duration);
     }
 
+    /// A black image at the mode's resolution, row by row.
+    pub fn black_image(mode: Mode) -> impl Iterator<Item = RgbPixel> {
+        let (width, height) = mode.resolution();
+        core::iter::repeat_n(BLACK, (width * height) as usize)
+    }
+
     /// Every tone of the transmission of an image filled with one colour.
     pub fn encode_uniform_image(mode: Mode, pixel: RgbPixel) -> Vec<Tone> {
         let (width, height) = mode.resolution();

@@ -116,6 +116,7 @@ mod tests {
     extern crate std;
     use std::vec;
 
+    use super::testing::black_image;
     use super::*;
     use crate::modes::ROBOT_36;
 
@@ -148,11 +149,6 @@ mod tests {
 
         assert!(truncated_tone_count > ROBOT_36.header_tones().count());
         assert!(truncated_tone_count < tone_count(ROBOT_36, black_image(ROBOT_36)));
-    }
-
-    fn black_image(mode: Mode) -> impl Iterator<Item = RgbPixel> {
-        let (width, height) = mode.resolution();
-        core::iter::repeat_n(BLACK, (width * height) as usize)
     }
 
     fn tone_count(mode: Mode, pixels: impl Iterator<Item = RgbPixel>) -> usize {

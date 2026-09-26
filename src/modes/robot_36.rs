@@ -49,11 +49,15 @@ mod tests {
     use super::*;
     use crate::encode::testing::{
         assert_one_tone_per_control_step_and_scanned_pixel,
-        assert_transmission_lasts_header_plus_every_pass,
+        assert_transmission_lasts_header_plus_every_pass, black_image,
     };
-    use crate::modes::testing::{
-        assert_line_period, assert_mode_can_be_constructed_from_vis_code, assert_transmission_time,
-    };
+    use crate::modes::testing::{assert_line_period, assert_mode_can_be_constructed_from_vis_code};
+    use crate::{Encoder, Synthesizer};
+
+    const SAMPLE_RATE: u32 = 48_000;
+    /// The VOX tones (800ms) plus the calibration header with the VIS code
+    /// (910ms), in seconds.
+    const HEADER_DURATION: f64 = 1.71;
 
     #[test]
     fn line_period_matches_the_paper() {
@@ -63,7 +67,16 @@ mod tests {
 
     #[test]
     fn transmission_time_matches_the_paper() {
-        assert_transmission_time(ROBOT_36, 36.0);
+        let encoder = Encoder::new(ROBOT_36, black_image(ROBOT_36)).unwrap();
+        let samples: Vec<i16> = Synthesizer::new(encoder, SAMPLE_RATE).collect();
+
+        let transmission_duration = samples.len() as f64 / f64::from(SAMPLE_RATE);
+
+        let expected_duration = 36.0 + HEADER_DURATION;
+        assert!(
+            (transmission_duration - expected_duration).abs() < 0.001,
+            "{transmission_duration}s instead of {expected_duration}s",
+        );
     }
 
     #[test]

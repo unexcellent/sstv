@@ -174,9 +174,6 @@ mod tests {
     use crate::tone;
     use core::f64::consts::PI;
 
-    // The 16 bit sample should not differ from the pure sinewave ground truth by more than 2%.
-    const MAX_SAMPLE_DEVIATION: i16 = i16::MAX / 50;
-
     fn float_reference(tones: &[Tone], sample_rate: u32) -> Vec<i16> {
         let mut samples = Vec::new();
         let mut phase = 0.0f64;
@@ -217,24 +214,25 @@ mod tests {
 
     #[test]
     fn synthesizer_matches_pure_sine_wave() {
-        let sample_rate = 48000u32;
+        let sample_rate: u32 = 48_000;
         let tones = [
             tone!(1200 Hz, 10 ms),
             tone!(1500 Hz, 10 ms),
             tone!(2300 Hz, 10 ms),
         ];
 
-        let dds: Vec<i16> = Synthesizer::new(tones.into_iter(), sample_rate).collect();
-        let reference = float_reference(&tones, sample_rate);
+        let samples: Vec<i16> = Synthesizer::new(tones.into_iter(), sample_rate).collect();
+        let reference_samples = float_reference(&tones, sample_rate);
 
-        assert_eq!(dds.len(), reference.len(), "sample counts differ");
+        let difference: Vec<u16> = samples
+            .iter()
+            .zip(&reference_samples)
+            .map(|(sample, reference_sample)| sample.abs_diff(*reference_sample))
+            .collect();
+        let max_difference = *difference.iter().max().unwrap();
+        let max_reference_sample = reference_samples.iter().max().unwrap().unsigned_abs();
 
-        for (i, (&dds_sample, &ref_sample)) in dds.iter().zip(reference.iter()).enumerate() {
-            let deviation = (dds_sample - ref_sample).abs();
-            assert!(
-                deviation <= MAX_SAMPLE_DEVIATION,
-                "sample {i}: DDS={dds_sample}, reference={ref_sample}, deviation={deviation} > {MAX_SAMPLE_DEVIATION}",
-            );
-        }
+        // should not deviate by more than 2%
+        assert!(max_difference <= max_reference_sample / 50);
     }
 }
