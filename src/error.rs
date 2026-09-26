@@ -18,6 +18,18 @@ pub enum Error {
     EmptyImage,
     /// Emitted by [`Encoder::new_in`](crate::Encoder::new_in) if the buffer
     /// cannot hold one of the mode's line groups.
+    ///
+    /// ```rust
+    /// use sstv::{modes::ROBOT_36, Encoder, Error, RgbPixel};
+    ///
+    /// let image = [RgbPixel::new(0, 0, 0); 320 * 240];
+    /// let mut buffer = [RgbPixel::new(0, 0, 0); 10];
+    ///
+    /// assert!(matches!(
+    ///     Encoder::new_in(ROBOT_36, image.into_iter(), &mut buffer),
+    ///     Err(Error::BufferTooSmall)
+    /// ));
+    /// ```
     BufferTooSmall,
     /// Emitted by [`VisCode::try_new`](crate::VisCode::try_new) if the value
     /// does not fit in 7 bits.

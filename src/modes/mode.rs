@@ -57,12 +57,26 @@ impl Mode {
     /// The number of pixels the encoder buffers for this mode — one full
     /// line group. This is the length [`Encoder::new_in`](crate::Encoder)
     /// requires of its buffer.
+    ///
+    /// ```rust
+    /// use sstv::{modes::ROBOT_36, RgbPixel};
+    ///
+    /// const LEN: usize = ROBOT_36.encoder_buffer_len();
+    /// let buffer = [RgbPixel::new(0, 0, 0); LEN];
+    /// assert_eq!(buffer.len(), 2 * 320);
+    /// ```
     #[must_use]
     pub const fn encoder_buffer_len(&self) -> usize {
         self.lines_per_sequence * self.resolution.0
     }
 
     /// The image resolution in pixels, as (width, height).
+    ///
+    /// ```rust
+    /// use sstv::modes::ROBOT_36;
+    ///
+    /// assert_eq!(ROBOT_36.resolution(), (320, 240));
+    /// ```
     #[must_use]
     pub const fn resolution(&self) -> (u32, u32) {
         (self.resolution.0 as u32, self.resolution.1 as u32)
@@ -70,11 +84,7 @@ impl Mode {
 
     /// The duration of one pass through the timing sequence.
     pub(crate) fn sequence_duration(&self) -> Duration {
-        let mut sum = Duration::from_ns(0);
-        for step in self.sequence {
-            sum = sum + step.duration();
-        }
-        sum
+        self.sequence.iter().map(Step::duration).sum()
     }
 
     /// Each step of the sequence with the offset at which it begins.
@@ -130,6 +140,17 @@ impl Mode {
     /// header carrying the VIS code, and the starting sync pulse for modes
     /// that transmit one. The image data begins immediately after the last
     /// header tone.
+    ///
+    /// ```rust
+    /// use sstv::modes::ROBOT_36;
+    /// use sstv::{ms, Duration};
+    ///
+    /// let total_header_duration: Duration = ROBOT_36
+    ///     .header_tones()
+    ///     .map(|tone| tone.duration)
+    ///     .sum();
+    /// assert_eq!(total_header_duration, ms!(1_710));
+    /// ```
     pub fn header_tones(&self) -> impl Iterator<Item = Tone> + '_ {
         (0..).map_while(move |index| self.header_tone(index))
     }
@@ -194,17 +215,30 @@ pub mod testing {
 
     use super::*;
     use crate::units::Duration;
-    use crate::us;
+
+    #[test]
+    fn header_tones_are_vox_leader_and_vis_code() {
+        let leader_break_leader = [
+            tone!(1900 Hz, 300 ms),
+            tone!(1200 Hz, 10 ms),
+            tone!(1900 Hz, 300 ms),
+        ];
+        let expected_header_tones: Vec<_> = VOX_TONES
+            .into_iter()
+            .chain(leader_break_leader)
+            .chain(crate::modes::ROBOT_36.vis_code().tones())
+            .collect();
+
+        let header_tones: Vec<_> = crate::modes::ROBOT_36.header_tones().collect();
+
+        assert_eq!(header_tones, expected_header_tones);
+    }
 
     /// Assert that the timing sequence sums to the paper's line period (the
     /// pair period for two-line sequences), and that its sync pulses are
     /// evenly spaced — the decoder relies on that to acquire and re-align.
     pub fn assert_line_period(mode: Mode, expected: Duration) {
-        let sum = mode
-            .sequence
-            .iter()
-            .fold(us!(0), |sum, step| sum + step.duration());
-        assert_eq!(sum, expected);
+        assert_eq!(mode.sequence_duration(), expected);
 
         let first_sync = mode.sync_pulse().0;
         for (index, offset) in mode.sync_offsets().enumerate() {
@@ -228,23 +262,5 @@ pub mod testing {
     /// collision between two modes fails the lookup.
     pub fn assert_mode_can_be_constructed_from_vis_code(mode: Mode) {
         assert_eq!(Mode::try_from(mode.vis_code()), Ok(mode));
-    }
-
-    #[test]
-    fn header_tones_are_vox_leader_and_vis_code() {
-        let expected: Vec<_> = VOX_TONES
-            .into_iter()
-            .chain([
-                tone!(1900 Hz, 300 ms), // leader
-                tone!(1200 Hz, 10 ms),  // break
-                tone!(1900 Hz, 300 ms), // leader
-            ])
-            .chain(crate::modes::ROBOT_36.vis_code().tones())
-            .collect();
-
-        assert_eq!(
-            crate::modes::ROBOT_36.header_tones().collect::<Vec<_>>(),
-            expected
-        );
     }
 }

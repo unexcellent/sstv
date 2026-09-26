@@ -128,6 +128,18 @@ impl<I: Iterator<Item = i16>> Decoder<I> {
     /// there is no VIS code to detect a mode from, so unless
     /// [`expect_mode`](Self::expect_mode) names one, the first image decodes
     /// as [`modes::ROBOT_36`](crate::modes::ROBOT_36).
+    ///
+    /// ```no_run
+    /// use sstv::{modes::PD_120, Decoder};
+    ///
+    /// # let samples = std::vec::Vec::<i16>::new().into_iter();
+    /// let decoder = Decoder::from_samples(samples, 48000)
+    ///     .expect_mode(PD_120)
+    ///     .without_header();
+    /// for image in decoder.images() {
+    ///     let _ = image.pixels();
+    /// }
+    /// ```
     #[must_use]
     pub const fn without_header(mut self) -> Self {
         self.events.skip_header = true;
@@ -603,59 +615,11 @@ mod tests {
     use std::vec::Vec;
 
     use super::*;
+    use crate::modes::SCOTTIE_1;
     use crate::{Encoder, Synthesizer};
 
     const WIDTH: usize = 320;
     const HEIGHT: usize = 240;
-
-    /// A 320x240 test image with variation in all three channels.
-    fn test_image() -> Vec<RgbPixel> {
-        let mut pixels = Vec::with_capacity(WIDTH * HEIGHT);
-        for y in 0..HEIGHT as u32 {
-            for x in 0..WIDTH as u32 {
-                let red = (x * 255 / (WIDTH as u32 - 1)) as u8;
-                let green = (y * 255 / (HEIGHT as u32 - 1)) as u8;
-                let blue = ((x + y) * 255 / (WIDTH as u32 - 1 + HEIGHT as u32 - 1)) as u8;
-                pixels.push(RgbPixel::new(red, green, blue));
-            }
-        }
-        pixels
-    }
-
-    fn encode(image: &[RgbPixel], sample_rate: u32) -> Vec<i16> {
-        // `to_vec` is required: `Encoder::new` needs an owned (`'static`)
-        // iterator, so borrowing with `iter().copied()` would not compile.
-        #[allow(clippy::unnecessary_to_owned)]
-        let encoder = Encoder::new(ROBOT_36, image.to_vec().into_iter()).unwrap();
-        Synthesizer::new(encoder, sample_rate).collect()
-    }
-
-    /// Mean absolute per-channel error between two images of equal length.
-    fn mean_abs_error(a: &[RgbPixel], b: &[RgbPixel]) -> f64 {
-        assert_eq!(a.len(), b.len());
-        let total: u64 = a
-            .iter()
-            .zip(b)
-            .map(|(p, q)| {
-                let d = |x: u8, y: u8| u64::from((i32::from(x) - i32::from(y)).unsigned_abs());
-                d(p.red(), q.red()) + d(p.green(), q.green()) + d(p.blue(), q.blue())
-            })
-            .sum();
-        total as f64 / (a.len() as f64 * 3.0)
-    }
-
-    /// The number of samples occupied by our encoder's header at a sample rate.
-    fn header_sample_count(sample_rate: u32) -> usize {
-        let total_ns: u64 = ROBOT_36.header_tones().map(|tone| tone.duration.ns()).sum();
-        (total_ns * u64::from(sample_rate) / 1_000_000_000) as usize
-    }
-
-    fn assert_matches(decoded: &DecodedImage, image: &[RgbPixel]) {
-        assert!(decoded.complete(), "image should decode completely");
-        assert_eq!(decoded.pixels().len(), WIDTH * HEIGHT);
-        let error = mean_abs_error(image, decoded.pixels());
-        assert!(error < 12.0, "mean abs error {error} too high");
-    }
 
     /// Entering the stream at a pair's second line must not swap the colour
     /// differences: acquisition resolves which of the sequence's two sync
@@ -681,6 +645,28 @@ mod tests {
         let decoded_rows = &decoded[0].pixels()[..WIDTH * (HEIGHT - 2)];
         let original_rows = &image[WIDTH * 2..];
         let error = mean_abs_error(original_rows, decoded_rows);
+        assert!(error < 12.0, "mean abs error {error} too high");
+    }
+
+    /// Scottie's sync pulse sits mid-sequence, so a sync lock must step back
+    /// by the sync offset to find where the line begins.
+    #[test]
+    fn scottie_decodes_by_sync_lock_without_a_header() {
+        let image = gradient_image(SCOTTIE_1);
+        let transmission = encode_without_header(SCOTTIE_1, &image, 48_000);
+
+        let decoded_images: Vec<DecodedImage> =
+            Decoder::from_samples(transmission.into_iter(), 48_000)
+                .expect_mode(SCOTTIE_1)
+                .images()
+                .collect();
+
+        assert_eq!(decoded_images.len(), 1, "expected one image");
+        assert!(
+            decoded_images[0].complete(),
+            "image should decode completely"
+        );
+        let error = mean_abs_error(&image, decoded_images[0].pixels());
         assert!(error < 12.0, "mean abs error {error} too high");
     }
 
@@ -800,5 +786,78 @@ mod tests {
             .images()
             .next();
         assert!(decoded.is_none(), "silence should not produce an image");
+    }
+
+    /// A 320x240 test image with variation in all three channels.
+    fn test_image() -> Vec<RgbPixel> {
+        let mut pixels = Vec::with_capacity(WIDTH * HEIGHT);
+        for y in 0..HEIGHT as u32 {
+            for x in 0..WIDTH as u32 {
+                let red = (x * 255 / (WIDTH as u32 - 1)) as u8;
+                let green = (y * 255 / (HEIGHT as u32 - 1)) as u8;
+                let blue = ((x + y) * 255 / (WIDTH as u32 - 1 + HEIGHT as u32 - 1)) as u8;
+                pixels.push(RgbPixel::new(red, green, blue));
+            }
+        }
+        pixels
+    }
+
+    fn encode(image: &[RgbPixel], sample_rate: u32) -> Vec<i16> {
+        let encoder = Encoder::new(ROBOT_36, image.iter().copied()).unwrap();
+        Synthesizer::new(encoder, sample_rate).collect()
+    }
+
+    /// Mean absolute per-channel error between two images of equal length.
+    fn mean_abs_error(a: &[RgbPixel], b: &[RgbPixel]) -> f64 {
+        assert_eq!(a.len(), b.len());
+        let total: u64 = a
+            .iter()
+            .zip(b)
+            .map(|(p, q)| {
+                let d = |x: u8, y: u8| u64::from((i32::from(x) - i32::from(y)).unsigned_abs());
+                d(p.red(), q.red()) + d(p.green(), q.green()) + d(p.blue(), q.blue())
+            })
+            .sum();
+        total as f64 / (a.len() as f64 * 3.0)
+    }
+
+    /// The number of samples occupied by our encoder's header at a sample rate.
+    fn header_sample_count(sample_rate: u32) -> usize {
+        let total_ns: u64 = ROBOT_36.header_tones().map(|tone| tone.duration.ns()).sum();
+        (total_ns * u64::from(sample_rate) / 1_000_000_000) as usize
+    }
+
+    fn assert_matches(decoded: &DecodedImage, image: &[RgbPixel]) {
+        assert!(decoded.complete(), "image should decode completely");
+        assert_eq!(decoded.pixels().len(), WIDTH * HEIGHT);
+        let error = mean_abs_error(image, decoded.pixels());
+        assert!(error < 12.0, "mean abs error {error} too high");
+    }
+
+    /// An image at the mode's resolution, brightening to the right in red and
+    /// downwards in green.
+    fn gradient_image(mode: Mode) -> Vec<RgbPixel> {
+        let (width, height) = mode.resolution();
+        let pixel_at = |row: u32, column: u32| {
+            RgbPixel::new(
+                (column * 255 / width) as u8,
+                (row * 255 / height) as u8,
+                128,
+            )
+        };
+        (0..height)
+            .flat_map(|row| (0..width).map(move |column| pixel_at(row, column)))
+            .collect()
+    }
+
+    /// The samples of the image's transmission, starting right after the
+    /// header.
+    fn encode_without_header(mode: Mode, image: &[RgbPixel], sample_rate: u32) -> Vec<i16> {
+        let encoder = Encoder::new(mode, image.iter().copied()).unwrap();
+        let header_ns: u64 = mode.header_tones().map(|tone| tone.duration.ns()).sum();
+        let header_samples = (header_ns * u64::from(sample_rate) / 1_000_000_000) as usize;
+        Synthesizer::new(encoder, sample_rate)
+            .skip(header_samples)
+            .collect()
     }
 }

@@ -4,6 +4,9 @@ mod convert;
 mod emit;
 mod rgb_lines;
 
+#[cfg(test)]
+pub use emit::testing;
+
 use crate::image::RgbPixel;
 use crate::modes::Mode;
 use crate::{Error, Result};
@@ -105,5 +108,55 @@ where
             lines,
             state: State::NotStarted,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    extern crate std;
+    use std::vec;
+
+    use super::*;
+    use crate::modes::ROBOT_36;
+
+    const BLACK: RgbPixel = RgbPixel::new(0, 0, 0);
+
+    #[test]
+    fn buffer_shorter_than_a_line_group_is_rejected() {
+        let mut short_buffer = vec![BLACK; ROBOT_36.encoder_buffer_len() - 1];
+
+        let encoder = Encoder::new_in(ROBOT_36, black_image(ROBOT_36), &mut short_buffer);
+
+        assert!(matches!(encoder, Err(Error::BufferTooSmall)));
+    }
+
+    #[test]
+    fn buffer_longer_than_a_line_group_is_accepted() {
+        let mut long_buffer = vec![BLACK; ROBOT_36.encoder_buffer_len() + 100];
+
+        let encoder = Encoder::new_in(ROBOT_36, black_image(ROBOT_36), &mut long_buffer);
+
+        assert!(encoder.is_ok());
+    }
+
+    #[test]
+    fn truncated_image_ends_the_transmission_early() {
+        let (width, height) = ROBOT_36.resolution();
+        let top_half = black_image(ROBOT_36).take((width * height / 2) as usize);
+
+        let truncated_tone_count = tone_count(ROBOT_36, top_half);
+
+        assert!(truncated_tone_count > ROBOT_36.header_tones().count());
+        assert!(truncated_tone_count < tone_count(ROBOT_36, black_image(ROBOT_36)));
+    }
+
+    fn black_image(mode: Mode) -> impl Iterator<Item = RgbPixel> {
+        let (width, height) = mode.resolution();
+        core::iter::repeat_n(BLACK, (width * height) as usize)
+    }
+
+    fn tone_count(mode: Mode, pixels: impl Iterator<Item = RgbPixel>) -> usize {
+        let mut buffer = vec![BLACK; mode.encoder_buffer_len()];
+        Encoder::new_in(mode, pixels, &mut buffer).unwrap().count()
     }
 }

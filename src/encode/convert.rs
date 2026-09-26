@@ -17,6 +17,15 @@ where
 {
     /// The transmission as a complete mono 16-bit PCM WAV at the given sample
     /// rate; see [`Synthesizer::to_wav`](crate::Synthesizer::to_wav).
+    ///
+    /// ```no_run
+    /// use sstv::{modes::ROBOT_36, Encoder, RgbPixel};
+    ///
+    /// let image = [RgbPixel::new(0, 0, 0); 320 * 240];
+    /// let wav = Encoder::new(ROBOT_36, image.into_iter())?.to_wav(48_000);
+    /// std::fs::write("transmission.wav", wav)?;
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     #[cfg(feature = "wav")]
     #[must_use]
     pub fn to_wav(self, sample_rate: u32) -> Vec<u8> {

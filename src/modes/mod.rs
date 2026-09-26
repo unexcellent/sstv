@@ -59,6 +59,15 @@ pub use scottie_dx::SCOTTIE_DX;
 pub use wrasse_sc2_180::WRASSE_SC2_180;
 
 /// Every transmission mode, in the paper's order.
+///
+/// ```rust
+/// use sstv::modes;
+///
+/// let mode = modes::ALL
+///     .into_iter()
+///     .find(|mode| format!("{mode:?}").eq_ignore_ascii_case("robot36"));
+/// assert_eq!(mode, Some(modes::ROBOT_36));
+/// ```
 pub const ALL: [Mode; 18] = [
     SCOTTIE_1,
     SCOTTIE_2,
@@ -93,4 +102,22 @@ pub(crate) const LEADER_FREQUENCY: Frequency = Hz!(1900);
 /// luminance range.
 pub(crate) fn value_frequency(value: u8) -> Frequency {
     BLACK_FREQUENCY + (WHITE_FREQUENCY - BLACK_FREQUENCY) * u32::from(value) / 255
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn value_range_maps_onto_the_luminance_range() {
+        assert_eq!(value_frequency(0), BLACK_FREQUENCY);
+        assert_eq!(value_frequency(255), WHITE_FREQUENCY);
+    }
+
+    #[test]
+    fn value_frequency_rises_with_the_value() {
+        for value in 0..255 {
+            assert!(value_frequency(value) <= value_frequency(value + 1));
+        }
+    }
 }

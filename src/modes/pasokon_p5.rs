@@ -39,6 +39,10 @@ const SEQUENCE: [Step; 8] = [
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::encode::testing::{
+        assert_one_tone_per_control_step_and_scanned_pixel,
+        assert_transmission_lasts_header_plus_every_pass,
+    };
     use crate::modes::testing::{
         assert_line_period, assert_mode_can_be_constructed_from_vis_code, assert_transmission_time,
     };
@@ -56,5 +60,15 @@ mod tests {
     #[test]
     fn mode_constructed_from_vis_code() {
         assert_mode_can_be_constructed_from_vis_code(PASOKON_P5);
+    }
+
+    #[test]
+    fn encodes_one_tone_per_control_step_and_scanned_pixel() {
+        assert_one_tone_per_control_step_and_scanned_pixel(PASOKON_P5);
+    }
+
+    #[test]
+    fn transmission_lasts_header_plus_every_pass() {
+        assert_transmission_lasts_header_plus_every_pass(PASOKON_P5);
     }
 }

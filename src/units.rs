@@ -1,3 +1,4 @@
+use core::iter::Sum;
 use core::ops::{Add, Div, Mul, Sub};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -122,6 +123,12 @@ impl Add for Duration {
 
     fn add(self, rhs: Self) -> Self {
         Self::from_ns(self.ns() + rhs.ns())
+    }
+}
+
+impl Sum for Duration {
+    fn sum<I: Iterator<Item = Self>>(durations: I) -> Self {
+        durations.fold(Self::from_ns(0), Add::add)
     }
 }
 

@@ -95,3 +95,99 @@ impl Storage<'_> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const TOP_ROW: [RgbPixel; 2] = [RgbPixel::new(200, 40, 10), RgbPixel::new(1, 2, 3)];
+    const BOTTOM_ROW: [RgbPixel; 2] = [RgbPixel::new(10, 90, 250), RgbPixel::new(4, 5, 6)];
+
+    #[test]
+    fn colour_channels_read_the_top_row() {
+        let mut pixels = two_rows();
+        let lines = lines_over(&mut pixels, ColorMode::Rgb);
+
+        assert_eq!(lines.value(0, Channel::Red), TOP_ROW[0].red());
+        assert_eq!(lines.value(1, Channel::Green), TOP_ROW[1].green());
+        assert_eq!(lines.value(1, Channel::Blue), TOP_ROW[1].blue());
+    }
+
+    #[test]
+    fn first_luminance_reads_the_top_row() {
+        let mut pixels = two_rows();
+        let lines = lines_over(&mut pixels, ColorMode::YuvSharedPair);
+
+        assert_eq!(
+            lines.value(0, Channel::Y),
+            YuvPixel::from(TOP_ROW[0]).luma()
+        );
+    }
+
+    #[test]
+    fn second_luminance_reads_the_bottom_row() {
+        let mut pixels = two_rows();
+        let lines = lines_over(&mut pixels, ColorMode::YuvSharedPair);
+
+        assert_eq!(
+            lines.value(0, Channel::YSecond),
+            YuvPixel::from(BOTTOM_ROW[0]).luma()
+        );
+    }
+
+    #[test]
+    fn shared_pair_colour_differences_average_both_rows() {
+        let mut pixels = two_rows();
+        let lines = lines_over(&mut pixels, ColorMode::YuvSharedPair);
+        let top = YuvPixel::from(TOP_ROW[0]);
+        let bottom = YuvPixel::from(BOTTOM_ROW[0]);
+
+        let red_average = average(top.chroma_red(), bottom.chroma_red());
+        let blue_average = average(top.chroma_blue(), bottom.chroma_blue());
+        assert_eq!(lines.value(0, Channel::RY), red_average);
+        assert_eq!(lines.value(0, Channel::BY), blue_average);
+    }
+
+    #[test]
+    fn single_line_colour_differences_read_the_top_row() {
+        let mut pixels = two_rows();
+        let lines = lines_over(&mut pixels, ColorMode::Yuv);
+        let top = YuvPixel::from(TOP_ROW[0]);
+
+        assert_eq!(lines.value(0, Channel::RY), top.chroma_red());
+        assert_eq!(lines.value(0, Channel::BY), top.chroma_blue());
+    }
+
+    #[test]
+    fn filling_from_too_few_pixels_fails() {
+        let mut pixels = two_rows();
+        let mut lines = lines_over(&mut pixels, ColorMode::Rgb);
+
+        assert!(lines.fill_next(&mut TOP_ROW.into_iter()).is_none());
+    }
+
+    #[test]
+    fn filling_from_enough_pixels_succeeds() {
+        let mut pixels = two_rows();
+        let mut lines = lines_over(&mut pixels, ColorMode::Rgb);
+        let mut both_rows = TOP_ROW.into_iter().chain(BOTTOM_ROW);
+
+        assert!(lines.fill_next(&mut both_rows).is_some());
+    }
+
+    fn two_rows() -> [RgbPixel; 4] {
+        [TOP_ROW[0], TOP_ROW[1], BOTTOM_ROW[0], BOTTOM_ROW[1]]
+    }
+
+    fn lines_over(pixels: &mut [RgbPixel], color: ColorMode) -> RgbLines<'_> {
+        RgbLines {
+            storage: Storage::Borrowed(pixels),
+            width: 2,
+            color,
+        }
+    }
+
+    fn average(first: u8, second: u8) -> u8 {
+        u16::midpoint(u16::from(first), u16::from(second)) as u8
+    }
+}
