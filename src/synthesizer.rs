@@ -26,20 +26,21 @@ impl Tone {
 ///
 /// You would usually use it to encode an image into single samples to emit them via an audio device.
 /// ```rust
-/// use sstv::{Encoder, Mode, RgbPixel, Synthesizer};
+/// use sstv::{modes::ROBOT_36, Encoder, RgbPixel, Synthesizer};
 ///
 /// let image = [RgbPixel::new(0, 0, 0); 320 * 240];
-/// let encoder = Encoder::new(Mode::Robot36, image.into_iter()).expect("error during encoding");
+/// let encoder = Encoder::new(ROBOT_36, image.into_iter())?;
 /// for sample in Synthesizer::new(encoder, 8000) {
 ///     // ...
 /// }
+/// # Ok::<(), sstv::Error>(())
 /// ```
 ///
 /// It can be used with a single `Tone` as well.
 /// ```rust
-/// use sstv::{Synthesizer, Tone, Hz, us};
+/// use sstv::{Synthesizer, tone};
 ///
-/// let tone = Tone::new(Hz!(1500), us!(1000));
+/// let tone = tone!(1500 Hz, 1000 us);
 /// for sample in Synthesizer::new([tone].into_iter(), 8000) {
 ///     // ...
 /// }
@@ -170,10 +171,8 @@ impl<I: Iterator<Item = Tone>> Iterator for Synthesizer<I> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tone;
     use core::f64::consts::PI;
-
-    // The 16 bit sample should not differ from the pure sinewave ground truth by more than 2%.
-    const MAX_SAMPLE_DEVIATION: i16 = i16::MAX / 50;
 
     fn float_reference(tones: &[Tone], sample_rate: u32) -> Vec<i16> {
         let mut samples = Vec::new();
@@ -197,7 +196,7 @@ mod tests {
     #[cfg(feature = "wav")]
     #[test]
     fn to_wav_wraps_the_samples() {
-        let tones = [Tone::new(Frequency::from_hz(1500), Duration::from_ms(50))];
+        let tones = [tone!(1500 Hz, 50 ms)];
         let samples: Vec<i16> = Synthesizer::new(tones.into_iter(), 8_000).collect();
 
         let wav = Synthesizer::new(tones.into_iter(), 8_000).to_wav();
@@ -215,24 +214,25 @@ mod tests {
 
     #[test]
     fn synthesizer_matches_pure_sine_wave() {
-        let sample_rate = 48000u32;
+        let sample_rate: u32 = 48_000;
         let tones = [
-            Tone::new(Frequency::from_hz(1200), Duration::from_ms(10)),
-            Tone::new(Frequency::from_hz(1500), Duration::from_ms(10)),
-            Tone::new(Frequency::from_hz(2300), Duration::from_ms(10)),
+            tone!(1200 Hz, 10 ms),
+            tone!(1500 Hz, 10 ms),
+            tone!(2300 Hz, 10 ms),
         ];
 
-        let dds: Vec<i16> = Synthesizer::new(tones.into_iter(), sample_rate).collect();
-        let reference = float_reference(&tones, sample_rate);
+        let samples: Vec<i16> = Synthesizer::new(tones.into_iter(), sample_rate).collect();
+        let reference_samples = float_reference(&tones, sample_rate);
 
-        assert_eq!(dds.len(), reference.len(), "sample counts differ");
+        let difference: Vec<u16> = samples
+            .iter()
+            .zip(&reference_samples)
+            .map(|(sample, reference_sample)| sample.abs_diff(*reference_sample))
+            .collect();
+        let max_difference = *difference.iter().max().unwrap();
+        let max_reference_sample = reference_samples.iter().max().unwrap().unsigned_abs();
 
-        for (i, (&dds_sample, &ref_sample)) in dds.iter().zip(reference.iter()).enumerate() {
-            let deviation = (dds_sample - ref_sample).abs();
-            assert!(
-                deviation <= MAX_SAMPLE_DEVIATION,
-                "sample {i}: DDS={dds_sample}, reference={ref_sample}, deviation={deviation} > {MAX_SAMPLE_DEVIATION}",
-            );
-        }
+        // should not deviate by more than 2%
+        assert!(max_difference <= max_reference_sample / 50);
     }
 }

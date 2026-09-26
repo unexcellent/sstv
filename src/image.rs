@@ -48,23 +48,6 @@ impl YuvPixel {
             chroma_blue,
         }
     }
-    /// Construct the average of the color components of two pixels.
-    ///
-    /// The returned pixel has the luma of the first argument and the average red/blue chroma from both components.
-    #[must_use]
-    pub fn average(first: Self, second: Self) -> Self {
-        Self {
-            luma: first.luma(),
-            chroma_red: u16::midpoint(
-                u16::from(first.chroma_red()),
-                u16::from(second.chroma_red()),
-            ) as u8,
-            chroma_blue: u16::midpoint(
-                u16::from(first.chroma_blue()),
-                u16::from(second.chroma_blue()),
-            ) as u8,
-        }
-    }
     /// Return the brightness of the pixel.
     #[must_use]
     pub const fn luma(self) -> u8 {

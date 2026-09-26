@@ -8,7 +8,9 @@
 //! The recordings stay outside the git history; the first test run fetches
 //! them (~130 MB) via `tests/scripts/fetch_iss_recordings.py`.
 
-use sstv::{DecodedImage, Decoder, Demodulator, Encoder, Mode, Synthesizer};
+mod common;
+use common::mean_abs_error;
+use sstv::{DecodedImage, Decoder, Demodulator, Encoder, Mode, Synthesizer, modes};
 
 const PD_120_PERIOD: f64 = 0.508_48;
 const PD_180_PERIOD: f64 = 0.754_24;
@@ -27,43 +29,43 @@ struct Recording {
 const RECORDINGS: &[Recording] = &[
     Recording {
         path: "tests/assets/iss/pd180-gagarin-80.wav",
-        mode: Mode::Pd180,
+        mode: modes::PD_180,
         period: PD_180_PERIOD,
         detectable: true,
     },
     Recording {
         path: "tests/assets/iss/pd180-apollo-soyuz.wav",
-        mode: Mode::Pd180,
+        mode: modes::PD_180,
         period: PD_180_PERIOD,
         detectable: true,
     },
     Recording {
         path: "tests/assets/iss/pd180-ariss-qso-astros.wav",
-        mode: Mode::Pd180,
+        mode: modes::PD_180,
         period: PD_180_PERIOD,
         detectable: true,
     },
     Recording {
         path: "tests/assets/iss/pd180-ariss-qso-cristoforetti.wav",
-        mode: Mode::Pd180,
+        mode: modes::PD_180,
         period: PD_180_PERIOD,
         detectable: false,
     },
     Recording {
         path: "tests/assets/iss/pd180-mai75-suitsat.wav",
-        mode: Mode::Pd180,
+        mode: modes::PD_180,
         period: PD_180_PERIOD,
         detectable: true,
     },
     Recording {
         path: "tests/assets/iss/pd120-ariss-20-year-1.wav",
-        mode: Mode::Pd120,
+        mode: modes::PD_120,
         period: PD_120_PERIOD,
         detectable: true,
     },
     Recording {
         path: "tests/assets/iss/pd120-ariss-20-year-2.wav",
-        mode: Mode::Pd120,
+        mode: modes::PD_120,
         period: PD_120_PERIOD,
         detectable: true,
     },
@@ -116,27 +118,13 @@ fn samples(wav: &[u8]) -> (Vec<i16>, u32) {
     (samples, spec.sample_rate)
 }
 
-fn decode(mode: Mode, wav: &[u8]) -> DecodedImage {
-    Decoder::from_wav(mode, wav)
-        .expect("parse wav")
-        .images()
-        .next()
-        .expect("an image")
-}
-
-/// Mean absolute per-channel error between two images of equal length.
-fn mean_abs_error(a: &DecodedImage, b: &DecodedImage) -> f64 {
-    assert_eq!(a.pixels().len(), b.pixels().len());
-    let total: u64 = a
-        .pixels()
-        .iter()
-        .zip(b.pixels())
-        .map(|(p, q)| {
-            let d = |x: u8, y: u8| u64::from((i32::from(x) - i32::from(y)).unsigned_abs());
-            d(p.red(), q.red()) + d(p.green(), q.green()) + d(p.blue(), q.blue())
-        })
-        .sum();
-    total as f64 / (a.pixels().len() as f64 * 3.0)
+/// `expected_mode` pins the decoder's mode; `None` detects it from the header.
+fn decode(expected_mode: Option<Mode>, wav: &[u8]) -> DecodedImage {
+    let mut decoder = Decoder::from_wav(wav).expect("parse wav");
+    if let Some(expected) = expected_mode {
+        decoder = decoder.expect_mode(expected);
+    }
+    decoder.images().next().expect("an image")
 }
 
 /// The median spacing and length of the line sync pulses in a signal, in
@@ -182,12 +170,12 @@ fn line_timing(samples: &[i16], sample_rate: u32, expected_period: f64) -> (f64,
 fn decodes_the_recordings() {
     for entry in RECORDINGS {
         let wav = recording(entry.path);
-        let decoder_mode = if entry.detectable {
-            Mode::Auto
+        let expected_mode = if entry.detectable {
+            None
         } else {
-            entry.mode
+            Some(entry.mode)
         };
-        let image = decode(decoder_mode, &wav);
+        let image = decode(expected_mode, &wav);
         assert_eq!(image.mode(), entry.mode, "{}", entry.path);
         assert!(image.complete(), "{} should decode completely", entry.path);
     }
@@ -202,7 +190,7 @@ fn reencoding_matches_the_recorded_tones_and_images() {
         let (path, mode, period) = (entry.path, entry.mode, entry.period);
         let wav = recording(path);
         let (recorded_samples, sample_rate) = samples(&wav);
-        let recorded_image = decode(mode, &wav);
+        let recorded_image = decode(Some(mode), &wav);
 
         let encoder = Encoder::new(mode, recorded_image.pixels().to_vec().into_iter())
             .expect("construct encoder");
@@ -239,9 +227,9 @@ fn reencoding_matches_the_recorded_tones_and_images() {
             writer.write_sample(*sample).expect("write sample");
         }
         writer.finalize().expect("finalize wav");
-        let reencoded_image = decode(mode, wav_out.get_ref());
+        let reencoded_image = decode(Some(mode), wav_out.get_ref());
 
-        let error = mean_abs_error(&recorded_image, &reencoded_image);
+        let error = mean_abs_error(recorded_image.pixels(), reencoded_image.pixels());
         assert!(error < 10.0, "{path}: mean abs error {error} too high");
     }
 }

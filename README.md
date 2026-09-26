@@ -8,21 +8,21 @@ Encoding an image file into a WAV takes three steps: load the image with the `im
 
 ```rust
 use image;
-use sstv::{Encoder, Mode};
+use sstv::{modes::PD_120, Encoder};
 
-let image = image::open("image.png").expect("load image");
-let encoder = Encoder::from_image(Mode::Pd120, &image).expect("encode image");
-std::fs::write("transmission.wav", encoder.to_wav(48_000)).expect("write wav");
+let image = image::open("image.png")?;
+let encoder = Encoder::from_image(PD_120, &image)?;
+std::fs::write("transmission.wav", encoder.to_wav(48_000))?;
 ```
 
 To transmit directly instead, feed the encoder into a `Synthesizer` and stream the 16 bit samples to your audio output one by one:
 
 ```rust
 use image;
-use sstv::{Encoder, Mode, Synthesizer};
+use sstv::{modes::ROBOT_36, Encoder, Synthesizer};
 
-let image = image::open("image.png").expect("load image");
-let encoder = Encoder::from_image(Mode::Robot36, &image).expect("encode image");
+let image = image::open("image.png")?;
+let encoder = Encoder::from_image(ROBOT_36, &image)?;
 for sample in Synthesizer::new(encoder, 44_100) {
     // hand the sample to your sound card
 }
@@ -30,25 +30,25 @@ for sample in Synthesizer::new(encoder, 44_100) {
 
 # Decoding
 
-Decoding is the inverse: construct a `Decoder` from WAV data (or MP3 data, via `Decoder::from_mp3`) and iterate over the images it finds. `Mode::Auto` detects each transmission's mode from its header; pass a specific mode to skip detection.
+Decoding is the inverse: construct a `Decoder` from WAV data (or MP3 data, via `Decoder::from_mp3`) and iterate over the images it finds. Each transmission's mode is detected from its header. Pin one with `expect_mode` to skip detection.
 
 ```rust
-use sstv::{Decoder, Mode};
+use sstv::Decoder;
 
-let wav = std::fs::read("transmission.wav").expect("read wav");
-let decoder = Decoder::from_wav(Mode::Auto, &wav).expect("parse wav");
+let wav = std::fs::read("transmission.wav")?;
+let decoder = Decoder::from_wav(&wav)?;
 for (index, image) in decoder.rgb_images().enumerate() {
-    image.save(format!("{index}.png")).expect("save image");
+    image.save(format!("{index}.png"))?;
 }
 ```
 
 For live decoding, construct the decoder from any sample iterator — for example one fed by your sound card — and consume the event stream instead. Scanlines arrive as they are recovered, so an image can be displayed while its transmission is still on the air:
 
 ```rust
-use sstv::{Decoder, Event, Mode};
+use sstv::{Decoder, Event};
 
 let samples = microphone_samples(); // any Iterator<Item = i16>
-for event in Decoder::from_samples(Mode::Auto, samples, 48_000).events() {
+for event in Decoder::from_samples(samples, 48_000).events() {
     match event {
         Event::ImageStart(mode) => { /* prepare a canvas for the mode */ }
         Event::Row(row) => { /* draw row.pixels() at line row.index() */ }
@@ -59,28 +59,31 @@ for event in Decoder::from_samples(Mode::Auto, samples, 48_000).events() {
 
 # Embedded Devices
 
-The core of the crate — encoding, synthesis, demodulation and decoding — is `no_std` and only requires an allocator. Disable the default features to use it:
+The core of the crate is `no_std`, and encoding needs no allocator at all: hand the encoder a line buffer of your own via `Encoder::new_in` and it never touches a heap. Disable the default features for the allocation-free build:
 
 ```toml
 [dependencies]
 sstv = { version = "*", default-features = false }
 ```
 
-This build cannot use the `std`-based features (`image`, `wav`, `mp3`): work with pixel iterators and samples directly, which also keeps memory bounded. The encoder allocates only at construction and holds no more than one line group at a time, and the same is true for decoding through `events()`:
+This build cannot use the `std`-based features (`image`, `wav`, `mp3`): work with pixel iterators and samples directly, which also keeps memory bounded — the encoder holds no more than one line group at a time:
 
 ```rust
-use sstv::{Encoder, Mode, RgbPixel, Synthesizer};
+use sstv::{modes::ROBOT_36, Encoder, RgbPixel, Synthesizer};
 
 let pixels = camera_rows(); // any Iterator<Item = RgbPixel>, row by row
-let encoder = Encoder::new(Mode::Robot36, pixels).expect("encode");
+let mut buffer = [RgbPixel::new(0, 0, 0); ROBOT_36.encoder_buffer_len()];
+let encoder = Encoder::new_in(ROBOT_36, pixels, &mut buffer)?;
 for sample in Synthesizer::new(encoder, 8_000) {
     // feed the DAC
 }
 ```
 
+Decoding buffers scanlines and the acquisition window on the heap, so it requires an allocator: enable the `alloc` feature for it. Decoding through `events()` still holds no more than about one line group at a time.
+
 # Supported Modes
 
-All mode timings follow the "Dayton paper": JL Barber (N7CXI), *Proposal for SSTV Mode Specifications*, presented at the Dayton SSTV forum, 20 May 2000. Each mode family lives in its own module under `src/modes/`, transcribing the paper's per-line timing tables, and the encoder and decoder are generic over these tables — adding a mode means transcribing its table.
+All mode timings follow the "Dayton paper": JL Barber (N7CXI), *Proposal for SSTV Mode Specifications*, presented at the Dayton SSTV forum, 20 May 2000. Each mode lives in its own module under `src/modes/`, transcribing the paper's per-line timing tables, and the encoder and decoder are generic over these tables — adding a mode means transcribing its table.
 
 Supported for both encoding and decoding:
 

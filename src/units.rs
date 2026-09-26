@@ -1,3 +1,4 @@
+use core::iter::Sum;
 use core::ops::{Add, Div, Mul, Sub};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -125,11 +126,9 @@ impl Add for Duration {
     }
 }
 
-impl Sub for Duration {
-    type Output = Self;
-
-    fn sub(self, rhs: Self) -> Self {
-        Self::from_ns(self.ns() - rhs.ns())
+impl Sum for Duration {
+    fn sum<I: Iterator<Item = Self>>(durations: I) -> Self {
+        durations.fold(Self::from_ns(0), Add::add)
     }
 }
 
@@ -197,5 +196,29 @@ macro_rules! us {
 macro_rules! ms {
     ($value:expr) => {
         $crate::Duration::from_ms($value)
+    };
+}
+
+#[macro_export]
+/// Construct a [`Tone`](crate::Tone) from a frequency in Hertz and a duration
+/// in any supported unit (`ns`, `us` or `ms`).
+///
+/// ```rust
+/// use sstv::{tone, Tone, Hz, ms};
+///
+/// assert_eq!(
+///     tone!(1500 Hz, 30 ms),
+///     Tone::new(Hz!(1500), ms!(30)),
+/// );
+/// ```
+macro_rules! tone {
+    ($frequency:literal Hz, $duration:literal ns) => {
+        $crate::Tone::new($crate::Hz!($frequency), $crate::ns!($duration))
+    };
+    ($frequency:literal Hz, $duration:literal us) => {
+        $crate::Tone::new($crate::Hz!($frequency), $crate::us!($duration))
+    };
+    ($frequency:literal Hz, $duration:literal ms) => {
+        $crate::Tone::new($crate::Hz!($frequency), $crate::ms!($duration))
     };
 }

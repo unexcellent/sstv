@@ -5,8 +5,8 @@ mod stream;
 use alloc::collections::VecDeque;
 use alloc::{vec, vec::Vec};
 
-use crate::modes::layout::{Layout, Step};
-use crate::modes::{BLACK_FREQUENCY, Mode, SYNC_FREQUENCY, WHITE_FREQUENCY};
+use crate::modes::step::Step;
+use crate::modes::{BLACK_FREQUENCY, Mode, ROBOT_36, SYNC_FREQUENCY, WHITE_FREQUENCY};
 use crate::{Demodulator, RgbPixel};
 
 use acquire::{detect_mode, is_sync, lock_onto_first_line};
@@ -44,8 +44,7 @@ impl RgbRow {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
     /// A new image in the given mode has been acquired; its rows follow. The
-    /// image dimensions are the mode's [`image_width`](Mode::image_width) and
-    /// [`image_height`](Mode::image_height).
+    /// image dimensions are the mode's [`resolution`](Mode::resolution).
     ImageStart(Mode),
     /// One decoded scanline of the current image.
     Row(RgbRow),
@@ -72,11 +71,14 @@ pub enum Event {
 /// as they are recovered, holding only about one line group in memory, while
 /// [`images`](Self::images) assembles and yields whole images.
 ///
+/// Each image's mode is detected from its header's VIS code; use
+/// [`expect_mode`](Self::expect_mode) to decode in a fixed mode instead.
+///
 /// ```no_run
-/// use sstv::{Decoder, Mode};
+/// use sstv::Decoder;
 ///
 /// # let samples = std::vec::Vec::<i16>::new().into_iter();
-/// for image in Decoder::from_samples(Mode::Auto, samples, 48000).images() {
+/// for image in Decoder::from_samples(samples, 48000).images() {
 ///     let _ = (image.mode(), image.pixels());
 /// }
 /// ```
@@ -87,19 +89,33 @@ pub struct Decoder<I: Iterator<Item = i16>> {
 impl<I: Iterator<Item = i16>> Decoder<I> {
     /// Decode a stream of PCM samples.
     ///
-    /// With [`Mode::Auto`], each image's mode is detected from its header's
-    /// VIS code. `sample_rate` must be greater than zero. Construction never
-    /// fails: finding images is deferred to iteration.
-    pub fn from_samples(mode: Mode, samples: I, sample_rate: u32) -> Self {
+    /// `sample_rate` must be greater than zero. Construction never fails:
+    /// finding images is deferred to iteration.
+    pub fn from_samples(samples: I, sample_rate: u32) -> Self {
         let sample_rate = sample_rate.max(1);
-        Self::from_demodulator(mode, Demodulator::new(samples, sample_rate))
+        Self::from_demodulator(Demodulator::new(samples, sample_rate))
     }
 
     /// Decode the frequency stream of an existing demodulator.
-    pub const fn from_demodulator(mode: Mode, demodulator: Demodulator<I>) -> Self {
+    pub const fn from_demodulator(demodulator: Demodulator<I>) -> Self {
         Self {
-            events: Events::new(mode, demodulator),
+            events: Events::new(demodulator),
         }
+    }
+
+    /// Decode every image in the given mode instead of detecting each image's
+    /// mode from its header.
+    ///
+    /// ```no_run
+    /// use sstv::{modes::ROBOT_36, Decoder};
+    ///
+    /// # let samples = std::vec::Vec::<i16>::new().into_iter();
+    /// let decoder = Decoder::from_samples(samples, 48000).expect_mode(ROBOT_36);
+    /// ```
+    #[must_use]
+    pub const fn expect_mode(mut self, mode: Mode) -> Self {
+        self.events.expected_mode = Some(mode);
+        self
     }
 
     /// Assume the samples begin directly at the image data and skip searching
@@ -108,11 +124,25 @@ impl<I: Iterator<Item = i16>> Decoder<I> {
     /// Decoding starts immediately at the first line's timing sequence. Use
     /// this when the signal carries no detectable header, or when acquisition
     /// has already been performed upstream. After the first image completes,
-    /// the decoder searches for further images as usual. [`Mode::Auto`]
-    /// cannot be detected without a header and decodes as [`Mode::Robot36`].
+    /// the decoder searches for further images as usual. Without a header
+    /// there is no VIS code to detect a mode from, so unless
+    /// [`expect_mode`](Self::expect_mode) names one, the first image decodes
+    /// as [`modes::ROBOT_36`](crate::modes::ROBOT_36).
+    ///
+    /// ```no_run
+    /// use sstv::{modes::PD_120, Decoder};
+    ///
+    /// # let samples = std::vec::Vec::<i16>::new().into_iter();
+    /// let decoder = Decoder::from_samples(samples, 48000)
+    ///     .expect_mode(PD_120)
+    ///     .without_header();
+    /// for image in decoder.images() {
+    ///     let _ = image.pixels();
+    /// }
+    /// ```
     #[must_use]
-    pub fn without_header(mut self) -> Self {
-        self.events.skip_header();
+    pub const fn without_header(mut self) -> Self {
+        self.events.skip_header = true;
         self
     }
 
@@ -144,7 +174,7 @@ impl Decoder<alloc::vec::IntoIter<i16>> {
     /// # Errors
     ///
     /// Fails if the WAV data is malformed.
-    pub fn from_wav(mode: Mode, wav: &[u8]) -> core::result::Result<Self, hound::Error> {
+    pub fn from_wav(wav: &[u8]) -> core::result::Result<Self, hound::Error> {
         // `hound` reports running out of data mid-sample as an I/O error;
         // treat that as end of stream to tolerate truncated recordings.
         fn or_eof<T>(
@@ -186,11 +216,7 @@ impl Decoder<alloc::vec::IntoIter<i16>> {
             }
         }
 
-        Ok(Self::from_samples(
-            mode,
-            samples.into_iter(),
-            spec.sample_rate,
-        ))
+        Ok(Self::from_samples(samples.into_iter(), spec.sample_rate))
     }
 }
 
@@ -203,7 +229,7 @@ impl Decoder<alloc::vec::IntoIter<i16>> {
     /// # Errors
     ///
     /// Fails if the MP3 data is malformed.
-    pub fn from_mp3(mode: Mode, mp3: &[u8]) -> core::result::Result<Self, minimp3::Error> {
+    pub fn from_mp3(mp3: &[u8]) -> core::result::Result<Self, minimp3::Error> {
         let mut frames = minimp3::Decoder::new(std::io::Cursor::new(mp3));
         let mut samples = Vec::new();
         let mut sample_rate = 0u32;
@@ -219,7 +245,7 @@ impl Decoder<alloc::vec::IntoIter<i16>> {
             }
         }
 
-        Ok(Self::from_samples(mode, samples.into_iter(), sample_rate))
+        Ok(Self::from_samples(samples.into_iter(), sample_rate))
     }
 }
 
@@ -232,15 +258,16 @@ impl<I: Iterator<Item = i16>> Decoder<I> {
     /// [`images`](Self::images) to keep it.
     ///
     /// ```no_run
-    /// use sstv::{Decoder, Mode};
+    /// use sstv::Decoder;
     ///
     /// # let samples = std::vec::Vec::<i16>::new().into_iter();
-    /// for (index, image) in Decoder::from_samples(Mode::Auto, samples, 48000)
+    /// for (index, image) in Decoder::from_samples(samples, 48000)
     ///     .rgb_images()
     ///     .enumerate()
     /// {
-    ///     image.save(format!("{index}.png")).expect("save image");
+    ///     image.save(format!("{index}.png"))?;
     /// }
+    /// # Ok::<(), image::ImageError>(())
     /// ```
     pub fn rgb_images(self) -> impl Iterator<Item = image::RgbImage> {
         self.images().map(|decoded| image::RgbImage::from(&decoded))
@@ -255,8 +282,11 @@ impl<I: Iterator<Item = i16>> Decoder<I> {
 /// frequency track or image.
 pub struct Events<I: Iterator<Item = i16>> {
     stream: FrequencyStream<I>,
-    /// The mode requested at construction, possibly [`Mode::Auto`].
-    requested_mode: Mode,
+    /// The mode pinned via [`Decoder::expect_mode`]; `None` detects each
+    /// image's mode from its header.
+    expected_mode: Option<Mode>,
+    /// Begin decoding immediately instead of searching for the first header.
+    skip_header: bool,
     state: State,
     /// Decoded events waiting to be handed out, oldest first.
     queue: VecDeque<Event>,
@@ -275,26 +305,20 @@ enum State {
 /// Everything needed to decode the image currently being worked on.
 struct ImageState {
     mode: Mode,
-    layout: Layout,
     /// Fractional sample position at which the next timing sequence begins.
     sequence_start: f64,
-    /// Which of the mode's timing sequences the next line uses.
-    sequence_index: usize,
     /// Index of the next image line to decode.
     row_index: usize,
     assembler: Assembler,
 }
 
 impl ImageState {
-    fn new(mode: Mode, sequence_start: f64) -> Self {
-        let layout = mode.layout();
+    const fn new(mode: Mode, sequence_start: f64) -> Self {
         Self {
             mode,
-            layout,
             sequence_start,
-            sequence_index: 0,
             row_index: 0,
-            assembler: Assembler::new(&layout),
+            assembler: Assembler::new(mode.color),
         }
     }
 
@@ -311,33 +335,30 @@ impl ImageState {
         &mut self,
         stream: &mut FrequencyStream<I>,
     ) -> Option<SequenceData> {
-        let sequence = self.layout.sequences[self.sequence_index];
-        let width = self.layout.width;
+        let sequence = self.mode.sequence;
+        let width = self.mode.resolution.0;
         let expected_scans = sequence
             .iter()
             .filter(|step| matches!(step, Step::Scan(..)))
             .count();
         let mut t = self.sequence_start;
         let mut scans = Vec::with_capacity(4);
-        let mut tone_hz = Vec::with_capacity(4);
         let mut stream_ended = false;
 
         'steps: for step in sequence {
             match step {
                 // Re-align on the actual sync pulse rather than trusting the
                 // nominal timing.
-                Step::Tone(tone) if tone.frequency == SYNC_FREQUENCY => {
+                Step::Control(tone) if tone.frequency == SYNC_FREQUENCY => {
                     if stream.advance_to(t).is_none() || consume_sync(stream).is_none() {
                         stream_ended = true;
                         break 'steps;
                     }
                     t = stream.position() as f64;
                 }
-                Step::Tone(tone) => {
+                Step::Control(tone) => {
                     let len = stream.samples_in(tone.duration);
-                    if let Some(frequency) = stream.advance_to(t + len / 2.0) {
-                        tone_hz.push(frequency.hz());
-                    } else {
+                    if stream.advance_to(t + len / 2.0).is_none() {
                         stream_ended = true;
                         break 'steps;
                     }
@@ -370,8 +391,7 @@ impl ImageState {
             return None;
         }
         self.sequence_start = t;
-        self.sequence_index = (self.sequence_index + 1) % self.layout.sequences.len();
-        Some(SequenceData { scans, tone_hz })
+        Some(SequenceData { scans })
     }
 }
 
@@ -397,30 +417,24 @@ fn value_at<I: Iterator<Item = i16>>(stream: &mut FrequencyStream<I>, position: 
 }
 
 impl<I: Iterator<Item = i16>> Events<I> {
-    const fn new(mode: Mode, demodulator: Demodulator<I>) -> Self {
+    const fn new(demodulator: Demodulator<I>) -> Self {
         Self {
             stream: FrequencyStream::new(demodulator),
-            requested_mode: mode,
+            expected_mode: None,
+            skip_header: false,
             state: State::Searching,
             queue: VecDeque::new(),
         }
     }
 
-    const fn active_mode(&self) -> Mode {
-        match self.requested_mode {
-            Mode::Auto => Mode::Robot36,
-            mode => mode,
-        }
-    }
-
     /// Begin decoding at the first line's timing sequence instead of
-    /// searching for a header.
-    fn skip_header(&mut self) {
-        if matches!(self.state, State::Searching) {
-            let image = ImageState::new(self.active_mode(), 0.0);
-            self.queue.push_back(Event::ImageStart(image.mode));
-            self.state = State::Decoding(image);
-        }
+    /// searching for a header. Without a header there is no VIS code, so an
+    /// unpinned mode falls back to Robot 36.
+    fn start_without_header(&mut self) {
+        let mode = self.expected_mode.unwrap_or(ROBOT_36);
+        let image = ImageState::new(mode, 0.0);
+        self.queue.push_back(Event::ImageStart(image.mode));
+        self.state = State::Decoding(image);
     }
 
     /// Scan for the next image. On success, queue an [`Event::ImageStart`]
@@ -428,11 +442,10 @@ impl<I: Iterator<Item = i16>> Events<I> {
     fn search(&mut self) {
         self.stream.reset();
 
-        let acquired = if self.requested_mode == Mode::Auto {
-            detect_mode(&mut self.stream)
-        } else {
-            lock_onto_first_line(&mut self.stream, &self.requested_mode.layout())
-                .map(|sequence_start| (self.requested_mode, sequence_start))
+        let acquired = match self.expected_mode {
+            None => detect_mode(&mut self.stream),
+            Some(mode) => lock_onto_first_line(&mut self.stream, mode)
+                .map(|sequence_start| (mode, sequence_start)),
         };
 
         match acquired {
@@ -455,7 +468,7 @@ impl<I: Iterator<Item = i16>> Events<I> {
             return;
         };
 
-        if image.row_index >= image.layout.height {
+        if image.row_index >= image.mode.resolution.1 {
             self.queue.push_back(Event::ImageEnd { complete: true });
             self.state = State::Searching;
             return;
@@ -484,6 +497,9 @@ impl<I: Iterator<Item = i16>> Iterator for Events<I> {
             }
             match self.state {
                 State::Done => return None,
+                State::Searching if core::mem::take(&mut self.skip_header) => {
+                    self.start_without_header();
+                }
                 State::Searching => self.search(),
                 State::Decoding(_) => self.decode_step(),
             }
@@ -506,8 +522,8 @@ impl<I: Iterator<Item = i16>> Iterator for Images<I> {
                 break mode;
             }
         };
-        let width = mode.image_width() as usize;
-        let height = mode.image_height() as usize;
+        let (width, height) = mode.resolution();
+        let (width, height) = (width as usize, height as usize);
 
         let mut pixels = vec![RgbPixel::new(0, 0, 0); width * height];
         let mut complete = false;
@@ -599,60 +615,58 @@ mod tests {
     use std::vec::Vec;
 
     use super::*;
+    use crate::modes::SCOTTIE_1;
     use crate::{Encoder, Synthesizer};
 
     const WIDTH: usize = 320;
     const HEIGHT: usize = 240;
 
-    /// A 320x240 test image with variation in all three channels.
-    fn test_image() -> Vec<RgbPixel> {
-        let mut pixels = Vec::with_capacity(WIDTH * HEIGHT);
-        for y in 0..HEIGHT as u32 {
-            for x in 0..WIDTH as u32 {
-                let red = (x * 255 / (WIDTH as u32 - 1)) as u8;
-                let green = (y * 255 / (HEIGHT as u32 - 1)) as u8;
-                let blue = ((x + y) * 255 / (WIDTH as u32 - 1 + HEIGHT as u32 - 1)) as u8;
-                pixels.push(RgbPixel::new(red, green, blue));
-            }
-        }
-        pixels
+    /// Entering the stream at a pair's second line must not swap the colour
+    /// differences: acquisition resolves which of the sequence's two sync
+    /// pulses it locked onto and aligns to the next full pair.
+    #[test]
+    fn sync_lock_on_an_odd_line_does_not_swap_colours() {
+        let image = test_image();
+        let full = encode(&image, 48_000);
+
+        // Drop the header and the pair's first 150ms line, so the stream
+        // begins at an odd line's sync pulse.
+        let line_samples = (48_000.0 * 0.150) as usize;
+        let skip = header_sample_count(48_000) + line_samples;
+
+        let decoded: Vec<DecodedImage> = Decoder::from_samples(full.into_iter().skip(skip), 48_000)
+            .expect_mode(ROBOT_36)
+            .images()
+            .collect();
+
+        assert_eq!(decoded.len(), 1, "expected one image");
+        // Decoding aligns to the next full pair, so the image shifts up by
+        // the two dropped lines; the last two rows stay unfilled.
+        let decoded_rows = &decoded[0].pixels()[..WIDTH * (HEIGHT - 2)];
+        let original_rows = &image[WIDTH * 2..];
+        let error = mean_abs_error(original_rows, decoded_rows);
+        assert!(error < 12.0, "mean abs error {error} too high");
     }
 
-    fn encode(image: &[RgbPixel], sample_rate: u32) -> Vec<i16> {
-        // `to_vec` is required: `Encoder::new` needs an owned (`'static`)
-        // iterator, so borrowing with `iter().copied()` would not compile.
-        #[allow(clippy::unnecessary_to_owned)]
-        let encoder = Encoder::new(Mode::Robot36, image.to_vec().into_iter()).unwrap();
-        Synthesizer::new(encoder, sample_rate).collect()
-    }
+    /// Scottie's sync pulse sits mid-sequence, so a sync lock must step back
+    /// by the sync offset to find where the line begins.
+    #[test]
+    fn scottie_decodes_by_sync_lock_without_a_header() {
+        let image = gradient_image(SCOTTIE_1);
+        let transmission = encode_without_header(SCOTTIE_1, &image, 48_000);
 
-    /// Mean absolute per-channel error between two images of equal length.
-    fn mean_abs_error(a: &[RgbPixel], b: &[RgbPixel]) -> f64 {
-        assert_eq!(a.len(), b.len());
-        let total: u64 = a
-            .iter()
-            .zip(b)
-            .map(|(p, q)| {
-                let d = |x: u8, y: u8| u64::from((i32::from(x) - i32::from(y)).unsigned_abs());
-                d(p.red(), q.red()) + d(p.green(), q.green()) + d(p.blue(), q.blue())
-            })
-            .sum();
-        total as f64 / (a.len() as f64 * 3.0)
-    }
+        let decoded_images: Vec<DecodedImage> =
+            Decoder::from_samples(transmission.into_iter(), 48_000)
+                .expect_mode(SCOTTIE_1)
+                .images()
+                .collect();
 
-    /// The number of samples occupied by our encoder's header at a sample rate.
-    fn header_sample_count(sample_rate: u32) -> usize {
-        let total_ns: u64 = Mode::Robot36
-            .header_tones()
-            .map(|tone| tone.duration.ns())
-            .sum();
-        (total_ns * u64::from(sample_rate) / 1_000_000_000) as usize
-    }
-
-    fn assert_matches(decoded: &DecodedImage, image: &[RgbPixel]) {
-        assert!(decoded.complete(), "image should decode completely");
-        assert_eq!(decoded.pixels().len(), WIDTH * HEIGHT);
-        let error = mean_abs_error(image, decoded.pixels());
+        assert_eq!(decoded_images.len(), 1, "expected one image");
+        assert!(
+            decoded_images[0].complete(),
+            "image should decode completely"
+        );
+        let error = mean_abs_error(&image, decoded_images[0].pixels());
         assert!(error < 12.0, "mean abs error {error} too high");
     }
 
@@ -662,10 +676,10 @@ mod tests {
         let mut samples = encode(&image, 48_000);
         samples.extend(encode(&image, 48_000));
 
-        let decoded: Vec<DecodedImage> =
-            Decoder::from_samples(Mode::Robot36, samples.into_iter(), 48_000)
-                .images()
-                .collect();
+        let decoded: Vec<DecodedImage> = Decoder::from_samples(samples.into_iter(), 48_000)
+            .expect_mode(ROBOT_36)
+            .images()
+            .collect();
 
         assert_eq!(decoded.len(), 2, "expected two images");
         for decoded_image in &decoded {
@@ -681,10 +695,10 @@ mod tests {
         samples.extend(std::vec![0i16; 24_000]);
         samples.extend(encode(&image, 48_000));
 
-        let decoded: Vec<DecodedImage> =
-            Decoder::from_samples(Mode::Robot36, samples.into_iter(), 48_000)
-                .images()
-                .collect();
+        let decoded: Vec<DecodedImage> = Decoder::from_samples(samples.into_iter(), 48_000)
+            .expect_mode(ROBOT_36)
+            .images()
+            .collect();
 
         assert_eq!(decoded.len(), 2, "expected two images across the gap");
         for decoded_image in &decoded {
@@ -703,12 +717,13 @@ mod tests {
         let mut rows = 0;
         let mut complete = None;
         let mut decoded: Vec<RgbPixel> = Vec::new();
-        let events = Decoder::from_samples(Mode::Robot36, image_samples, 48_000)
+        let events = Decoder::from_samples(image_samples, 48_000)
+            .expect_mode(ROBOT_36)
             .without_header()
             .events();
         for event in events {
             match event {
-                Event::ImageStart(mode) => assert_eq!(mode, Mode::Robot36),
+                Event::ImageStart(mode) => assert_eq!(mode, ROBOT_36),
                 Event::Row(row) => {
                     assert_eq!(row.index(), rows, "row out of order");
                     rows += 1;
@@ -733,17 +748,16 @@ mod tests {
         // the VOX tones, first leader and break, leaving the second leader
         // running straight into the VIS bits. Auto detection must still lock on.
         let trimmed: u64 = (0..=9)
-            .map(|index| Mode::Robot36.header_tone(index).unwrap().duration.ns())
+            .map(|index| ROBOT_36.header_tone(index).unwrap().duration.ns())
             .sum();
         let skip = (trimmed * 48_000 / 1_000_000_000) as usize;
 
-        let decoded: Vec<DecodedImage> =
-            Decoder::from_samples(Mode::Auto, full.into_iter().skip(skip), 48_000)
-                .images()
-                .collect();
+        let decoded: Vec<DecodedImage> = Decoder::from_samples(full.into_iter().skip(skip), 48_000)
+            .images()
+            .collect();
 
         assert_eq!(decoded.len(), 1, "expected one image");
-        assert_eq!(decoded[0].mode(), Mode::Robot36);
+        assert_eq!(decoded[0].mode(), ROBOT_36);
         assert_matches(&decoded[0], &image);
     }
 
@@ -753,23 +767,97 @@ mod tests {
         let samples = encode(&image, 48_000);
 
         let demodulator = crate::Demodulator::new(samples.clone().into_iter(), 48_000);
-        let from_demodulator: Vec<Event> = Decoder::from_demodulator(Mode::Robot36, demodulator)
+        let from_demodulator: Vec<Event> = Decoder::from_demodulator(demodulator)
+            .expect_mode(ROBOT_36)
             .events()
             .collect();
-        let from_samples: Vec<Event> =
-            Decoder::from_samples(Mode::Robot36, samples.into_iter(), 48_000)
-                .events()
-                .collect();
+        let from_samples: Vec<Event> = Decoder::from_samples(samples.into_iter(), 48_000)
+            .expect_mode(ROBOT_36)
+            .events()
+            .collect();
 
         assert_eq!(from_demodulator, from_samples);
     }
 
     #[test]
     fn silence_yields_no_images() {
-        let decoded =
-            Decoder::from_samples(Mode::Robot36, std::vec![0i16; 48_000].into_iter(), 48_000)
-                .images()
-                .next();
+        let decoded = Decoder::from_samples(std::vec![0i16; 48_000].into_iter(), 48_000)
+            .expect_mode(ROBOT_36)
+            .images()
+            .next();
         assert!(decoded.is_none(), "silence should not produce an image");
+    }
+
+    /// A 320x240 test image with variation in all three channels.
+    fn test_image() -> Vec<RgbPixel> {
+        let mut pixels = Vec::with_capacity(WIDTH * HEIGHT);
+        for y in 0..HEIGHT as u32 {
+            for x in 0..WIDTH as u32 {
+                let red = (x * 255 / (WIDTH as u32 - 1)) as u8;
+                let green = (y * 255 / (HEIGHT as u32 - 1)) as u8;
+                let blue = ((x + y) * 255 / (WIDTH as u32 - 1 + HEIGHT as u32 - 1)) as u8;
+                pixels.push(RgbPixel::new(red, green, blue));
+            }
+        }
+        pixels
+    }
+
+    fn encode(image: &[RgbPixel], sample_rate: u32) -> Vec<i16> {
+        let encoder = Encoder::new(ROBOT_36, image.iter().copied()).unwrap();
+        Synthesizer::new(encoder, sample_rate).collect()
+    }
+
+    /// Mean absolute per-channel error between two images of equal length.
+    fn mean_abs_error(a: &[RgbPixel], b: &[RgbPixel]) -> f64 {
+        assert_eq!(a.len(), b.len());
+        let total: u64 = a
+            .iter()
+            .zip(b)
+            .map(|(p, q)| {
+                let d = |x: u8, y: u8| u64::from((i32::from(x) - i32::from(y)).unsigned_abs());
+                d(p.red(), q.red()) + d(p.green(), q.green()) + d(p.blue(), q.blue())
+            })
+            .sum();
+        total as f64 / (a.len() as f64 * 3.0)
+    }
+
+    /// The number of samples occupied by our encoder's header at a sample rate.
+    fn header_sample_count(sample_rate: u32) -> usize {
+        let total_ns: u64 = ROBOT_36.header_tones().map(|tone| tone.duration.ns()).sum();
+        (total_ns * u64::from(sample_rate) / 1_000_000_000) as usize
+    }
+
+    fn assert_matches(decoded: &DecodedImage, image: &[RgbPixel]) {
+        assert!(decoded.complete(), "image should decode completely");
+        assert_eq!(decoded.pixels().len(), WIDTH * HEIGHT);
+        let error = mean_abs_error(image, decoded.pixels());
+        assert!(error < 12.0, "mean abs error {error} too high");
+    }
+
+    /// An image at the mode's resolution, brightening to the right in red and
+    /// downwards in green.
+    fn gradient_image(mode: Mode) -> Vec<RgbPixel> {
+        let (width, height) = mode.resolution();
+        let pixel_at = |row: u32, column: u32| {
+            RgbPixel::new(
+                (column * 255 / width) as u8,
+                (row * 255 / height) as u8,
+                128,
+            )
+        };
+        (0..height)
+            .flat_map(|row| (0..width).map(move |column| pixel_at(row, column)))
+            .collect()
+    }
+
+    /// The samples of the image's transmission, starting right after the
+    /// header.
+    fn encode_without_header(mode: Mode, image: &[RgbPixel], sample_rate: u32) -> Vec<i16> {
+        let encoder = Encoder::new(mode, image.iter().copied()).unwrap();
+        let header_ns: u64 = mode.header_tones().map(|tone| tone.duration.ns()).sum();
+        let header_samples = (header_ns * u64::from(sample_rate) / 1_000_000_000) as usize;
+        Synthesizer::new(encoder, sample_rate)
+            .skip(header_samples)
+            .collect()
     }
 }

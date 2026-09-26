@@ -9,7 +9,9 @@
 use std::io::{Cursor, Read};
 use std::path::Path;
 
-use sstv::{Decoder, Mode, RgbPixel};
+mod common;
+use common::mean_abs_error_bytes;
+use sstv::{Decoder, RgbPixel, modes};
 
 /// A real off-air recording captured by a ground station (32 kHz, mono),
 /// stored gzip-compressed to keep the repository small.
@@ -36,17 +38,6 @@ fn pixels_to_bytes(pixels: &[RgbPixel]) -> Vec<u8> {
         bytes.extend_from_slice(&[pixel.red(), pixel.green(), pixel.blue()]);
     }
     bytes
-}
-
-/// Mean absolute per-channel error between two equal-length RGB byte buffers.
-fn mean_abs_error(a: &[u8], b: &[u8]) -> f64 {
-    assert_eq!(a.len(), b.len());
-    let sum: u64 = a
-        .iter()
-        .zip(b)
-        .map(|(x, y)| u64::from((i32::from(*x) - i32::from(*y)).unsigned_abs()))
-        .sum();
-    sum as f64 / a.len() as f64
 }
 
 /// Read a gzip-compressed WAV, returning its samples (first channel) and rate.
@@ -76,7 +67,8 @@ fn decodes_real_ground_station_recording() {
 
     let (samples, sample_rate) = read_wav_gz(REAL_RECORDING);
 
-    let decoded = Decoder::from_samples(Mode::Robot36, samples.into_iter(), sample_rate)
+    let decoded = Decoder::from_samples(samples.into_iter(), sample_rate)
+        .expect_mode(modes::ROBOT_36)
         .images()
         .next()
         .expect("an image in the recording");
@@ -84,7 +76,7 @@ fn decodes_real_ground_station_recording() {
 
     let decoded_bytes = pixels_to_bytes(decoded.pixels());
     let reference = image_bytes(SOURCE_IMAGE);
-    let error = mean_abs_error(&reference, &decoded_bytes);
+    let error = mean_abs_error_bytes(&reference, &decoded_bytes);
     // Real reception drifts a little in colour/timing; a broken decode is 40+.
     assert!(error < 15.0, "decode error {error} too high");
 }

@@ -4,12 +4,12 @@
 
 //! Tests for the `mp3` feature: encoding to and decoding from in-memory MP3s.
 
-use sstv::{Decoder, Encoder, Mode, RgbPixel};
+use sstv::{Decoder, Encoder, RgbPixel, modes};
 
 #[test]
 fn encodes_a_transmission_into_an_mp3() {
     let image = vec![RgbPixel::new(128, 64, 32); 320 * 240];
-    let encoder = Encoder::new(Mode::Robot36, image.into_iter()).expect("construct encoder");
+    let encoder = Encoder::new(modes::ROBOT_36, image.into_iter()).expect("construct encoder");
 
     let mp3 = encoder.to_mp3(24_000).expect("encode mp3");
 
@@ -21,7 +21,10 @@ fn encodes_a_transmission_into_an_mp3() {
 
 #[test]
 fn round_trips_through_an_mp3() {
-    let (width, height) = (Mode::Robot36.image_width(), Mode::Robot36.image_height());
+    let (width, height) = (
+        modes::ROBOT_36.resolution().0,
+        modes::ROBOT_36.resolution().1,
+    );
     let mut image = Vec::with_capacity((width * height) as usize);
     for y in 0..height {
         for x in 0..width {
@@ -31,16 +34,16 @@ fn round_trips_through_an_mp3() {
             image.push(RgbPixel::new(red, green, blue));
         }
     }
-    let encoder = Encoder::new(Mode::Robot36, image.clone().into_iter()).expect("encode");
+    let encoder = Encoder::new(modes::ROBOT_36, image.clone().into_iter()).expect("encode");
     let mp3 = encoder.to_mp3(24_000).expect("encode mp3");
 
-    let decoded = Decoder::from_mp3(Mode::Auto, &mp3)
+    let decoded = Decoder::from_mp3(&mp3)
         .expect("parse mp3")
         .images()
         .next()
         .expect("an image");
 
-    assert_eq!(decoded.mode(), Mode::Robot36);
+    assert_eq!(decoded.mode(), modes::ROBOT_36);
     assert!(decoded.complete(), "image should decode completely");
     let total: u64 = image
         .iter()
