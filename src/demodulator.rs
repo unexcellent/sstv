@@ -66,12 +66,11 @@ impl<I: Iterator<Item = i16>> Demodulator<I> {
     ///
     /// `sample_rate` must be greater than zero and at most 16 MHz.
     pub fn new(mut samples: I, sample_rate: u32) -> Self {
-        let sample_rate = sample_rate.max(1);
         let first_sample = samples.next().unwrap_or_default();
 
         Self {
             samples,
-            sample_rate,
+            sample_rate: sample_rate.max(1),
             previous_sample: first_sample,
             envelope: Envelope::new(first_sample, sample_rate),
             ticks_since_crossing: 0,
@@ -86,17 +85,17 @@ impl<I: Iterator<Item = i16>> Demodulator<I> {
         self.sample_rate
     }
 
-    fn calculate_frequency(&mut self, current_sample: i16) -> Option<Frequency> {
+    fn calculate_frequency(&mut self, sample: i16) -> Option<Frequency> {
         self.ticks_since_crossing = self
             .ticks_since_crossing
             .saturating_add(Self::TICKS_PER_SAMPLE);
-        let midline = self.envelope.update(current_sample);
+        let midline = self.envelope.update(sample);
 
         let previous_sample = self.previous_sample;
-        self.previous_sample = current_sample;
+        self.previous_sample = sample;
 
         let previous_offset = Envelope::fixed(previous_sample) - midline;
-        let current_offset = Envelope::fixed(current_sample) - midline;
+        let current_offset = Envelope::fixed(sample) - midline;
         let samples_crossed_the_midline = (previous_offset >= 0) != (current_offset >= 0);
         if !samples_crossed_the_midline {
             return None;
@@ -105,7 +104,7 @@ impl<I: Iterator<Item = i16>> Demodulator<I> {
         // The offsets straddle the midline, so the quotient lies in
         // [0, TICKS_PER_SAMPLE]. Dividing by the raw sample step rather than the
         // fixed-point one yields ticks directly and cannot overflow.
-        let sample_step = i32::from(previous_sample) - i32::from(current_sample);
+        let sample_step = i32::from(previous_sample) - i32::from(sample);
         let crossing_after_previous_sample =
             (previous_offset >> (Envelope::FRACTION_BITS - Self::TICK_BITS)) / sample_step;
 
@@ -130,25 +129,35 @@ impl<I: Iterator<Item = i16>> Demodulator<I> {
 
         Some(Frequency::from_hz(ticks_per_second / period))
     }
+
+    /// Consume samples until the first frequency can be determined.
+    ///
+    /// Returns if a frequency could be determined or no more samples are available.
+    fn warm_up(&mut self) {
+        while self.frequency.is_none() {
+            match self.samples.next() {
+                Some(sample) => self.frequency = self.calculate_frequency(sample),
+                None => break,
+            }
+        }
+    }
 }
 
 impl<I: Iterator<Item = i16>> Iterator for Demodulator<I> {
     type Item = Frequency;
 
     fn next(&mut self) -> Option<Frequency> {
-        while self.frequency.is_none() {
-            let current_sample = self.samples.next()?;
-            self.frequency = self.calculate_frequency(current_sample);
+        if self.frequency.is_none() {
+            self.warm_up();
         }
 
-        let current_sample = self.samples.next()?;
-        match self.calculate_frequency(current_sample) {
-            Some(frequency) => {
-                self.frequency = Some(frequency);
-                Some(frequency)
-            }
-            None => self.frequency,
+        let sample = self.samples.next()?;
+
+        if let Some(frequency) = self.calculate_frequency(sample) {
+            self.frequency = Some(frequency);
         }
+
+        self.frequency
     }
 }
 
