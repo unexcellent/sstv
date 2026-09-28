@@ -84,40 +84,29 @@ impl<I: Iterator<Item = i16>> Demodulator<I> {
     }
 
     fn calculate_frequency(&mut self, sample: i16) -> Option<Frequency> {
-        self.ticks_since_crossing = self.ticks_since_crossing.saturating_add(Ticks::SAMPLE);
         let midline = self.envelope.update(sample);
 
         let previous_sample = self.previous_sample;
         self.previous_sample = sample;
 
-        if !self
-            .envelope
-            .samples_crossed_midline(previous_sample, sample)
-        {
+        if !self.envelope.midline_was_crossed(previous_sample, sample) {
+            self.ticks_since_crossing.update(Ticks::SAMPLE);
             return None;
         }
 
-        // The samples straddle the midline, so the crossing lies within one
-        // sample of the previous one. The step is taken on the raw samples
-        // because its fixed-point equivalent can overflow.
-        let previous_offset = Level::from_sample(previous_sample) - midline;
-        let sample_step = i32::from(previous_sample) - i32::from(sample);
-        let crossing_after_previous_sample = Ticks::sample_fraction(previous_offset, sample_step);
+        let crossing_point = Ticks::until_crossing(previous_sample, sample, midline);
 
-        let half_period =
-            self.ticks_since_crossing - Ticks::SAMPLE + crossing_after_previous_sample;
-        self.ticks_since_crossing = Ticks::SAMPLE - crossing_after_previous_sample;
+        let half_period = self.ticks_since_crossing + crossing_point;
+        let period = self.previous_half_period.saturating_add(half_period);
 
-        // Summing two consecutive half-periods measures a full period, which
-        // cancels the alternating long/short bias of an off-centre midline.
-        let previous_half_period = core::mem::replace(&mut self.previous_half_period, half_period);
-
+        self.previous_half_period = half_period;
+        self.ticks_since_crossing = Ticks::SAMPLE - crossing_point;
         self.crossings_seen = self.crossings_seen.saturating_add(1);
+
         if self.crossings_seen <= Self::WARM_UP_CROSSINGS {
             return None;
         }
 
-        let period = previous_half_period.saturating_add(half_period);
         Some(period.frequency(self.sample_rate))
     }
 
@@ -201,7 +190,7 @@ impl Envelope {
         self.midline()
     }
 
-    fn samples_crossed_midline(&self, previous_sample: i16, current_sample: i16) -> bool {
+    fn midline_was_crossed(&self, previous_sample: i16, current_sample: i16) -> bool {
         let previous_offset = Level::from_sample(previous_sample) - self.midline();
         let current_offset = Level::from_sample(current_sample) - self.midline();
 
@@ -265,10 +254,22 @@ impl Ticks {
     const ZERO: Self = Self(0);
     const SAMPLE: Self = Self(1 << Self::FRACTION_BITS);
 
-    /// The fraction `level / step` of one sample, where `step` is in whole
-    /// sample units and at least as large as `level` in magnitude.
-    const fn sample_fraction(level: Level, step: i32) -> Self {
-        Self((level.0 >> (Level::FRACTION_BITS - Self::FRACTION_BITS)) / step)
+    /// Time after `previous_sample` at which the line from it to `sample`
+    /// crosses `midline`, found by linear interpolation.
+    ///
+    /// The samples must straddle the midline, which puts the result in
+    /// [`ZERO`](Self::ZERO)..=[`SAMPLE`](Self::SAMPLE).
+    fn until_crossing(previous_sample: i16, sample: i16, midline: Level) -> Self {
+        let previous_offset = Level::from_sample(previous_sample) - midline;
+        // Taken on the raw samples because the fixed-point step can overflow.
+        // Straddling guarantees it is non-zero.
+        let sample_step = i32::from(previous_sample) - i32::from(sample);
+
+        Self((previous_offset.0 >> (Level::FRACTION_BITS - Self::FRACTION_BITS)) / sample_step)
+    }
+
+    const fn update(&mut self, ticks: Self) {
+        self.0 = self.0.saturating_add(ticks.0);
     }
 
     const fn saturating_add(self, other: Self) -> Self {
