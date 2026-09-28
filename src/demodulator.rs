@@ -83,6 +83,17 @@ impl<I: Iterator<Item = i16>> Demodulator<I> {
         self.sample_rate
     }
 
+    /// Feed one sample and return a new frequency estimate if it completes a
+    /// midline crossing.
+    ///
+    /// The estimate is taken over the last two half-periods, i.e. one full
+    /// period. Single half-periods are not reliable on their own: an
+    /// off-centre midline or harmonic distortion (which real receivers add to
+    /// the low tones) makes one half of each cycle longer than the other,
+    /// while a full period is the same length whatever the waveform's shape.
+    ///
+    /// Returns `None` when the sample does not cross the midline, and during
+    /// the first [`WARM_UP_CROSSINGS`](Self::WARM_UP_CROSSINGS) crossings.
     fn calculate_frequency(&mut self, sample: i16) -> Option<Frequency> {
         let midline = self.envelope.update(sample);
 
@@ -158,12 +169,6 @@ struct Envelope {
 
 impl Envelope {
     fn new(first_sample: i16, sample_rate: u32) -> Self {
-        // A 50 to 100 ms time constant, rounded down to a power of two so the
-        // decay is a shift: slow enough that the envelope barely moves within
-        // one cycle (so the midline stays put and does not manufacture
-        // crossings, and noise near the peaks does not jitter it), fast enough
-        // to follow DC drift and level changes and to recover from a transient
-        // well within the SSTV header (~900 ms before the first line sync).
         let decay_shift = (sample_rate / 10).max(1).ilog2();
         let first_sample = Level::from_sample(first_sample);
 
@@ -183,8 +188,6 @@ impl Envelope {
     fn update(&mut self, sample: i16) -> Level {
         let sample = Level::from_sample(sample);
         let midline = self.midline();
-        // Shifting the non-negative distances truncates both sides alike, so
-        // neither extreme settles closer to the midline than the other.
         self.maximum = (self.maximum - ((self.maximum - midline) >> self.decay_shift)).max(sample);
         self.minimum = (self.minimum + ((midline - self.minimum) >> self.decay_shift)).min(sample);
         self.midline()
@@ -261,8 +264,6 @@ impl Ticks {
     /// [`ZERO`](Self::ZERO)..=[`SAMPLE`](Self::SAMPLE).
     fn until_crossing(previous_sample: i16, sample: i16, midline: Level) -> Self {
         let previous_offset = Level::from_sample(previous_sample) - midline;
-        // Taken on the raw samples because the fixed-point step can overflow.
-        // Straddling guarantees it is non-zero.
         let sample_step = i32::from(previous_sample) - i32::from(sample);
 
         Self((previous_offset.0 >> (Level::FRACTION_BITS - Self::FRACTION_BITS)) / sample_step)
