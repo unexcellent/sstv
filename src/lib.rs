@@ -8,7 +8,7 @@ extern crate alloc;
 mod error;
 
 #[cfg(feature = "alloc")]
-mod decoder;
+mod decode;
 mod demodulator;
 mod encode;
 mod image;
@@ -17,7 +17,7 @@ mod synthesizer;
 mod units;
 
 #[cfg(feature = "alloc")]
-pub use decoder::{DecodedImage, Decoder, Event, Events, Images, RgbRow};
+pub use decode::{DecodedImage, Decoder, Event, Events, Images, RgbRow};
 pub use demodulator::Demodulator;
 pub use encode::Encoder;
 pub use error::{Error, Result};
