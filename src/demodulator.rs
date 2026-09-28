@@ -43,10 +43,7 @@ pub struct Demodulator<I: Iterator<Item = i16>> {
     samples: I,
     sample_rate: u32,
     previous_sample: i16,
-    minimum: f64,
-    maximum: f64,
-    /// Per-sample factor by which the envelope relaxes toward the midline.
-    envelope_decay: f64,
+    envelope: Envelope,
     index: u64,
     last_crossing: Option<f64>,
     earlier_crossing: Option<f64>,
@@ -66,22 +63,11 @@ impl<I: Iterator<Item = i16>> Demodulator<I> {
         let sample_rate = sample_rate.max(1);
         let first_sample = samples.next().unwrap_or_default();
 
-        // Relax the envelope toward the midline with roughly a 100 ms time
-        // constant: slow enough that it barely moves within one cycle (so the
-        // midline stays put and does not manufacture crossings, and noise near
-        // the peaks does not jitter it), fast enough to follow DC drift and
-        // level changes and to recover from a transient well within the SSTV
-        // header (~900 ms before the first line sync).
-        let time_constant = (f64::from(sample_rate) * 0.1).max(1.0);
-        let envelope_decay = libm::exp(-1.0 / time_constant);
-
         Self {
             samples,
             sample_rate,
             previous_sample: first_sample,
-            minimum: f64::from(first_sample),
-            maximum: f64::from(first_sample),
-            envelope_decay,
+            envelope: Envelope::new(f64::from(first_sample), sample_rate),
             index: 0,
             last_crossing: None,
             earlier_crossing: None,
@@ -96,17 +82,8 @@ impl<I: Iterator<Item = i16>> Demodulator<I> {
     }
 
     fn calculate_frequency(&mut self, current_sample: i16, index: u64) -> Option<Frequency> {
-        // Relax the running extremes toward the midline, then re-expand to
-        // include the new sample. This adaptive envelope keeps the midline
-        // centred on the *current* waveform, so a DC offset, a level change, or
-        // an early transient cannot latch it away from the signal.
         let sample = f64::from(current_sample);
-        let midline = f64::midpoint(self.minimum, self.maximum);
-        self.maximum = midline + (self.maximum - midline) * self.envelope_decay;
-        self.minimum = midline + (self.minimum - midline) * self.envelope_decay;
-        self.maximum = self.maximum.max(sample);
-        self.minimum = self.minimum.min(sample);
-        let midline = f64::midpoint(self.minimum, self.maximum);
+        let midline = self.envelope.update(sample);
 
         let previous_sample = self.previous_sample;
         self.previous_sample = current_sample;
@@ -165,6 +142,51 @@ impl<I: Iterator<Item = i16>> Iterator for Demodulator<I> {
             }
             None => self.frequency,
         }
+    }
+}
+
+/// Running minimum and maximum of the waveform whose midpoint is the midline
+/// the demodulator measures crossings against.
+///
+/// Both extremes continuously relax toward the midline and re-expand to include
+/// each new sample. This keeps the midline centred on the *current* waveform, so
+/// a DC offset, a level change, or an early transient cannot latch it away from
+/// the signal.
+struct Envelope {
+    minimum: f64,
+    maximum: f64,
+    /// Per-sample factor by which the extremes relax toward the midline.
+    decay: f64,
+}
+
+impl Envelope {
+    fn new(first_sample: f64, sample_rate: u32) -> Self {
+        // Roughly a 100 ms time constant: slow enough that the envelope barely
+        // moves within one cycle (so the midline stays put and does not
+        // manufacture crossings, and noise near the peaks does not jitter it),
+        // fast enough to follow DC drift and level changes and to recover from
+        // a transient well within the SSTV header (~900 ms before the first
+        // line sync).
+        let time_constant = (f64::from(sample_rate) * 0.1).max(1.0);
+
+        Self {
+            minimum: first_sample,
+            maximum: first_sample,
+            decay: libm::exp(-1.0 / time_constant),
+        }
+    }
+
+    const fn midline(&self) -> f64 {
+        f64::midpoint(self.minimum, self.maximum)
+    }
+
+    /// Relax the envelope toward the midline, widen it to include `sample`, and
+    /// return the updated midline.
+    fn update(&mut self, sample: f64) -> f64 {
+        let midline = self.midline();
+        self.maximum = (midline + (self.maximum - midline) * self.decay).max(sample);
+        self.minimum = (midline + (self.minimum - midline) * self.decay).min(sample);
+        self.midline()
     }
 }
 
