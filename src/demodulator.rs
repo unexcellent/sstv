@@ -44,21 +44,27 @@ pub struct Demodulator<I: Iterator<Item = i16>> {
     sample_rate: u32,
     previous_sample: i16,
     envelope: Envelope,
-    index: u64,
-    last_crossing: Option<f64>,
-    earlier_crossing: Option<f64>,
+    /// Time from the last crossing up to the current sample, in ticks.
+    ticks_since_crossing: i32,
+    /// Time between the last two crossings, in ticks.
+    previous_half_period: i32,
     crossings_seen: u32,
     frequency: Option<Frequency>,
 }
 
 impl<I: Iterator<Item = i16>> Demodulator<I> {
     /// Crossings dropped before the first estimate, while the envelope grows to
-    /// span a full cycle and its midline is still biased.
+    /// span a full cycle and its midline is still biased. Must be at least two,
+    /// so both half-periods of the first estimate lie between real crossings.
     const WARM_UP_CROSSINGS: u32 = 4;
+
+    /// Fractional bits of sub-sample time: one sample is `1 << TICK_BITS` ticks.
+    const TICK_BITS: u32 = 8;
+    const TICKS_PER_SAMPLE: i32 = 1 << Self::TICK_BITS;
 
     /// Create a new `Demodulator` from a sample iterator and a sample rate in Hz.
     ///
-    /// `sample_rate` must be greater than zero.
+    /// `sample_rate` must be greater than zero and at most 16 MHz.
     pub fn new(mut samples: I, sample_rate: u32) -> Self {
         let sample_rate = sample_rate.max(1);
         let first_sample = samples.next().unwrap_or_default();
@@ -67,10 +73,9 @@ impl<I: Iterator<Item = i16>> Demodulator<I> {
             samples,
             sample_rate,
             previous_sample: first_sample,
-            envelope: Envelope::new(f64::from(first_sample), sample_rate),
-            index: 0,
-            last_crossing: None,
-            earlier_crossing: None,
+            envelope: Envelope::new(first_sample, sample_rate),
+            ticks_since_crossing: 0,
+            previous_half_period: 0,
             crossings_seen: 0,
             frequency: None,
         }
@@ -81,41 +86,49 @@ impl<I: Iterator<Item = i16>> Demodulator<I> {
         self.sample_rate
     }
 
-    fn calculate_frequency(&mut self, current_sample: i16, index: u64) -> Option<Frequency> {
-        let sample = f64::from(current_sample);
-        let midline = self.envelope.update(sample);
+    fn calculate_frequency(&mut self, current_sample: i16) -> Option<Frequency> {
+        self.ticks_since_crossing = self
+            .ticks_since_crossing
+            .saturating_add(Self::TICKS_PER_SAMPLE);
+        let midline = self.envelope.update(current_sample);
 
         let previous_sample = self.previous_sample;
         self.previous_sample = current_sample;
 
-        let previous_offset = f64::from(previous_sample) - midline;
-        let current_offset = sample - midline;
-        let samples_crossed_the_midline = (previous_offset >= 0.0) != (current_offset >= 0.0);
+        let previous_offset = Envelope::fixed(previous_sample) - midline;
+        let current_offset = Envelope::fixed(current_sample) - midline;
+        let samples_crossed_the_midline = (previous_offset >= 0) != (current_offset >= 0);
         if !samples_crossed_the_midline {
             return None;
         }
 
-        let midline_crossing =
-            (index as f64 - 1.0) + previous_offset / (previous_offset - current_offset);
+        // The offsets straddle the midline, so the quotient lies in
+        // [0, TICKS_PER_SAMPLE]. Dividing by the raw sample step rather than the
+        // fixed-point one yields ticks directly and cannot overflow.
+        let sample_step = i32::from(previous_sample) - i32::from(current_sample);
+        let crossing_after_previous_sample =
+            (previous_offset >> (Envelope::FRACTION_BITS - Self::TICK_BITS)) / sample_step;
 
-        // Keep the last two crossings so we can measure a full period (from the
-        // crossing two ago to this one). Summing a long and a short half-period
-        // cancels the alternating bias of an off-centre midline.
-        let earlier_crossing = self.earlier_crossing;
-        self.earlier_crossing = self.last_crossing;
-        self.last_crossing = Some(midline_crossing);
+        let half_period =
+            self.ticks_since_crossing - Self::TICKS_PER_SAMPLE + crossing_after_previous_sample;
+        self.ticks_since_crossing = Self::TICKS_PER_SAMPLE - crossing_after_previous_sample;
 
-        // Drop the first few crossings: until the envelope has spanned a full
-        // cycle its midline is still biased, so those periods are mistimed.
+        // Summing two consecutive half-periods measures a full period, which
+        // cancels the alternating long/short bias of an off-centre midline.
+        let previous_half_period = core::mem::replace(&mut self.previous_half_period, half_period);
+
         self.crossings_seen = self.crossings_seen.saturating_add(1);
         if self.crossings_seen <= Self::WARM_UP_CROSSINGS {
             return None;
         }
 
-        let period = midline_crossing - earlier_crossing?;
-        let frequency_float = f64::from(self.sample_rate) / period;
+        let period = previous_half_period
+            .saturating_add(half_period)
+            .max(1)
+            .unsigned_abs();
+        let ticks_per_second = self.sample_rate.saturating_mul(1 << Self::TICK_BITS);
 
-        Some(Frequency::from_hz(frequency_float as u32))
+        Some(Frequency::from_hz(ticks_per_second / period))
     }
 }
 
@@ -125,17 +138,11 @@ impl<I: Iterator<Item = i16>> Iterator for Demodulator<I> {
     fn next(&mut self) -> Option<Frequency> {
         while self.frequency.is_none() {
             let current_sample = self.samples.next()?;
-            let index = self.index;
-            self.index += 1;
-
-            self.frequency = self.calculate_frequency(current_sample, index);
+            self.frequency = self.calculate_frequency(current_sample);
         }
 
         let current_sample = self.samples.next()?;
-        let index = self.index;
-        self.index += 1;
-
-        match self.calculate_frequency(current_sample, index) {
+        match self.calculate_frequency(current_sample) {
             Some(frequency) => {
                 self.frequency = Some(frequency);
                 Some(frequency)
@@ -152,40 +159,56 @@ impl<I: Iterator<Item = i16>> Iterator for Demodulator<I> {
 /// each new sample. This keeps the midline centred on the *current* waveform, so
 /// a DC offset, a level change, or an early transient cannot latch it away from
 /// the signal.
+///
+/// Values are fixed point with [`FRACTION_BITS`](Self::FRACTION_BITS)
+/// fractional bits, so the relaxation keeps moving even for quiet signals where
+/// a per-sample step is far below one sample unit.
 struct Envelope {
-    minimum: f64,
-    maximum: f64,
-    /// Per-sample factor by which the extremes relax toward the midline.
-    decay: f64,
+    minimum: i32,
+    maximum: i32,
+    /// The extremes relax by `distance >> decay_shift` per sample, a time
+    /// constant of `1 << decay_shift` samples.
+    decay_shift: u32,
 }
 
 impl Envelope {
-    fn new(first_sample: f64, sample_rate: u32) -> Self {
-        // Roughly a 100 ms time constant: slow enough that the envelope barely
-        // moves within one cycle (so the midline stays put and does not
-        // manufacture crossings, and noise near the peaks does not jitter it),
-        // fast enough to follow DC drift and level changes and to recover from
-        // a transient well within the SSTV header (~900 ms before the first
-        // line sync).
-        let time_constant = (f64::from(sample_rate) * 0.1).max(1.0);
+    /// 15 rather than 16 so a sample's offset from the midline fits in `i32`.
+    const FRACTION_BITS: u32 = 15;
+
+    fn new(first_sample: i16, sample_rate: u32) -> Self {
+        // A 50 to 100 ms time constant, rounded down to a power of two so the
+        // decay is a shift: slow enough that the envelope barely moves within
+        // one cycle (so the midline stays put and does not manufacture
+        // crossings, and noise near the peaks does not jitter it), fast enough
+        // to follow DC drift and level changes and to recover from a transient
+        // well within the SSTV header (~900 ms before the first line sync).
+        let decay_shift = (sample_rate / 10).max(1).ilog2();
+        let first_sample = Self::fixed(first_sample);
 
         Self {
             minimum: first_sample,
             maximum: first_sample,
-            decay: libm::exp(-1.0 / time_constant),
+            decay_shift,
         }
     }
 
-    const fn midline(&self) -> f64 {
-        f64::midpoint(self.minimum, self.maximum)
+    fn fixed(sample: i16) -> i32 {
+        i32::from(sample) << Self::FRACTION_BITS
+    }
+
+    const fn midline(&self) -> i32 {
+        i32::midpoint(self.minimum, self.maximum)
     }
 
     /// Relax the envelope toward the midline, widen it to include `sample`, and
     /// return the updated midline.
-    fn update(&mut self, sample: f64) -> f64 {
+    fn update(&mut self, sample: i16) -> i32 {
+        let sample = Self::fixed(sample);
         let midline = self.midline();
-        self.maximum = (midline + (self.maximum - midline) * self.decay).max(sample);
-        self.minimum = (midline + (self.minimum - midline) * self.decay).min(sample);
+        // Shifting the non-negative distances truncates both sides alike, so
+        // neither extreme settles closer to the midline than the other.
+        self.maximum = (self.maximum - ((self.maximum - midline) >> self.decay_shift)).max(sample);
+        self.minimum = (self.minimum + ((midline - self.minimum) >> self.decay_shift)).min(sample);
         self.midline()
     }
 }
