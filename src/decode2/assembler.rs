@@ -1,21 +1,20 @@
 //! Assembles the demodulated frequency track into tones and identifies the
 //! calibration header among them.
 
-use alloc::vec::Vec;
-
 use crate::modes::{LEADER_FREQUENCY, Mode, SYNC_FREQUENCY, VisCode};
 use crate::synthesizer::Tone;
 use crate::units::{Duration, Frequency};
 use crate::{Hz, ms, tone};
 
 /// How far an estimate may stray from the current tone's frequency and still
-/// belong to it. Half the 100 Hz step between the VIS start bit and a data
-/// bit.
+/// belong to it, and from an excursion's frequency and still continue it.
+/// Half the 100 Hz step between the VIS start bit and a data bit.
 const SPLIT_THRESHOLD: Frequency = Hz!(50);
-/// How long the frequency must stay away from the current tone before a new
-/// tone begins. Shorter excursions are noise and are absorbed into the
-/// current tone; this also rides out the demodulator smearing a transition
-/// over about one period.
+/// How long the frequency must stay away from the current tone, and
+/// consistently at one frequency, before a new tone begins. Shorter or
+/// erratic excursions are noise and are absorbed into the current tone; the
+/// consistency also keeps the demodulator's smeared estimates at a
+/// transition out of the new tone's frequency.
 const MIN_EXCURSION: Duration = ms!(3);
 /// The leader directly before the VIS code.
 const LEADER: Tone = Tone::new(LEADER_FREQUENCY, ms!(300));
@@ -88,49 +87,53 @@ struct MeasuredTone {
 
 /// The estimates collected for the tone currently being received.
 struct ToneInProgress {
-    /// Sum and count of the estimates that set the tone's frequency.
-    frequency_sum: u64,
-    frequency_count: u64,
+    /// The estimates that set the tone's frequency.
+    tone: RunningMean,
     /// Every estimate attributed to the tone, including absorbed excursions.
     length: usize,
-    /// The estimates of an ongoing excursion away from the tone's frequency.
-    excursion: Vec<Frequency>,
-    /// Excursion length at which the excursion becomes the next tone.
-    min_excursion: usize,
+    /// The number of estimates in the ongoing excursion away from the tone's
+    /// frequency.
+    excursion_length: usize,
+    /// The excursion's most recent estimates that agree with each other: the
+    /// candidate for the next tone.
+    candidate: RunningMean,
+    /// Candidate length at which the candidate becomes the next tone.
+    min_excursion: u64,
 }
 
 impl ToneInProgress {
     fn new(min_excursion: usize) -> Self {
         Self {
-            frequency_sum: 0,
-            frequency_count: 0,
+            tone: RunningMean::default(),
             length: 0,
-            excursion: Vec::with_capacity(min_excursion),
-            min_excursion,
+            excursion_length: 0,
+            candidate: RunningMean::default(),
+            min_excursion: u64::try_from(min_excursion).unwrap_or(u64::MAX),
         }
-    }
-
-    fn frequency(&self) -> Option<Frequency> {
-        let mean = self.frequency_sum.checked_div(self.frequency_count)?;
-        Some(Frequency::from_hz(u32::try_from(mean).unwrap_or(u32::MAX)))
     }
 
     /// Add an estimate. Returns the previous tone if this estimate completes
     /// an excursion long enough to start a new one.
     fn push(&mut self, frequency: Frequency) -> Option<MeasuredTone> {
-        let tone_frequency = self.frequency().unwrap_or(frequency);
+        let tone_frequency = self.tone.frequency().unwrap_or(frequency);
 
         let no_tone_switch_has_been_detected =
             frequency.abs_diff(tone_frequency) <= SPLIT_THRESHOLD;
         if no_tone_switch_has_been_detected {
-            self.length += self.excursion.len();
-            self.excursion.clear();
-            self.accept(frequency);
+            self.length += self.excursion_length + 1;
+            self.excursion_length = 0;
+            self.candidate = RunningMean::default();
+            self.tone.add(frequency);
             return None;
         }
 
-        self.excursion.push(frequency);
-        if self.excursion.len() < self.min_excursion {
+        self.excursion_length += 1;
+        let candidate_frequency = self.candidate.frequency().unwrap_or(frequency);
+        if frequency.abs_diff(candidate_frequency) > SPLIT_THRESHOLD {
+            self.candidate = RunningMean::default();
+        }
+        self.candidate.add(frequency);
+        if self.candidate.count < self.min_excursion {
             return None;
         }
 
@@ -138,37 +141,29 @@ impl ToneInProgress {
             frequency: tone_frequency,
             length: self.length,
         };
-        self.start_from_excursion();
+        self.tone = core::mem::take(&mut self.candidate);
+        self.length = self.excursion_length;
+        self.excursion_length = 0;
         Some(completed)
     }
+}
 
-    fn accept(&mut self, frequency: Frequency) {
-        self.frequency_sum += u64::from(frequency.hz());
-        self.frequency_count += 1;
-        self.length += 1;
+/// The mean of a run of frequency estimates.
+#[derive(Default)]
+struct RunningMean {
+    sum: u64,
+    count: u64,
+}
+
+impl RunningMean {
+    fn frequency(&self) -> Option<Frequency> {
+        let mean = self.sum.checked_div(self.count)?;
+        Some(Frequency::from_hz(u32::try_from(mean).unwrap_or(u32::MAX)))
     }
 
-    /// Begin the next tone with the excursion's estimates. Its frequency is
-    /// taken from the estimates near the excursion's median, which excludes
-    /// the demodulator's smeared estimates at the transition.
-    fn start_from_excursion(&mut self) {
-        let mut excursion = core::mem::take(&mut self.excursion);
-        excursion.sort_unstable();
-        let median = excursion[excursion.len() / 2];
-
-        self.frequency_sum = 0;
-        self.frequency_count = 0;
-        self.length = 0;
-        for &frequency in &excursion {
-            if frequency.abs_diff(median) <= SPLIT_THRESHOLD {
-                self.accept(frequency);
-            } else {
-                self.length += 1;
-            }
-        }
-
-        excursion.clear();
-        self.excursion = excursion;
+    fn add(&mut self, frequency: Frequency) {
+        self.sum += u64::from(frequency.hz());
+        self.count += 1;
     }
 }
 
