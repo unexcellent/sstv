@@ -20,6 +20,13 @@ impl Tone {
             duration,
         }
     }
+
+    /// Whether the tone's frequency and duration both lie within
+    /// `tolerance` of `nominal`'s.
+    pub(crate) const fn is_near(self, nominal: Self, tolerance: Self) -> bool {
+        self.frequency.hz().abs_diff(nominal.frequency.hz()) <= tolerance.frequency.hz()
+            && self.duration.ns().abs_diff(nominal.duration.ns()) <= tolerance.duration.ns()
+    }
 }
 
 /// Use a `Synthesizer` to encode an iterator of `Tone`s into 16-bit PCM samples.

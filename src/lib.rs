@@ -9,6 +9,10 @@ mod error;
 
 #[cfg(feature = "alloc")]
 mod decode;
+// Not wired into the public API yet; only its tests exercise it.
+#[cfg(feature = "alloc")]
+#[allow(dead_code)]
+mod decode2;
 mod demodulator;
 mod encode;
 mod image;
