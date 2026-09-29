@@ -13,10 +13,6 @@ const BIT_DURATION: Duration = ms!(30);
 const DATA_BITS: u64 = 8;
 /// How far a received bit may stray from its nominal frequency and duration.
 const TOLERANCE: Tone = tone!(50 Hz, 10 ms);
-/// The stop bit merges with the first line's sync pulse, which has the same
-/// frequency and lasts up to 20 ms, so it spans 30 to 50 ms.
-const STOP_BIT_AND_SYNC: Tone = Tone::new(SYNC_FREQUENCY, ms!(40));
-const STOP_BIT_AND_SYNC_TOLERANCE: Tone = tone!(50 Hz, 20 ms);
 
 /// A 7-bit VIS (Vertical Interval Signaling) code, transmitted in the
 /// calibration header to identify the mode to a receiving system.
@@ -112,70 +108,38 @@ impl VisCode {
         }
     }
 
-    /// Read the code back from received tones that end with its stop bit.
+    /// Decode the data-bit tones received between a code's start and stop
+    /// bits.
     ///
-    /// The received tones need not match [`tones`](Self::tones) one to one:
-    /// neighbouring data bits of equal value arrive as one tone lasting
-    /// several bit durations, and the stop bit merges with the first line's
-    /// sync pulse. Tones before the start bit are ignored.
+    /// Neighbouring bits of equal value arrive as one tone lasting several
+    /// bit durations, so the tones need not match the data bits of
+    /// [`tones`](Self::tones) one to one.
     ///
-    /// Returns the code and the index of its start bit within `tones`, or
-    /// `None` unless the start bit, eight data bits and stop bit are all
-    /// there and the parity is even.
-    pub(crate) fn from_received_tones(tones: &[Tone]) -> Option<(Self, usize)> {
-        let (stop_bit, earlier) = tones.split_last()?;
-        if !stop_bit.is_near(STOP_BIT_AND_SYNC, STOP_BIT_AND_SYNC_TOLERANCE) {
-            return None;
-        }
-
-        let data_start = data_bits_start(earlier)?;
-        let start_bit_index = data_start.checked_sub(1)?;
-        let start_bit = earlier.get(start_bit_index)?;
-        if !start_bit.is_near(Tone::new(SYNC_FREQUENCY, BIT_DURATION), TOLERANCE) {
-            return None;
-        }
-
-        let code = read_data_bits(earlier.get(data_start..)?)?;
-        Some((Self(code), start_bit_index))
-    }
-}
-
-/// The index of the first data-bit tone: walking back from the end, the
-/// tones that are data bits and together last eight bit durations.
-fn data_bits_start(tones: &[Tone]) -> Option<usize> {
-    let mut bits = 0;
-    for (index, tone) in tones.iter().enumerate().rev() {
-        let (_, count) = read_bit_run(*tone)?;
-        bits += count;
-        if bits == DATA_BITS {
-            return Some(index);
-        }
-        if bits > DATA_BITS {
-            return None;
-        }
-    }
-    None
-}
-
-/// The seven-bit code carried by the data-bit tones, least significant bit
-/// first, if the parity bit that follows it makes the number of ones even.
-fn read_data_bits(tones: &[Tone]) -> Option<u8> {
-    let mut code = 0u8;
-    let mut ones = 0u32;
-    let mut position = 0u64;
-    for tone in tones {
-        let (is_one, count) = read_bit_run(*tone)?;
-        for _ in 0..count {
-            if is_one {
-                ones += 1;
-                if position < DATA_BITS - 1 {
-                    code |= 1 << position;
+    /// `None` unless the tones carry exactly eight bits (the seven code bits,
+    /// least significant first, then the parity bit) and the parity is even.
+    pub(crate) fn from_received_tones(data_bits: &[Tone]) -> Option<Self> {
+        let mut code = 0u8;
+        let mut ones = 0u32;
+        let mut position = 0u64;
+        for tone in data_bits {
+            let (is_one, count) = read_bit_run(*tone)?;
+            for _ in 0..count {
+                if position == DATA_BITS {
+                    return None;
                 }
+                if is_one {
+                    ones += 1;
+                    if position < DATA_BITS - 1 {
+                        code |= 1 << position;
+                    }
+                }
+                position += 1;
             }
-            position += 1;
         }
+
+        let complete = position == DATA_BITS && ones.is_multiple_of(2);
+        complete.then_some(Self(code))
     }
-    ones.is_multiple_of(2).then_some(code)
 }
 
 /// The value and number of the equal data bits a tone carries, if it is one
@@ -284,66 +248,58 @@ mod tests {
     }
 
     #[test]
-    fn transmitted_tones_are_read_back() {
-        let tones: Vec<Tone> = vis_code!(8).tones().collect();
+    fn transmitted_data_bits_are_read_back() {
+        let data_bits: Vec<Tone> = vis_code!(8).tones().skip(1).take(8).collect();
 
-        assert_eq!(
-            VisCode::from_received_tones(&tones),
-            Some((vis_code!(8), 0))
-        );
+        assert_eq!(VisCode::from_received_tones(&data_bits), Some(vis_code!(8)));
     }
 
     /// PD 180's code 96 (`0b110_0000`): five zeros, then two ones, then a zero
-    /// parity bit. The stop bit merges with PD's 20 ms sync pulse.
+    /// parity bit.
     #[test]
     fn merged_bits_are_counted_by_their_duration() {
-        let received = [
-            tone!(1200 Hz, 30 ms),  // start bit
+        let data_bits = [
             tone!(1300 Hz, 150 ms), // five zeros
             tone!(1100 Hz, 60 ms),  // two ones
             tone!(1300 Hz, 30 ms),  // parity bit
-            tone!(1200 Hz, 50 ms),  // stop bit and sync pulse
         ];
 
         assert_eq!(
-            VisCode::from_received_tones(&received),
-            Some((vis_code!(96), 0))
-        );
-    }
-
-    #[test]
-    fn tones_before_the_start_bit_are_ignored() {
-        let mut received = std::vec![tone!(1900 Hz, 300 ms)];
-        received.extend(vis_code!(8).tones());
-
-        assert_eq!(
-            VisCode::from_received_tones(&received),
-            Some((vis_code!(8), 1))
+            VisCode::from_received_tones(&data_bits),
+            Some(vis_code!(96))
         );
     }
 
     /// Robot 36's code 8 with its parity bit flipped to a zero.
     #[test]
     fn odd_parity_is_rejected() {
-        let received = [
-            tone!(1200 Hz, 30 ms),  // start bit
+        let data_bits = [
             tone!(1300 Hz, 90 ms),  // three zeros
             tone!(1100 Hz, 30 ms),  // a one
             tone!(1300 Hz, 120 ms), // three zeros and the flipped parity bit
-            tone!(1200 Hz, 30 ms),  // stop bit
         ];
 
-        assert_eq!(VisCode::from_received_tones(&received), None);
+        assert_eq!(VisCode::from_received_tones(&data_bits), None);
     }
 
     #[test]
     fn missing_bits_are_rejected() {
-        let received = [
-            tone!(1200 Hz, 30 ms),  // start bit
-            tone!(1300 Hz, 150 ms), // only five bits
-            tone!(1200 Hz, 30 ms),  // stop bit
-        ];
+        let five_bits = [tone!(1300 Hz, 150 ms)];
 
-        assert_eq!(VisCode::from_received_tones(&received), None);
+        assert_eq!(VisCode::from_received_tones(&five_bits), None);
+    }
+
+    #[test]
+    fn surplus_bits_are_rejected() {
+        let nine_bits = [tone!(1300 Hz, 270 ms)];
+
+        assert_eq!(VisCode::from_received_tones(&nine_bits), None);
+    }
+
+    #[test]
+    fn tones_that_are_neither_one_nor_zero_are_rejected() {
+        let data_bits = [tone!(1300 Hz, 120 ms), tone!(1500 Hz, 120 ms)];
+
+        assert_eq!(VisCode::from_received_tones(&data_bits), None);
     }
 }
