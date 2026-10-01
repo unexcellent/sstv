@@ -7,15 +7,17 @@ use crate::units::{Duration, Frequency};
 use crate::{Hz, ms, tone};
 
 /// How far an estimate may stray from the current tone's frequency and still
-/// belong to it, and from an excursion's frequency and still continue it.
+/// belong to it, and from the candidate for the next tone and still continue
+/// it.
 /// Half the 100 Hz step between the VIS start bit and a data bit.
 const SPLIT_THRESHOLD: Frequency = Hz!(50);
 /// How long the frequency must stay away from the current tone, and
 /// consistently at one frequency, before a new tone begins. Shorter or
-/// erratic excursions are noise and are absorbed into the current tone; the
+/// erratic off-tone stretches are noise and are absorbed into the current
+/// tone; the
 /// consistency also keeps the demodulator's smeared estimates at a
 /// transition out of the new tone's frequency.
-const MIN_EXCURSION: Duration = ms!(3);
+const MIN_NEW_TONE: Duration = ms!(3);
 /// The leader directly before the VIS code.
 const LEADER: Tone = Tone::new(LEADER_FREQUENCY, ms!(300));
 /// Generous in duration, so a leader clipped by a trimmed recording still
@@ -50,13 +52,13 @@ pub(super) struct Assembler {
 impl Assembler {
     pub fn new(sample_rate: u32, mode: Option<Mode>) -> Self {
         let sample_rate = sample_rate.max(1);
-        let min_excursion = samples_in(MIN_EXCURSION, sample_rate).max(1);
+        let min_new_tone = samples_in(MIN_NEW_TONE, sample_rate).max(1);
 
         Self {
             tones: [tone!(0 Hz, 0 ns); HEADER_TONES],
             mode,
             sample_rate,
-            current: ToneInProgress::new(min_excursion),
+            current: ToneInProgress::new(min_new_tone),
         }
     }
 
@@ -89,51 +91,54 @@ struct MeasuredTone {
 struct ToneInProgress {
     /// The estimates that set the tone's frequency.
     tone: RunningMean,
-    /// Every estimate attributed to the tone, including absorbed excursions.
+    /// Every estimate attributed to the tone, including absorbed off-tone
+    /// stretches.
     length: usize,
-    /// The number of estimates in the ongoing excursion away from the tone's
-    /// frequency.
-    excursion_length: usize,
-    /// The excursion's most recent estimates that agree with each other: the
+    /// The number of estimates since the frequency last matched the tone.
+    off_tone_length: usize,
+    /// The most recent off-tone estimates that agree with each other: the
     /// candidate for the next tone.
     candidate: RunningMean,
     /// Candidate length at which the candidate becomes the next tone.
-    min_excursion: u64,
+    min_new_tone: u64,
 }
 
 impl ToneInProgress {
-    fn new(min_excursion: usize) -> Self {
+    fn new(min_new_tone: usize) -> Self {
         Self {
             tone: RunningMean::default(),
             length: 0,
-            excursion_length: 0,
+            off_tone_length: 0,
             candidate: RunningMean::default(),
-            min_excursion: u64::try_from(min_excursion).unwrap_or(u64::MAX),
+            min_new_tone: u64::try_from(min_new_tone).unwrap_or(u64::MAX),
         }
     }
 
     /// Add an estimate. Returns the previous tone if this estimate completes
-    /// an excursion long enough to start a new one.
+    /// an off-tone stretch long enough to start a new one.
     fn push(&mut self, frequency: Frequency) -> Option<MeasuredTone> {
         let tone_frequency = self.tone.frequency().unwrap_or(frequency);
 
         let no_tone_switch_has_been_detected =
             frequency.abs_diff(tone_frequency) <= SPLIT_THRESHOLD;
         if no_tone_switch_has_been_detected {
-            self.length += self.excursion_length + 1;
-            self.excursion_length = 0;
+            self.length += self.off_tone_length + 1;
+            self.off_tone_length = 0;
             self.candidate = RunningMean::default();
             self.tone.add(frequency);
             return None;
         }
 
-        self.excursion_length += 1;
-        let candidate_frequency = self.candidate.frequency().unwrap_or(frequency);
-        if frequency.abs_diff(candidate_frequency) > SPLIT_THRESHOLD {
+        self.off_tone_length += 1;
+
+        let candidate_frequency_is_distinct_enough =
+            frequency.abs_diff(self.candidate.frequency().unwrap_or(frequency)) > SPLIT_THRESHOLD;
+        if candidate_frequency_is_distinct_enough {
             self.candidate = RunningMean::default();
         }
+
         self.candidate.add(frequency);
-        if self.candidate.count < self.min_excursion {
+        if self.candidate.count < self.min_new_tone {
             return None;
         }
 
@@ -142,8 +147,8 @@ impl ToneInProgress {
             length: self.length,
         };
         self.tone = core::mem::take(&mut self.candidate);
-        self.length = self.excursion_length;
-        self.excursion_length = 0;
+        self.length = self.off_tone_length;
+        self.off_tone_length = 0;
         Some(completed)
     }
 }
