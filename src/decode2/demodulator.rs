@@ -421,7 +421,7 @@ mod tests {
         let estimates: Vec<Frequency> =
             Demodulator::new(samples_with_offset, sample_rate).collect();
 
-        assert!(!estimates.is_empty());
+        assert_ne!(estimates, Vec::new());
 
         for estimate in estimates {
             assert!(

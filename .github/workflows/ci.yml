@@ -15,9 +15,9 @@ jobs:
           # The full history is needed to validate every pushed commit message.
           fetch-depth: 0
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
+      # Installs the toolchain pinned in rust-toolchain.toml, with its
+      # components and targets.
+      - run: rustup toolchain install
 
       - uses: Swatinem/rust-cache@v2
 
@@ -67,9 +67,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: thumbv7em-none-eabihf
+      - run: rustup toolchain install
 
       - uses: Swatinem/rust-cache@v2
 
