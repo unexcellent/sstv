@@ -44,32 +44,23 @@ pub(super) struct Assembler {
     tones: [Tone; HEADER_TONES],
     /// The mode being decoded; `None` while searching for a header.
     mode: Option<Mode>,
-    sample_rate: u32,
     /// The tone the incoming frequencies currently belong to.
     current: ToneInProgress,
 }
 
 impl Assembler {
     pub fn new(sample_rate: u32, mode: Option<Mode>) -> Self {
-        let sample_rate = sample_rate.max(1);
-        let min_new_tone = samples_in(MIN_NEW_TONE, sample_rate).max(1);
-
         Self {
             tones: [tone!(0 Hz, 0 ns); HEADER_TONES],
             mode,
-            sample_rate,
-            current: ToneInProgress::new(min_new_tone),
+            current: ToneInProgress::new(sample_rate),
         }
     }
 
     /// Feed the next demodulated frequency. Returns the mode once a header
     /// identifying it has been completed.
     pub fn push(&mut self, frequency: Frequency) -> Option<Mode> {
-        let completed_samples = self.current.push(frequency)?;
-        let completed = Tone::new(
-            completed_samples.frequency,
-            duration_of(completed_samples.length, self.sample_rate),
-        );
+        let completed = self.current.push(frequency)?;
         self.tones.copy_within(1.., 0);
         self.tones[HEADER_TONES - 1] = completed;
 
@@ -79,12 +70,6 @@ impl Assembler {
         self.mode = identify_header(&self.tones);
         self.mode
     }
-}
-
-/// A completed tone, measured in samples.
-struct MeasuredTone {
-    frequency: Frequency,
-    length: usize,
 }
 
 /// The estimates collected for the tone currently being received.
@@ -101,22 +86,27 @@ struct ToneInProgress {
     candidate: RunningMean,
     /// Candidate length at which the candidate becomes the next tone.
     min_new_tone: u64,
+    sample_rate: u32,
 }
 
 impl ToneInProgress {
-    fn new(min_new_tone: usize) -> Self {
+    fn new(sample_rate: u32) -> Self {
+        let sample_rate = sample_rate.max(1);
+        let min_new_tone = samples_in(MIN_NEW_TONE, sample_rate).max(1);
+
         Self {
             tone: RunningMean::default(),
             length: 0,
             off_tone_length: 0,
             candidate: RunningMean::default(),
             min_new_tone: u64::try_from(min_new_tone).unwrap_or(u64::MAX),
+            sample_rate,
         }
     }
 
     /// Add an estimate. Returns the previous tone if this estimate completes
     /// an off-tone stretch long enough to start a new one.
-    fn push(&mut self, frequency: Frequency) -> Option<MeasuredTone> {
+    fn push(&mut self, frequency: Frequency) -> Option<Tone> {
         let tone_frequency = self.tone.frequency().unwrap_or(frequency);
 
         let no_tone_switch_has_been_detected =
@@ -142,10 +132,7 @@ impl ToneInProgress {
             return None;
         }
 
-        let completed = MeasuredTone {
-            frequency: tone_frequency,
-            length: self.length,
-        };
+        let completed = Tone::new(tone_frequency, duration_of(self.length, self.sample_rate));
         self.tone = core::mem::take(&mut self.candidate);
         self.length = self.off_tone_length;
         self.off_tone_length = 0;
