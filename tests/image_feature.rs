@@ -32,10 +32,9 @@ fn encodes_image_buffers_resizing_them_to_the_mode_resolution() {
     }));
     let encoder = Encoder::from_image(modes::ROBOT_36, &small).expect("encode image");
 
-    let decoded = Decoder::from_samples(Synthesizer::new(encoder, SAMPLE_RATE), SAMPLE_RATE)
-        .expect_mode(modes::ROBOT_36)
-        .images()
-        .next()
+    let decoded = Decoder::new(Synthesizer::new(encoder, SAMPLE_RATE), SAMPLE_RATE)
+        .with_mode(modes::ROBOT_36)
+        .decode()
         .expect("an image");
     assert!(decoded.complete(), "image should decode completely");
     let (width, height) = modes::ROBOT_36.resolution();
@@ -47,10 +46,9 @@ fn encodes_image_buffers_resizing_them_to_the_mode_resolution() {
 fn decoded_images_convert_to_image_buffers() {
     let samples = transmission(modes::ROBOT_36);
 
-    let decoded = Decoder::from_samples(samples.into_iter(), SAMPLE_RATE)
-        .expect_mode(modes::ROBOT_36)
-        .images()
-        .next()
+    let decoded = Decoder::new(samples.into_iter(), SAMPLE_RATE)
+        .with_mode(modes::ROBOT_36)
+        .decode()
         .expect("an image");
     let buffer = image::RgbImage::from(&decoded);
 
@@ -67,18 +65,17 @@ fn decoded_images_convert_to_image_buffers() {
 fn decodes_to_image_buffers_and_saves_them() {
     let samples = transmission(modes::ROBOT_36);
 
-    let images: Vec<image::RgbImage> = Decoder::from_samples(samples.into_iter(), SAMPLE_RATE)
-        .expect_mode(modes::ROBOT_36)
-        .rgb_images()
-        .collect();
-    assert_eq!(images.len(), 1, "expected exactly one image");
+    let decoded = Decoder::new(samples.into_iter(), SAMPLE_RATE)
+        .with_mode(modes::ROBOT_36)
+        .rgb_image()
+        .expect("an image");
     let (width, height) = modes::ROBOT_36.resolution();
-    assert_eq!(images[0].width(), width);
-    assert_eq!(images[0].height(), height);
+    assert_eq!(decoded.width(), width);
+    assert_eq!(decoded.height(), height);
 
     let path = std::env::temp_dir().join("sstv-image-feature-test.png");
-    images[0].save(&path).expect("save decoded image");
+    decoded.save(&path).expect("save decoded image");
     let reloaded = image::open(&path).expect("reload decoded image").to_rgb8();
-    assert_eq!(&reloaded, &images[0]);
+    assert_eq!(reloaded, decoded);
     std::fs::remove_file(&path).expect("remove test output");
 }

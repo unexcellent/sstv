@@ -47,10 +47,10 @@ fn main() {
         Decoder::from_wav(&audio).expect("parse wav")
     };
     if let Some(mode) = mode {
-        decoder = decoder.expect_mode(mode);
+        decoder = decoder.with_mode(mode);
     }
 
-    let Some(image) = decoder.images().next() else {
+    let Some(image) = decoder.decode() else {
         panic!("no image found in {input}");
     };
     println!(

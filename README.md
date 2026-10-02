@@ -30,30 +30,25 @@ for sample in Synthesizer::new(encoder, 44_100) {
 
 # Decoding
 
-Decoding is the inverse: construct a `Decoder` from WAV data (or MP3 data, via `Decoder::from_mp3`) and iterate over the images it finds. Each transmission's mode is detected from its header. Pin one with `expect_mode` to skip detection.
+Decoding is the inverse: construct a `Decoder` from WAV data (or MP3 data, via `Decoder::from_mp3`) and decode the image it carries. The mode is detected from the transmission's header. Pin one with `with_mode`, which also finds an image whose header is missing by its line sync pulses.
 
 ```rust
 use sstv::Decoder;
 
 let wav = std::fs::read("transmission.wav")?;
-let decoder = Decoder::from_wav(&wav)?;
-for (index, image) in decoder.rgb_images().enumerate() {
-    image.save(format!("{index}.png"))?;
+if let Some(image) = Decoder::from_wav(&wav)?.rgb_image() {
+    image.save("decoded.png")?;
 }
 ```
 
-For live decoding, construct the decoder from any sample iterator — for example one fed by your sound card — and consume the event stream instead. Scanlines arrive as they are recovered, so an image can be displayed while its transmission is still on the air:
+A decoder decodes the first image and reads only a little past its end. For live decoding, or a recording that carries several transmissions, construct decoders from any sample iterator, for example one fed by your sound card, and hand each the samples the previous one left over:
 
 ```rust
-use sstv::{Decoder, Event};
+use sstv::Decoder;
 
-let samples = microphone_samples(); // any Iterator<Item = i16>
-for event in Decoder::from_samples(samples, 48_000).events() {
-    match event {
-        Event::ImageStart(mode) => { /* prepare a canvas for the mode */ }
-        Event::Row(row) => { /* draw row.pixels() at line row.index() */ }
-        Event::ImageEnd { complete } => { /* finish the image */ }
-    }
+let mut samples = microphone_samples(); // any Iterator<Item = i16>
+while let Some(image) = Decoder::new(samples.by_ref(), 48_000).decode() {
+    // show or save image.pixels()
 }
 ```
 
@@ -79,7 +74,7 @@ for sample in Synthesizer::new(encoder, 8_000) {
 }
 ```
 
-Decoding buffers scanlines and the acquisition window on the heap, so it requires an allocator: enable the `alloc` feature for it. Decoding through `events()` still holds no more than about one line group at a time.
+Decoding buffers the image and about one line group of the signal on the heap, so it requires an allocator: enable the `alloc` feature for it.
 
 # Supported Modes
 

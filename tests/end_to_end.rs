@@ -64,12 +64,16 @@ fn add_noise(samples: &[i16], seed: u64) -> Vec<i16> {
         .collect()
 }
 
-/// Drive the decoder to completion, grouping its events into images.
+/// Decode every image, handing the samples each decoder leaves over to the
+/// next one.
 fn decode_images(samples: Vec<i16>) -> Vec<DecodedImage> {
-    Decoder::from_samples(samples.into_iter(), SAMPLE_RATE)
-        .expect_mode(modes::ROBOT_36)
-        .images()
-        .collect()
+    let mut samples = samples.into_iter();
+    core::iter::from_fn(|| {
+        Decoder::new(samples.by_ref(), SAMPLE_RATE)
+            .with_mode(modes::ROBOT_36)
+            .decode()
+    })
+    .collect()
 }
 
 /// Assert a decoded image is complete and close enough to the original.
@@ -152,10 +156,9 @@ fn pure_noise_should_not_be_decoded_as_an_image() {
     let pure_noise = add_noise(&vec![0; samples.len()], 0x1);
 
     assert_eq!(
-        Decoder::from_samples(pure_noise.into_iter(), SAMPLE_RATE)
-            .expect_mode(modes::ROBOT_36)
-            .events()
-            .next(),
+        Decoder::new(pure_noise.into_iter(), SAMPLE_RATE)
+            .with_mode(modes::ROBOT_36)
+            .decode(),
         None
     );
 }

@@ -6,6 +6,7 @@
 
 mod estimates;
 mod sampling;
+mod sync_lock;
 mod tone_in_progress;
 
 use alloc::collections::VecDeque;
@@ -16,6 +17,7 @@ use crate::units::{Duration, Frequency};
 use crate::{ms, tone};
 use estimates::Estimates;
 use sampling::ImageTiming;
+use sync_lock::SyncLock;
 use tone_in_progress::ToneInProgress;
 
 /// The leader directly before the VIS code.
@@ -41,6 +43,22 @@ const HEADER_TONES: usize = 13;
 /// pulse ended, and the first sequence begins at most that sync pulse
 /// earlier.
 const HEADER_LOOKBACK: Duration = ms!(200);
+/// How many sequences of estimates are kept while locking on to sync pulses:
+/// the three pulses span two lines, and the first sequence may begin up to
+/// one sequence before the first of them.
+const SYNC_LOCK_LOOKBACK_SEQUENCES: u32 = 3;
+
+/// Where the assembler finds the start of the image.
+#[derive(Clone, Copy)]
+pub enum Start {
+    /// At the calibration header, which identifies the mode.
+    Header,
+    /// At a header announcing this mode, or else at three of the mode's line
+    /// sync pulses spaced one line apart.
+    HeaderOrSyncs(Mode),
+    /// Right at the first sample, in this mode.
+    FirstSample(Mode),
+}
 
 /// Turns demodulated frequencies into the tones of the first image they
 /// carry. Anything after that image is ignored.
@@ -49,8 +67,14 @@ pub(super) struct Assembler<I: Iterator<Item = Frequency>> {
     sample_rate: u32,
     /// The most recently completed tones while searching, oldest first.
     tones: [Tone; HEADER_TONES],
-    /// The mode the header announced; `None` until then.
+    /// The mode of the image; `None` until its start has been found.
     mode: Option<Mode>,
+    /// The mode a header must announce to be accepted; `None` accepts any.
+    expected_mode: Option<Mode>,
+    /// Locks on to the line sync pulses when the mode is known in advance.
+    sync_lock: Option<SyncLock>,
+    /// How many samples of estimates are kept while searching.
+    lookback: u64,
     /// The tone the incoming frequencies currently belong to, split where
     /// the frequency changes.
     current: ToneInProgress,
@@ -67,24 +91,38 @@ pub(super) struct Assembler<I: Iterator<Item = Frequency>> {
 }
 
 impl<I: Iterator<Item = Frequency>> Assembler<I> {
-    pub fn new(frequencies: I, sample_rate: u32) -> Self {
+    pub fn new(frequencies: I, sample_rate: u32, start: Start) -> Self {
         let sample_rate = sample_rate.max(1);
-        Self {
+        let mut assembler = Self {
             frequencies,
             sample_rate,
             tones: [tone!(0 Hz, 0 ns); HEADER_TONES],
             mode: None,
+            expected_mode: None,
+            sync_lock: None,
+            lookback: 0,
             current: ToneInProgress::new(sample_rate),
             current_start: 0,
             estimates: Estimates::default(),
             image: None,
             ready: VecDeque::new(),
             done: false,
+        };
+        assembler.lookback = assembler.whole_samples_in(HEADER_LOOKBACK);
+        match start {
+            Start::Header => {}
+            Start::HeaderOrSyncs(mode) => {
+                assembler.expected_mode = Some(mode);
+                assembler.sync_lock = Some(SyncLock::new(mode, sample_rate));
+                assembler.lookback += assembler
+                    .whole_samples_in(mode.sequence_duration() * SYNC_LOCK_LOOKBACK_SEQUENCES);
+            }
+            Start::FirstSample(mode) => assembler.start_image(mode, 0.0),
         }
+        assembler
     }
 
-    /// The mode the header announced. Known by the time the first tone is
-    /// handed out.
+    /// The mode of the image. Known by the time its first tone is handed out.
     pub const fn detected_mode(&self) -> Option<Mode> {
         self.mode
     }
@@ -104,21 +142,32 @@ impl<I: Iterator<Item = Frequency>> Assembler<I> {
         if self.image.is_some() {
             self.assemble_ready_sequence();
         } else {
-            let lookback = self.whole_samples_in(HEADER_LOOKBACK);
             let end = self.estimates.end();
-            self.estimates.forget_before(end.saturating_sub(lookback));
+            self.estimates
+                .forget_before(end.saturating_sub(self.lookback));
         }
     }
 
     /// Take in a tone found while searching, and start the image if it
-    /// completes the header.
+    /// completes a header or the sync lock.
     fn search(&mut self, tone: Tone, end: u64) {
         self.tones.copy_within(1.., 0);
         self.tones[HEADER_TONES - 1] = tone;
 
-        if let Some(mode) = identify_header(&self.tones) {
-            self.mode = Some(mode);
-            self.start_image(mode, end);
+        if let Some(mode) = identify_header(&self.tones)
+            && self.expected_mode.is_none_or(|expected| expected == mode)
+        {
+            self.start_image_after_header(mode, end);
+            return;
+        }
+
+        let locked = self.sync_lock.as_mut().and_then(|lock| {
+            let first_sync_end = lock.push(tone, end)?;
+            Some((lock.mode(), first_sync_end))
+        });
+        if let Some((mode, first_sync_end)) = locked {
+            let sequence_start = self.first_sequence_start(mode, first_sync_end);
+            self.start_image(mode, sequence_start);
         }
     }
 
@@ -186,18 +235,18 @@ mod tests {
     extern crate std;
     use std::vec::Vec;
 
-    use super::super::demodulator::Demodulator;
     use super::super::testing::{
-        PYSSTV_FIXTURE, gradient_image, read_generated_wav, read_gzipped_wav, read_iss_recording,
-        transmit,
+        GROUND_STATION_RECORDING, PYSSTV_FIXTURE, gradient_image, read_generated_wav,
+        read_gzipped_wav, read_iss_recording, transmit,
     };
     use super::*;
+    use crate::Demodulator;
     use crate::modes::{MARTIN_1, PD_120, PD_180, ROBOT_36, SCOTTIE_1};
     use crate::{Encoder, RgbPixel, Synthesizer};
 
     #[test]
     fn identifies_robot_36_in_the_ground_station_recording() {
-        let (samples, sample_rate) = read_gzipped_wav("tests/assets/real_recording.wav.gz");
+        let (samples, sample_rate) = read_gzipped_wav(GROUND_STATION_RECORDING);
 
         assert_eq!(identify_mode(samples, sample_rate), Some(ROBOT_36));
     }
@@ -365,6 +414,7 @@ mod tests {
         Assembler::new(
             Demodulator::new(samples.into_iter(), sample_rate),
             sample_rate,
+            Start::Header,
         )
     }
 

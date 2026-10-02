@@ -1,5 +1,5 @@
-//! Conversions from common file formats into the decoder's input, and from its
-//! output into `image` crate buffers.
+//! Conversions from common audio formats into the decoder's input, and from
+//! its output into `image` crate buffers.
 
 #[cfg(any(feature = "wav", feature = "mp3", feature = "image"))]
 use alloc::vec::Vec;
@@ -16,8 +16,8 @@ impl Decoder<alloc::vec::IntoIter<i16>> {
     /// Only the first channel of multi-channel audio is used; integer samples
     /// of any bit depth and float samples are converted to 16 bit.
     ///
-    /// Data cut short relative to the length declared in the header — common
-    /// in recordings whose writer was interrupted — is decoded up to the cut;
+    /// Data cut short relative to the length declared in the header, common
+    /// in recordings whose writer was interrupted, is decoded up to the cut;
     /// pixels the audio did not carry are left black.
     ///
     /// # Errors
@@ -65,7 +65,7 @@ impl Decoder<alloc::vec::IntoIter<i16>> {
             }
         }
 
-        Ok(Self::from_samples(samples.into_iter(), spec.sample_rate))
+        Ok(Self::new(samples.into_iter(), spec.sample_rate))
     }
 }
 
@@ -94,32 +94,29 @@ impl Decoder<alloc::vec::IntoIter<i16>> {
             }
         }
 
-        Ok(Self::from_samples(samples.into_iter(), sample_rate))
+        Ok(Self::new(samples.into_iter(), sample_rate))
     }
 }
 
 #[cfg(feature = "image")]
 impl<I: Iterator<Item = i16>> Decoder<I> {
-    /// Assemble and stream whole images as `image` crate buffers, ready for
-    /// its processing and saving APIs.
+    /// Decode the image as an `image` crate buffer, ready for its processing
+    /// and saving APIs.
     ///
     /// This drops the mode and completeness metadata; use
-    /// [`images`](Self::images) to keep it.
+    /// [`decode`](Self::decode) to keep it.
     ///
     /// ```no_run
     /// use sstv::Decoder;
     ///
     /// # let samples = std::vec::Vec::<i16>::new().into_iter();
-    /// for (index, image) in Decoder::from_samples(samples, 48000)
-    ///     .rgb_images()
-    ///     .enumerate()
-    /// {
-    ///     image.save(format!("{index}.png"))?;
+    /// if let Some(image) = Decoder::new(samples, 48000).rgb_image() {
+    ///     image.save("decoded.png")?;
     /// }
     /// # Ok::<(), image::ImageError>(())
     /// ```
-    pub fn rgb_images(self) -> impl Iterator<Item = image::RgbImage> {
-        self.images().map(|decoded| image::RgbImage::from(&decoded))
+    pub fn rgb_image(self) -> Option<image::RgbImage> {
+        self.decode().map(|decoded| image::RgbImage::from(&decoded))
     }
 }
 

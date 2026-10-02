@@ -39,8 +39,7 @@ fn round_trips_through_an_mp3() {
 
     let decoded = Decoder::from_mp3(&mp3)
         .expect("parse mp3")
-        .images()
-        .next()
+        .decode()
         .expect("an image");
 
     assert_eq!(decoded.mode(), modes::ROBOT_36);

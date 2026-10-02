@@ -9,10 +9,6 @@ mod error;
 
 #[cfg(feature = "alloc")]
 mod decode;
-// Not wired into the public API yet; only its tests exercise it.
-#[cfg(feature = "alloc")]
-#[allow(dead_code)]
-mod decode2;
 mod demodulator;
 mod encode;
 mod image;
@@ -21,7 +17,7 @@ mod synthesizer;
 mod units;
 
 #[cfg(feature = "alloc")]
-pub use decode::{DecodedImage, Decoder, Event, Events, Images, RgbRow};
+pub use decode::{DecodedImage, Decoder};
 pub use demodulator::Demodulator;
 pub use encode::Encoder;
 pub use error::{Error, Result};

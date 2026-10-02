@@ -67,10 +67,9 @@ fn decodes_real_ground_station_recording() {
 
     let (samples, sample_rate) = read_wav_gz(REAL_RECORDING);
 
-    let decoded = Decoder::from_samples(samples.into_iter(), sample_rate)
-        .expect_mode(modes::ROBOT_36)
-        .images()
-        .next()
+    let decoded = Decoder::new(samples.into_iter(), sample_rate)
+        .with_mode(modes::ROBOT_36)
+        .decode()
         .expect("an image in the recording");
     assert!(decoded.complete(), "image should decode completely");
 

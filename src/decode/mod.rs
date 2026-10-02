@@ -1,120 +1,125 @@
-//! Decoding SSTV tones into images.
+//! Decoding SSTV tones into an image.
 
-mod acquire;
-mod assemble;
+mod assembler;
 mod convert;
-mod events;
-mod images;
-mod stream;
-
+mod decoded_image;
+mod rows;
 #[cfg(test)]
-pub use events::testing;
+mod testing;
+mod walk;
+
+pub use decoded_image::DecodedImage;
 
 use crate::Demodulator;
-use crate::modes::Mode;
+use crate::modes::{Mode, ROBOT_36};
+use assembler::{Assembler, Start};
+use walk::decode_image;
 
-pub use events::{Event, Events, RgbRow};
-pub use images::{DecodedImage, Images};
-
-/// Decodes SSTV transmissions from an audio sample stream.
+/// Decodes an SSTV transmission from an audio sample stream.
 ///
-/// `Decoder` is the streaming inverse of [`Encoder`](crate::Encoder). It runs
-/// a [`Demodulator`] over 16-bit PCM samples and walks the mode's timing
-/// sequence as specified in the Dayton paper, re-aligning on every sync
-/// pulse. Acquisition happens lazily as the output is polled: a stream that
-/// never contains an image simply yields nothing, and a stream carrying
-/// several images — with or without gaps between them — yields all of them.
+/// `Decoder` is the inverse of [`Encoder`](crate::Encoder). A [`Demodulator`]
+/// turns the 16-bit PCM samples into frequencies, which are assembled into
+/// tones: the calibration header identifies the mode and where the image
+/// starts, and every line sync pulse re-aligns the mode's timing sequence.
+/// Walking that sequence recovers the image, one tone per pixel.
 ///
-/// Construct it from a sample stream ([`from_samples`](Self::from_samples))
-/// or an existing demodulator ([`from_demodulator`](Self::from_demodulator)),
-/// then choose how to consume it: [`events`](Self::events) streams scanlines
-/// as they are recovered, holding only about one line group in memory, while
-/// [`images`](Self::images) assembles and yields whole images.
-///
-/// Each image's mode is detected from its header's VIS code; use
-/// [`expect_mode`](Self::expect_mode) to decode in a fixed mode instead.
+/// The decoder decodes the first image in the stream and reads only a little
+/// past its end, so the remaining samples can be handed to another decoder
+/// for the next image.
 ///
 /// ```no_run
 /// use sstv::Decoder;
 ///
 /// # let samples = std::vec::Vec::<i16>::new().into_iter();
-/// for image in Decoder::from_samples(samples, 48000).images() {
+/// if let Some(image) = Decoder::new(samples, 48000).decode() {
 ///     let _ = (image.mode(), image.pixels());
 /// }
 /// ```
 pub struct Decoder<I: Iterator<Item = i16>> {
-    events: Events<I>,
+    demodulator: Demodulator<I>,
+    /// The mode given via [`with_mode`](Self::with_mode); `None` detects it
+    /// from the header.
+    mode: Option<Mode>,
+    /// Begin decoding right away instead of searching for the image.
+    without_header: bool,
 }
 
 impl<I: Iterator<Item = i16>> Decoder<I> {
     /// Decode a stream of PCM samples.
     ///
     /// `sample_rate` must be greater than zero. Construction never fails:
-    /// finding images is deferred to iteration.
-    pub fn from_samples(samples: I, sample_rate: u32) -> Self {
-        let sample_rate = sample_rate.max(1);
-        Self::from_demodulator(Demodulator::new(samples, sample_rate))
+    /// finding the image is deferred to [`decode`](Self::decode).
+    pub fn new(samples: I, sample_rate: u32) -> Self {
+        Self::from_demodulator(Demodulator::new(samples, sample_rate.max(1)))
     }
 
-    /// Decode the frequency stream of an existing demodulator.
+    /// Decode the frequencies of an existing demodulator.
     pub const fn from_demodulator(demodulator: Demodulator<I>) -> Self {
         Self {
-            events: Events::new(demodulator),
+            demodulator,
+            mode: None,
+            without_header: false,
         }
     }
 
-    /// Decode every image in the given mode instead of detecting each image's
-    /// mode from its header.
+    /// Decode in the given mode instead of detecting it from the header.
+    ///
+    /// The image starts at a header announcing this mode or, if there is
+    /// none, at the first three of the mode's line sync pulses spaced one
+    /// line apart, so a signal whose header is missing or unreadable still
+    /// decodes.
     ///
     /// ```no_run
     /// use sstv::{modes::ROBOT_36, Decoder};
     ///
     /// # let samples = std::vec::Vec::<i16>::new().into_iter();
-    /// let decoder = Decoder::from_samples(samples, 48000).expect_mode(ROBOT_36);
+    /// let image = Decoder::new(samples, 48000).with_mode(ROBOT_36).decode();
     /// ```
     #[must_use]
-    pub const fn expect_mode(mut self, mode: Mode) -> Self {
-        self.events.expected_mode = Some(mode);
+    pub const fn with_mode(mut self, mode: Mode) -> Self {
+        self.mode = Some(mode);
         self
     }
 
     /// Assume the samples begin directly at the image data and skip searching
-    /// for a header.
+    /// for its start.
     ///
     /// Decoding starts immediately at the first line's timing sequence. Use
-    /// this when the signal carries no detectable header, or when acquisition
-    /// has already been performed upstream. After the first image completes,
-    /// the decoder searches for further images as usual. Without a header
-    /// there is no VIS code to detect a mode from, so unless
-    /// [`expect_mode`](Self::expect_mode) names one, the first image decodes
-    /// as [`modes::ROBOT_36`](crate::modes::ROBOT_36).
+    /// this when acquisition has already been performed upstream. Without a
+    /// header there is no VIS code to detect a mode from, so unless
+    /// [`with_mode`](Self::with_mode) names one, the image decodes as
+    /// [`modes::ROBOT_36`](crate::modes::ROBOT_36).
     ///
     /// ```no_run
     /// use sstv::{modes::PD_120, Decoder};
     ///
     /// # let samples = std::vec::Vec::<i16>::new().into_iter();
-    /// let decoder = Decoder::from_samples(samples, 48000)
-    ///     .expect_mode(PD_120)
-    ///     .without_header();
-    /// for image in decoder.images() {
-    ///     let _ = image.pixels();
-    /// }
+    /// let image = Decoder::new(samples, 48000)
+    ///     .with_mode(PD_120)
+    ///     .without_header()
+    ///     .decode();
     /// ```
     #[must_use]
     pub const fn without_header(mut self) -> Self {
-        self.events.skip_header = true;
+        self.without_header = true;
         self
     }
 
-    /// Stream scanlines as they are recovered, grouped into images by
-    /// [`Event::ImageStart`] and [`Event::ImageEnd`] markers.
-    pub fn events(self) -> Events<I> {
-        self.events
-    }
+    /// Decode the image, or `None` if the stream carries none.
+    pub fn decode(self) -> Option<DecodedImage> {
+        let start = match (self.without_header, self.mode) {
+            (true, mode) => Start::FirstSample(mode.unwrap_or(ROBOT_36)),
+            (false, Some(mode)) => Start::HeaderOrSyncs(mode),
+            (false, None) => Start::Header,
+        };
+        let sample_rate = self.demodulator.sample_rate();
+        let mut tones = Assembler::new(self.demodulator, sample_rate, start);
 
-    /// Assemble and stream whole images, one at a time.
-    pub fn images(self) -> Images<I> {
-        Images::new(self.events)
+        // The mode is known once the image's first tone has been assembled.
+        let first = tones.next()?;
+        let mode = tones.detected_mode()?;
+        let mut tones = core::iter::once(first).chain(tones);
+        Some(decode_image(mode, &mut tones))
     }
 }
 
@@ -123,59 +128,250 @@ mod tests {
     extern crate std;
     use std::vec::Vec;
 
-    use super::testing::{HEIGHT, encode, header_sample_count, mean_abs_error, test_image};
+    #[cfg(feature = "image")]
+    use super::testing::{
+        GROUND_STATION_RECORDING, PYSSTV_FIXTURE, read_generated_wav, read_gzipped_wav,
+    };
+    use super::testing::{
+        gradient_image, header_length, mean_abs_error, read_iss_recording, transmit,
+    };
     use super::*;
-    use crate::RgbPixel;
-    use crate::modes::ROBOT_36;
+    use crate::modes::{MARTIN_1, PD_120, PD_180, ROBOT_36, ROBOT_72, SCOTTIE_1};
 
     #[test]
-    fn round_trip_without_header() {
-        let image = test_image();
-        // Drop the header so the samples begin at the first line's sync pulse.
-        let full = encode(&image, 48_000);
-        let header = header_sample_count(48_000);
-        let image_samples = full.into_iter().skip(header);
-
-        let mut rows = 0;
-        let mut complete = None;
-        let mut decoded: Vec<RgbPixel> = Vec::new();
-        let events = Decoder::from_samples(image_samples, 48_000)
-            .expect_mode(ROBOT_36)
-            .without_header()
-            .events();
-        for event in events {
-            match event {
-                Event::ImageStart(mode) => assert_eq!(mode, ROBOT_36),
-                Event::Row(row) => {
-                    assert_eq!(row.index(), rows, "row out of order");
-                    rows += 1;
-                    decoded.extend_from_slice(row.pixels());
-                }
-                Event::ImageEnd { complete: flag } => complete = Some(flag),
-            }
-        }
-
-        assert_eq!(complete, Some(true), "image should decode completely");
-        assert_eq!(rows, HEIGHT, "should decode all rows");
-        let error = mean_abs_error(&image, &decoded);
-        assert!(error < 12.0, "mean abs error {error} too high");
+    fn decodes_our_own_robot_36_transmission() {
+        assert_round_trip(ROBOT_36, 48_000, 5.0);
     }
 
     #[test]
-    fn decoding_from_a_demodulator_matches_decoding_from_samples() {
-        let image = test_image();
-        let samples = encode(&image, 48_000);
+    fn decodes_our_own_robot_72_transmission() {
+        assert_round_trip(ROBOT_72, 48_000, 5.0);
+    }
 
-        let demodulator = crate::Demodulator::new(samples.clone().into_iter(), 48_000);
-        let from_demodulator: Vec<Event> = Decoder::from_demodulator(demodulator)
-            .expect_mode(ROBOT_36)
-            .events()
-            .collect();
-        let from_samples: Vec<Event> = Decoder::from_samples(samples.into_iter(), 48_000)
-            .expect_mode(ROBOT_36)
-            .events()
-            .collect();
+    /// Martin opens every sequence with a short (4.862 ms) sync pulse.
+    #[test]
+    fn decodes_our_own_martin_1_transmission() {
+        assert_round_trip(MARTIN_1, 48_000, 3.0);
+    }
 
-        assert_eq!(from_demodulator, from_samples);
+    /// Scottie sends a starting sync pulse and places each line's sync
+    /// pulse in the middle of the sequence.
+    #[test]
+    fn decodes_our_own_scottie_1_transmission() {
+        assert_round_trip(SCOTTIE_1, 48_000, 3.0);
+    }
+
+    #[test]
+    fn decodes_our_own_pd_120_transmission() {
+        assert_round_trip(PD_120, 48_000, 5.0);
+    }
+
+    /// At 8 kHz a pixel spans only a couple of samples, so the error is
+    /// higher, but the image still decodes completely.
+    #[test]
+    fn decodes_a_transmission_sampled_at_8_khz() {
+        assert_round_trip(ROBOT_36, 8_000, 15.0);
+    }
+
+    #[test]
+    fn decodes_in_the_given_mode_without_a_header() {
+        let image = gradient_image(SCOTTIE_1);
+        let samples = transmit(SCOTTIE_1, &image, 48_000);
+        let without_header = samples[header_length(SCOTTIE_1, 48_000)..].to_vec();
+
+        let decoded = Decoder::new(without_header.into_iter(), 48_000)
+            .with_mode(SCOTTIE_1)
+            .decode()
+            .unwrap();
+
+        assert_decodes_completely(&decoded, SCOTTIE_1);
+        let error = mean_abs_error(&image, decoded.pixels());
+        assert!(error < 5.0, "mean abs error {error} too high");
+    }
+
+    /// Entering the stream at a line pair's second line must not swap the
+    /// colour differences: decoding aligns to the next full pair, so the
+    /// image shifts up by the two lines skipped.
+    #[test]
+    fn decoding_from_the_second_line_of_a_pair_keeps_the_colours() {
+        let image = gradient_image(ROBOT_36);
+        let samples = transmit(ROBOT_36, &image, 48_000);
+        let first_line = 48_000 * 150 / 1000;
+        let from_second_line = samples[header_length(ROBOT_36, 48_000) + first_line..].to_vec();
+
+        let decoded = Decoder::new(from_second_line.into_iter(), 48_000)
+            .with_mode(ROBOT_36)
+            .decode()
+            .unwrap();
+
+        let (width, height) = (320, 240);
+        let error = mean_abs_error(
+            &image[width * 2..],
+            &decoded.pixels()[..width * (height - 2)],
+        );
+        assert!(error < 5.0, "mean abs error {error} too high");
+    }
+
+    #[test]
+    fn decodes_samples_that_begin_at_the_first_line() {
+        let image = gradient_image(PD_120);
+        let samples = transmit(PD_120, &image, 48_000);
+        let first_line_on = samples[header_length(PD_120, 48_000)..].to_vec();
+
+        let decoded = Decoder::new(first_line_on.into_iter(), 48_000)
+            .with_mode(PD_120)
+            .without_header()
+            .decode()
+            .unwrap();
+
+        assert_decodes_completely(&decoded, PD_120);
+        let error = mean_abs_error(&image, decoded.pixels());
+        assert!(error < 5.0, "mean abs error {error} too high");
+    }
+
+    #[test]
+    fn decoding_a_demodulator_matches_decoding_its_samples() {
+        let samples = transmit(ROBOT_36, &gradient_image(ROBOT_36), 48_000);
+        let demodulator = Demodulator::new(samples.clone().into_iter(), 48_000);
+
+        let from_demodulator = Decoder::from_demodulator(demodulator).decode();
+
+        assert_eq!(from_demodulator, decode(samples, 48_000));
+    }
+
+    #[test]
+    fn decodes_only_the_first_image() {
+        let mut samples = transmit(ROBOT_36, &gradient_image(ROBOT_36), 48_000);
+        samples.extend(transmit(MARTIN_1, &gradient_image(MARTIN_1), 48_000));
+
+        let decoded = decode(samples, 48_000).unwrap();
+
+        assert_decodes_completely(&decoded, ROBOT_36);
+    }
+
+    /// A decoder stops reading shortly after its image, so the samples left
+    /// over hold the next transmission for a fresh decoder.
+    #[test]
+    fn decodes_consecutive_images_with_one_decoder_each() {
+        let image = gradient_image(ROBOT_36);
+        let mut samples = transmit(ROBOT_36, &image, 48_000);
+        samples.extend(transmit(ROBOT_36, &image, 48_000));
+        let mut samples = samples.into_iter();
+
+        let first = Decoder::new(samples.by_ref(), 48_000).decode().unwrap();
+        let second = Decoder::new(samples.by_ref(), 48_000).decode().unwrap();
+        let after_the_last = Decoder::new(samples.by_ref(), 48_000).decode();
+
+        assert_decodes_completely(&first, ROBOT_36);
+        assert_decodes_completely(&second, ROBOT_36);
+        assert!(after_the_last.is_none());
+    }
+
+    #[test]
+    fn transmission_cut_short_decodes_an_incomplete_image() {
+        let image = gradient_image(ROBOT_36);
+        let samples = transmit(ROBOT_36, &image, 48_000);
+        let first_half = samples[..samples.len() / 2].to_vec();
+
+        let decoded = decode(first_half, 48_000).unwrap();
+
+        assert!(!decoded.complete());
+    }
+
+    #[test]
+    fn silence_decodes_no_image() {
+        let silence = std::vec![0i16; 48_000];
+
+        assert!(decode(silence, 48_000).is_none());
+    }
+
+    #[cfg(feature = "image")]
+    #[test]
+    fn decodes_the_ground_station_recording() {
+        let (samples, sample_rate) = read_gzipped_wav(GROUND_STATION_RECORDING);
+
+        assert_matches_source_image(&decode(samples, sample_rate).unwrap(), 15.0);
+    }
+
+    #[cfg(feature = "image")]
+    #[test]
+    fn decodes_the_pysstv_fixture() {
+        let Some((samples, sample_rate)) = read_generated_wav(PYSSTV_FIXTURE) else {
+            return;
+        };
+
+        assert_matches_source_image(&decode(samples, sample_rate).unwrap(), 10.0);
+    }
+
+    #[test]
+    fn decodes_the_gagarin_80_recording() {
+        assert_decodes_iss_recording("pd180-gagarin-80.wav", PD_180);
+    }
+
+    #[test]
+    fn decodes_the_apollo_soyuz_recording() {
+        assert_decodes_iss_recording("pd180-apollo-soyuz.wav", PD_180);
+    }
+
+    #[test]
+    fn decodes_the_astronauts_qso_recording() {
+        assert_decodes_iss_recording("pd180-ariss-qso-astros.wav", PD_180);
+    }
+
+    #[test]
+    fn decodes_the_cristoforetti_qso_recording() {
+        assert_decodes_iss_recording("pd180-ariss-qso-cristoforetti.wav", PD_180);
+    }
+
+    #[test]
+    fn decodes_the_mai75_suitsat_recording() {
+        assert_decodes_iss_recording("pd180-mai75-suitsat.wav", PD_180);
+    }
+
+    #[test]
+    fn decodes_the_first_ariss_20_year_recording() {
+        assert_decodes_iss_recording("pd120-ariss-20-year-1.wav", PD_120);
+    }
+
+    #[test]
+    fn decodes_the_second_ariss_20_year_recording() {
+        assert_decodes_iss_recording("pd120-ariss-20-year-2.wav", PD_120);
+    }
+
+    fn decode(samples: Vec<i16>, sample_rate: u32) -> Option<DecodedImage> {
+        Decoder::new(samples.into_iter(), sample_rate).decode()
+    }
+
+    fn assert_round_trip(mode: Mode, sample_rate: u32, max_error: f64) {
+        let image = gradient_image(mode);
+        let decoded = decode(transmit(mode, &image, sample_rate), sample_rate).unwrap();
+
+        assert_decodes_completely(&decoded, mode);
+        let error = mean_abs_error(&image, decoded.pixels());
+        assert!(error < max_error, "mean abs error {error} too high");
+    }
+
+    fn assert_decodes_completely(image: &DecodedImage, mode: Mode) {
+        assert_eq!(image.mode(), mode);
+        assert!(image.complete(), "image should decode completely");
+    }
+
+    /// The recordings carry no reference image, so this only checks that the
+    /// mode is identified and every row decoded.
+    fn assert_decodes_iss_recording(name: &str, mode: Mode) {
+        let (samples, sample_rate) = read_iss_recording(name);
+
+        let decoded = decode(samples, sample_rate).unwrap();
+
+        assert_decodes_completely(&decoded, mode);
+    }
+
+    #[cfg(feature = "image")]
+    fn assert_matches_source_image(decoded: &DecodedImage, max_error: f64) {
+        use super::testing::{SOURCE_IMAGE, read_image};
+
+        assert_decodes_completely(decoded, ROBOT_36);
+        let error = mean_abs_error(&read_image(SOURCE_IMAGE), decoded.pixels());
+        assert!(error < max_error, "mean abs error {error} too high");
     }
 }

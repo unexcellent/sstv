@@ -32,12 +32,19 @@ impl<I: Iterator<Item = Frequency>> Assembler<I> {
     /// ended at sample `end`: the stop bit merged with the following sync
     /// pulse, which is the first sequence's own sync pulse or, for modes
     /// with a starting sync pulse, the one that precedes the first sequence.
-    pub(super) fn start_image(&mut self, mode: Mode, end: u64) {
+    pub(super) fn start_image_after_header(&mut self, mode: Mode, end: u64) {
         let sequence_start = if mode.has_starting_sync_pulse() {
             end as f64
         } else {
             end as f64 - self.samples_in(mode.sync_pulse().1)
         };
+        self.start_image(mode, sequence_start);
+    }
+
+    /// Begin assembling an image whose first sequence begins at (fractional)
+    /// sample `sequence_start`.
+    pub(super) fn start_image(&mut self, mode: Mode, sequence_start: f64) {
+        self.mode = Some(mode);
         self.estimates.forget_before(sequence_start as u64);
         self.image = Some(ImageTiming {
             mode,
@@ -183,7 +190,7 @@ impl<I: Iterator<Item = Frequency>> Assembler<I> {
     }
 
     /// The duration in (fractional) samples.
-    fn samples_in(&self, duration: Duration) -> f64 {
+    pub(super) fn samples_in(&self, duration: Duration) -> f64 {
         duration.ns() as f64 * f64::from(self.sample_rate) / 1e9
     }
 }

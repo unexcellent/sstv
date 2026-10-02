@@ -18,6 +18,11 @@ impl Estimates {
         self.buffer.push_back(frequency);
     }
 
+    /// The sample index of the oldest estimate kept.
+    pub const fn start(&self) -> u64 {
+        self.start
+    }
+
     /// The sample index after the newest estimate.
     pub fn end(&self) -> u64 {
         self.start + self.buffer.len() as u64

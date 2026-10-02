@@ -78,10 +78,9 @@ fn decoder_matches_pysstv_reference() {
 
     let (samples, sample_rate) = read_wav(PYSSTV_FIXTURE);
 
-    let decoded = Decoder::from_samples(samples.into_iter(), sample_rate)
-        .expect_mode(modes::ROBOT_36)
-        .images()
-        .next()
+    let decoded = Decoder::new(samples.into_iter(), sample_rate)
+        .with_mode(modes::ROBOT_36)
+        .decode()
         .expect("an image in the recording");
 
     let decoded_bytes = pixels_to_bytes(decoded.pixels());

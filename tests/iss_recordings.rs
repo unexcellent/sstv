@@ -20,10 +20,6 @@ struct Recording {
     mode: Mode,
     /// The mode's line period in seconds.
     period: f64,
-    /// Whether the recording's header survived reception well enough for the
-    /// mode to be detected; the Cristoforetti one faded during the header and
-    /// exercises the sync-lock path instead.
-    detectable: bool,
 }
 
 const RECORDINGS: &[Recording] = &[
@@ -31,43 +27,36 @@ const RECORDINGS: &[Recording] = &[
         path: "tests/assets/iss/pd180-gagarin-80.wav",
         mode: modes::PD_180,
         period: PD_180_PERIOD,
-        detectable: true,
     },
     Recording {
         path: "tests/assets/iss/pd180-apollo-soyuz.wav",
         mode: modes::PD_180,
         period: PD_180_PERIOD,
-        detectable: true,
     },
     Recording {
         path: "tests/assets/iss/pd180-ariss-qso-astros.wav",
         mode: modes::PD_180,
         period: PD_180_PERIOD,
-        detectable: true,
     },
     Recording {
         path: "tests/assets/iss/pd180-ariss-qso-cristoforetti.wav",
         mode: modes::PD_180,
         period: PD_180_PERIOD,
-        detectable: false,
     },
     Recording {
         path: "tests/assets/iss/pd180-mai75-suitsat.wav",
         mode: modes::PD_180,
         period: PD_180_PERIOD,
-        detectable: true,
     },
     Recording {
         path: "tests/assets/iss/pd120-ariss-20-year-1.wav",
         mode: modes::PD_120,
         period: PD_120_PERIOD,
-        detectable: true,
     },
     Recording {
         path: "tests/assets/iss/pd120-ariss-20-year-2.wav",
         mode: modes::PD_120,
         period: PD_120_PERIOD,
-        detectable: true,
     },
 ];
 
@@ -122,9 +111,9 @@ fn samples(wav: &[u8]) -> (Vec<i16>, u32) {
 fn decode(expected_mode: Option<Mode>, wav: &[u8]) -> DecodedImage {
     let mut decoder = Decoder::from_wav(wav).expect("parse wav");
     if let Some(expected) = expected_mode {
-        decoder = decoder.expect_mode(expected);
+        decoder = decoder.with_mode(expected);
     }
-    decoder.images().next().expect("an image")
+    decoder.decode().expect("an image")
 }
 
 /// The median spacing and length of the line sync pulses in a signal, in
@@ -164,18 +153,13 @@ fn line_timing(samples: &[i16], sample_rate: u32, expected_period: f64) -> (f64,
     (periods[periods.len() / 2], lengths[lengths.len() / 2])
 }
 
-/// The recordings decode completely — with the mode detected from the
-/// transmitted VIS code where the header survived reception.
+/// The recordings decode completely, with the mode detected from the
+/// transmitted VIS code.
 #[test]
 fn decodes_the_recordings() {
     for entry in RECORDINGS {
         let wav = recording(entry.path);
-        let expected_mode = if entry.detectable {
-            None
-        } else {
-            Some(entry.mode)
-        };
-        let image = decode(expected_mode, &wav);
+        let image = decode(None, &wav);
         assert_eq!(image.mode(), entry.mode, "{}", entry.path);
         assert!(image.complete(), "{} should decode completely", entry.path);
     }

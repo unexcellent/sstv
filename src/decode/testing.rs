@@ -38,6 +38,12 @@ pub fn transmit(mode: Mode, image: &[RgbPixel], sample_rate: u32) -> Vec<i16> {
     Synthesizer::new(encoder, sample_rate).collect()
 }
 
+/// The number of samples the header occupies, up to the first line.
+pub fn header_length(mode: Mode, sample_rate: u32) -> usize {
+    let header_ns: u64 = mode.header_tones().map(|tone| tone.duration.ns()).sum();
+    (header_ns * u64::from(sample_rate) / 1_000_000_000) as usize
+}
+
 /// Mean absolute per-channel difference between two images of equal size.
 pub fn mean_abs_error(expected: &[RgbPixel], actual: &[RgbPixel]) -> f64 {
     assert_eq!(expected.len(), actual.len());

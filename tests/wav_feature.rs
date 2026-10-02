@@ -18,8 +18,7 @@ fn round_trips_through_a_wav() {
 
     let decoded = Decoder::from_wav(&wav)
         .expect("parse wav")
-        .images()
-        .next()
+        .decode()
         .expect("an image");
 
     assert_eq!(decoded.mode(), modes::ROBOT_36);
@@ -52,9 +51,8 @@ fn decodes_stereo_float_wavs() {
 
     let decoded = Decoder::from_wav(cursor.get_ref())
         .expect("parse wav")
-        .expect_mode(modes::ROBOT_36)
-        .images()
-        .next()
+        .with_mode(modes::ROBOT_36)
+        .decode()
         .expect("an image");
 
     assert!(decoded.complete(), "image should decode completely");
@@ -80,8 +78,7 @@ fn decodes_a_truncated_wav() {
 
     let decoded = Decoder::from_wav(truncated)
         .expect("parse truncated wav")
-        .images()
-        .next()
+        .decode()
         .expect("an image");
 
     assert_eq!(decoded.mode(), modes::ROBOT_36);
