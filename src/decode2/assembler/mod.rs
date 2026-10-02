@@ -1,6 +1,6 @@
-//! Assembles the demodulated frequency track into the tones of the images it
-//! carries. Between images, tones are split internally where the frequency
-//! changes, to find each image's calibration header. Within an image, tones
+//! Assembles the demodulated frequency track into the tones of the first
+//! image it carries. Before the image, tones are split internally where the
+//! frequency changes, to find its calibration header. Within the image, tones
 //! follow the mode's timing, anchored on the line sync pulses: one per
 //! control step and one per pixel, as the encoder emits them.
 
@@ -42,15 +42,14 @@ const HEADER_TONES: usize = 13;
 /// earlier.
 const HEADER_LOOKBACK: Duration = ms!(200);
 
-/// Turns demodulated frequencies into the tones of the images they carry,
-/// back to back. Only images in the mode the first header announced are
-/// assembled; headers announcing another mode are ignored.
+/// Turns demodulated frequencies into the tones of the first image they
+/// carry. Anything after that image is ignored.
 pub(super) struct Assembler<I: Iterator<Item = Frequency>> {
     frequencies: I,
     sample_rate: u32,
     /// The most recently completed tones while searching, oldest first.
     tones: [Tone; HEADER_TONES],
-    /// The mode the first header announced; `None` until then.
+    /// The mode the header announced; `None` until then.
     mode: Option<Mode>,
     /// The tone the incoming frequencies currently belong to, split where
     /// the frequency changes.
@@ -62,7 +61,9 @@ pub(super) struct Assembler<I: Iterator<Item = Frequency>> {
     image: Option<ImageTiming>,
     /// Image tones ready to be handed out, oldest first.
     ready: VecDeque<Tone>,
-    exhausted: bool,
+    /// No more tones will be assembled: the image is complete or the
+    /// frequencies ran out.
+    done: bool,
 }
 
 impl<I: Iterator<Item = Frequency>> Assembler<I> {
@@ -78,12 +79,12 @@ impl<I: Iterator<Item = Frequency>> Assembler<I> {
             estimates: Estimates::default(),
             image: None,
             ready: VecDeque::new(),
-            exhausted: false,
+            done: false,
         }
     }
 
-    /// The mode the first header announced, and so the mode of every image
-    /// whose tones are handed out. Known by the time the first tone is.
+    /// The mode the header announced. Known by the time the first tone is
+    /// handed out.
     pub const fn detected_mode(&self) -> Option<Mode> {
         self.mode
     }
@@ -110,24 +111,15 @@ impl<I: Iterator<Item = Frequency>> Assembler<I> {
     }
 
     /// Take in a tone found while searching, and start the image if it
-    /// completes a header in the mode already known, or the first header.
+    /// completes the header.
     fn search(&mut self, tone: Tone, end: u64) {
         self.tones.copy_within(1.., 0);
         self.tones[HEADER_TONES - 1] = tone;
 
-        if let Some(mode) = identify_header(&self.tones)
-            && self.mode.is_none_or(|known| known == mode)
-        {
+        if let Some(mode) = identify_header(&self.tones) {
             self.mode = Some(mode);
             self.start_image(mode, end);
         }
-    }
-
-    /// Search afresh for a header from the newest estimate on.
-    fn restart_search(&mut self) {
-        self.tones = [tone!(0 Hz, 0 ns); HEADER_TONES];
-        self.current = ToneInProgress::new(self.sample_rate);
-        self.current_start = self.estimates.end();
     }
 
     /// The number of samples a tone of this duration spans. Tone durations
@@ -146,13 +138,13 @@ impl<I: Iterator<Item = Frequency>> Iterator for Assembler<I> {
             if let Some(tone) = self.ready.pop_front() {
                 return Some(tone);
             }
-            if self.exhausted {
+            if self.done {
                 return None;
             }
             if let Some(frequency) = self.frequencies.next() {
                 self.push(frequency);
             } else {
-                self.exhausted = true;
+                self.done = true;
                 self.assemble_remaining_sequences();
             }
         }
@@ -345,7 +337,7 @@ mod tests {
     }
 
     #[test]
-    fn headers_announcing_another_mode_are_ignored() {
+    fn assembles_only_the_first_image() {
         let robot_36_image = gradient_image(ROBOT_36);
         let mut samples = transmit(ROBOT_36, &robot_36_image, 48_000);
         samples.extend(transmit(MARTIN_1, &gradient_image(MARTIN_1), 48_000));

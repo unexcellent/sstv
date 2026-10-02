@@ -175,10 +175,11 @@ impl<I: Iterator<Item = Frequency>> Assembler<I> {
         self.ready.push_back(tone);
     }
 
-    /// Stop assembling the image and search for the next header.
-    fn end_image(&mut self) {
+    /// Stop assembling: the image is complete, or as complete as the
+    /// frequencies allow.
+    const fn end_image(&mut self) {
         self.image = None;
-        self.restart_search();
+        self.done = true;
     }
 
     /// The duration in (fractional) samples.

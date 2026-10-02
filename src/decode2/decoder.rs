@@ -1,6 +1,6 @@
 //! Decodes images from the assembler's tones, walking the mode's timing
 //! sequence as the encoder does: one tone per control step and one per
-//! pixel. Every image in a stream is in the mode of the first.
+//! pixel.
 
 use alloc::vec::Vec;
 
@@ -22,7 +22,7 @@ pub(super) struct Image {
     pub pixels: Vec<RgbPixel>,
 }
 
-/// Decodes every image in a sample stream, one after another.
+/// Decodes the first image in a sample stream.
 pub(super) struct Decoder<I: Iterator<Item = i16>> {
     tones: Assembler<Demodulator<I>>,
 }
@@ -35,12 +35,9 @@ impl<I: Iterator<Item = i16>> Decoder<I> {
             tones: Assembler::new(frequencies, sample_rate),
         }
     }
-}
 
-impl<I: Iterator<Item = i16>> Iterator for Decoder<I> {
-    type Item = Image;
-
-    fn next(&mut self) -> Option<Image> {
+    /// The image, or `None` if the stream carries no header.
+    pub fn decode(mut self) -> Option<Image> {
         // The mode is known once the image's first tone has been assembled.
         let first = self.tones.next()?;
         let mode = self.tones.detected_mode()?;
@@ -159,16 +156,31 @@ mod tests {
     }
 
     #[test]
-    fn decodes_two_images_sent_back_to_back() {
+    fn decodes_only_the_first_image() {
+        let mut samples = transmit(ROBOT_36, &gradient_image(ROBOT_36), 48_000);
+        samples.extend(transmit(MARTIN_1, &gradient_image(MARTIN_1), 48_000));
+
+        let decoded = decode(samples, 48_000).unwrap();
+
+        assert_decodes_completely(&decoded, ROBOT_36);
+    }
+
+    /// A decoder stops reading shortly after its image, so the samples left
+    /// over hold the next transmission for a fresh decoder.
+    #[test]
+    fn decodes_consecutive_images_with_one_decoder_each() {
         let image = gradient_image(ROBOT_36);
         let mut samples = transmit(ROBOT_36, &image, 48_000);
         samples.extend(transmit(ROBOT_36, &image, 48_000));
+        let mut samples = samples.into_iter();
 
-        let decoded = decode(samples, 48_000);
+        let first = Decoder::new(samples.by_ref(), 48_000).decode().unwrap();
+        let second = Decoder::new(samples.by_ref(), 48_000).decode().unwrap();
+        let after_the_last = Decoder::new(samples.by_ref(), 48_000).decode();
 
-        assert_eq!(decoded.len(), 2);
-        assert_decodes_completely(&decoded[0], ROBOT_36);
-        assert_decodes_completely(&decoded[1], ROBOT_36);
+        assert_decodes_completely(&first, ROBOT_36);
+        assert_decodes_completely(&second, ROBOT_36);
+        assert!(after_the_last.is_none());
     }
 
     #[test]
@@ -177,17 +189,16 @@ mod tests {
         let samples = transmit(ROBOT_36, &image, 48_000);
         let first_half = samples[..samples.len() / 2].to_vec();
 
-        let decoded = decode(first_half, 48_000);
+        let decoded = decode(first_half, 48_000).unwrap();
 
-        assert_eq!(decoded.len(), 1);
-        assert!(!decoded[0].complete);
+        assert!(!decoded.complete);
     }
 
     #[test]
     fn silence_decodes_no_image() {
         let silence = std::vec![0i16; 48_000];
 
-        assert!(decode(silence, 48_000).is_empty());
+        assert!(decode(silence, 48_000).is_none());
     }
 
     #[cfg(feature = "image")]
@@ -195,7 +206,7 @@ mod tests {
     fn decodes_the_ground_station_recording() {
         let (samples, sample_rate) = read_gzipped_wav(GROUND_STATION_RECORDING);
 
-        assert_matches_source_image(&decode(samples, sample_rate), 15.0);
+        assert_matches_source_image(&decode(samples, sample_rate).unwrap(), 15.0);
     }
 
     #[cfg(feature = "image")]
@@ -205,7 +216,7 @@ mod tests {
             return;
         };
 
-        assert_matches_source_image(&decode(samples, sample_rate), 10.0);
+        assert_matches_source_image(&decode(samples, sample_rate).unwrap(), 10.0);
     }
 
     #[test]
@@ -243,17 +254,16 @@ mod tests {
         assert_decodes_iss_recording("pd120-ariss-20-year-2.wav", PD_120);
     }
 
-    fn decode(samples: Vec<i16>, sample_rate: u32) -> Vec<Image> {
-        Decoder::new(samples.into_iter(), sample_rate).collect()
+    fn decode(samples: Vec<i16>, sample_rate: u32) -> Option<Image> {
+        Decoder::new(samples.into_iter(), sample_rate).decode()
     }
 
     fn assert_round_trip(mode: Mode, sample_rate: u32, max_error: f64) {
         let image = gradient_image(mode);
-        let decoded = decode(transmit(mode, &image, sample_rate), sample_rate);
+        let decoded = decode(transmit(mode, &image, sample_rate), sample_rate).unwrap();
 
-        assert_eq!(decoded.len(), 1);
-        assert_decodes_completely(&decoded[0], mode);
-        let error = mean_abs_error(&image, &decoded[0].pixels);
+        assert_decodes_completely(&decoded, mode);
+        let error = mean_abs_error(&image, &decoded.pixels);
         assert!(error < max_error, "mean abs error {error} too high");
     }
 
@@ -267,19 +277,17 @@ mod tests {
     fn assert_decodes_iss_recording(name: &str, mode: Mode) {
         let (samples, sample_rate) = read_iss_recording(name);
 
-        let decoded = decode(samples, sample_rate);
+        let decoded = decode(samples, sample_rate).unwrap();
 
-        assert_eq!(decoded.len(), 1);
-        assert_decodes_completely(&decoded[0], mode);
+        assert_decodes_completely(&decoded, mode);
     }
 
     #[cfg(feature = "image")]
-    fn assert_matches_source_image(decoded: &[Image], max_error: f64) {
+    fn assert_matches_source_image(decoded: &Image, max_error: f64) {
         use super::super::testing::{SOURCE_IMAGE, read_image};
 
-        assert_eq!(decoded.len(), 1);
-        assert_decodes_completely(&decoded[0], ROBOT_36);
-        let error = mean_abs_error(&read_image(SOURCE_IMAGE), &decoded[0].pixels);
+        assert_decodes_completely(decoded, ROBOT_36);
+        let error = mean_abs_error(&read_image(SOURCE_IMAGE), &decoded.pixels);
         assert!(error < max_error, "mean abs error {error} too high");
     }
 }
