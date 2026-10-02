@@ -57,17 +57,22 @@ impl Assembler {
         }
     }
 
-    /// Feed the next demodulated frequency. Returns the mode once a header
-    /// identifying it has been completed.
-    pub fn push(&mut self, frequency: Frequency) -> Option<Mode> {
-        let completed = self.current.push(frequency)?;
+    /// Feed the next demodulated frequency.
+    pub fn push(&mut self, frequency: Frequency) {
+        let Some(completed) = self.current.push(frequency) else {
+            return;
+        };
         self.tones.copy_within(1.., 0);
         self.tones[HEADER_TONES - 1] = completed;
 
-        if self.mode.is_some() {
-            return None;
+        if self.mode.is_none() {
+            self.mode = identify_header(&self.tones);
         }
-        self.mode = identify_header(&self.tones);
+    }
+
+    /// The mode being decoded: the one passed to [`new`](Self::new), or the
+    /// one identified from the header. `None` while still searching.
+    pub const fn detected_mode(&self) -> Option<Mode> {
         self.mode
     }
 }
@@ -303,8 +308,13 @@ mod tests {
 
     fn identify_mode(samples: Vec<i16>, sample_rate: u32) -> Option<Mode> {
         let mut assembler = Assembler::new(sample_rate, None);
-        Demodulator::new(samples.into_iter(), sample_rate)
-            .find_map(|frequency| assembler.push(frequency))
+        for frequency in Demodulator::new(samples.into_iter(), sample_rate) {
+            assembler.push(frequency);
+            if assembler.detected_mode().is_some() {
+                break;
+            }
+        }
+        assembler.detected_mode()
     }
 
     fn synthesize(mode: Mode, sample_rate: u32) -> Vec<i16> {
