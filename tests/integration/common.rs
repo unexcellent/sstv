@@ -1,10 +1,10 @@
 //! Helpers shared by the integration tests.
 
-// Test helpers outside #[test] functions are not covered by the clippy.toml
-// test allowances, and each test binary uses only a subset of the helpers.
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic, dead_code)]
+// Without some features, the tests that use a helper are not built.
+#![allow(dead_code)]
 
 use std::io::{Cursor, Read};
+use std::panic::Location;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Once;
@@ -98,7 +98,8 @@ pub fn read_image(path: &Path) -> Vec<RgbPixel> {
 }
 
 /// Store an image this crate decoded for inspection, under
-/// `target/tmp/decoded/<test binary>/<name>.png`. Never committed.
+/// `target/tmp/decoded/<calling test file>/<name>.png`. Never committed.
+#[track_caller]
 pub fn save_decoded(name: &str, decoded: &DecodedImage) {
     let bytes = decoded
         .pixels()
@@ -111,10 +112,14 @@ pub fn save_decoded(name: &str, decoded: &DecodedImage) {
 }
 
 /// Like [`save_decoded`], for an image already converted to a buffer.
+#[track_caller]
 pub fn save_decoded_buffer(name: &str, buffer: &image::RgbImage) {
+    let test_file = Path::new(Location::caller().file())
+        .file_stem()
+        .expect("the calling test file has a name");
     let directory = Path::new(env!("CARGO_TARGET_TMPDIR"))
         .join("decoded")
-        .join(env!("CARGO_CRATE_NAME"));
+        .join(test_file);
     std::fs::create_dir_all(&directory).expect("create the decoded image directory");
     buffer
         .save(directory.join(format!("{name}.png")))

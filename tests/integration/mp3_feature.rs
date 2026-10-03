@@ -1,11 +1,6 @@
-// Test helpers outside #[test] functions are not covered by the clippy.toml
-// test allowances.
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
 //! Tests for the `mp3` feature: encoding to and decoding from in-memory MP3s.
 
-mod common;
-use common::save_decoded;
+use crate::common::save_decoded;
 use sstv::{Decoder, Encoder, RgbPixel, modes};
 
 #[test]

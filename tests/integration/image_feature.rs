@@ -1,12 +1,7 @@
-// Test helpers outside #[test] functions are not covered by the clippy.toml
-// test allowances.
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
 //! Tests for the `image` feature: converting decoded images into `image`
 //! crate buffers.
 
-mod common;
-use common::{save_decoded, save_decoded_buffer};
+use crate::common::{save_decoded, save_decoded_buffer};
 use sstv::{Decoder, Encoder, Mode, RgbPixel, Synthesizer, modes};
 
 const SAMPLE_RATE: u32 = 24_000;

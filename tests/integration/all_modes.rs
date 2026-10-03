@@ -1,12 +1,7 @@
-// Test helpers outside #[test] functions are not covered by the clippy.toml
-// test allowances.
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
 //! Round-trip test for every mode: encode a test image, decode the samples
 //! back, and compare against the original.
 
-mod common;
-use common::{mean_abs_error, save_decoded, test_image};
+use crate::common::{mean_abs_error, save_decoded, test_image};
 use sstv::{Decoder, Encoder, Mode, RgbPixel, Synthesizer, modes};
 
 const SAMPLE_RATE: u32 = 24_000;

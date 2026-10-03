@@ -1,13 +1,8 @@
-// Test helpers outside #[test] functions are not covered by the clippy.toml
-// test allowances.
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
 //! End-to-end test against a real off-air recording captured by a ground
 //! station — the true reception path, exercising receiver imperfections (drift,
 //! noise, level and DC variation) that synthetic signals do not exhibit.
 
-mod common;
-use common::{asset, mean_abs_error, read_audio, read_image, save_decoded};
+use crate::common::{asset, mean_abs_error, read_audio, read_image, save_decoded};
 use sstv::{Decoder, modes};
 
 /// The decoder should reconstruct a real off-air Robot 36 recording (32 kHz,

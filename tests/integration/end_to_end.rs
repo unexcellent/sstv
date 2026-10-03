@@ -1,15 +1,10 @@
-// Test helpers outside #[test] functions are not covered by the clippy.toml
-// test allowances.
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
 //! End-to-end tests: encode an image to tones with the [`Encoder`], optionally
 //! corrupt the audio with deterministic noise, and decode it back with
 //! [`Decoder`], reassembling the event stream into images.
 
+use crate::common::{mean_abs_error, save_decoded, test_image};
 use rand::SeedableRng;
 use rand_distr::{Distribution, Normal};
-mod common;
-use common::{mean_abs_error, save_decoded, test_image};
 use sstv::{DecodedImage, Decoder, Encoder, RgbPixel, Synthesizer, modes};
 
 /// Robot36 resolution.

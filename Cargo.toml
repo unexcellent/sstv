@@ -43,18 +43,6 @@ required-features = ["image", "wav"]
 name = "decode"
 required-features = ["image", "wav", "mp3"]
 
-[[test]]
-name = "image_feature"
-required-features = ["image"]
-
-[[test]]
-name = "wav_feature"
-required-features = ["wav"]
-
-[[test]]
-name = "mp3_feature"
-required-features = ["mp3"]
-
 # The tests process audio sample by sample; unoptimized, they run many times
 # slower. Level 1 gains most of the speed while keeping compiles quick, and
 # debug assertions and overflow checks stay on.

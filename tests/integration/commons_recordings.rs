@@ -1,14 +1,9 @@
-// Test helpers outside #[test] functions are not covered by the clippy.toml
-// test allowances.
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
 //! Tests against transmissions published on Wikimedia Commons, made with
 //! other encoders (QSSTV, MMSSTV), mostly together with a decode of them.
 //! The files are fetched by `tests/scripts/fetch_assets.py`, which also
 //! credits their authors and states their licences.
 
-mod common;
-use common::{asset, mean_abs_error, read_audio, read_image, save_decoded};
+use crate::common::{asset, mean_abs_error, read_audio, read_image, save_decoded};
 use sstv::{DecodedImage, Decoder, Mode, modes};
 
 /// A Martin 1 transmission made with QSSTV at 11 025 Hz, compared with the

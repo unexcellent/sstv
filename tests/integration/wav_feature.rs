@@ -1,11 +1,6 @@
-// Test helpers outside #[test] functions are not covered by the clippy.toml
-// test allowances.
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
 //! Tests for the `wav` feature: encoding to and decoding from in-memory WAVs.
 
-mod common;
-use common::{mean_abs_error, save_decoded, test_image};
+use crate::common::{mean_abs_error, save_decoded, test_image};
 use sstv::{Decoder, Encoder, Synthesizer, modes};
 
 const SAMPLE_RATE: u32 = 24_000;

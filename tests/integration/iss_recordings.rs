@@ -1,7 +1,3 @@
-// Test helpers outside #[test] functions are not covered by the clippy.toml
-// test allowances.
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
 //! Tests against real off-air ISS SSTV recordings, captured by KG4AKV (Space
 //! Comms) and encoded on orbit with MMSSTV — the de-facto standard encoder.
 //!
@@ -10,8 +6,7 @@
 //! decodes KG4AKV published of them. One test per recording and check lets
 //! the test harness run them in parallel.
 
-mod common;
-use common::{asset, mean_abs_error, read_audio, read_image, save_decoded};
+use crate::common::{asset, mean_abs_error, read_audio, read_image, save_decoded};
 use sstv::{DecodedImage, Decoder, Demodulator, Encoder, Mode, Synthesizer, modes};
 
 const PD_120_PERIOD: f64 = 0.508_48;
