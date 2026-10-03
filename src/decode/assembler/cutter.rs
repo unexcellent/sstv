@@ -11,8 +11,7 @@ use super::estimates::Estimates;
 use super::tone_in_progress::CompletedTone;
 use crate::modes::step::Step;
 use crate::modes::{Mode, SYNC_FREQUENCY};
-use crate::synthesizer::Tone;
-use crate::units::{Duration, Frequency};
+use crate::units::{Duration, Frequency, Tone};
 use crate::{Hz, ms};
 
 /// How long after a sync pulse is expected to end the cutter waits for it

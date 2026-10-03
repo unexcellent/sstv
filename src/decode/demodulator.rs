@@ -303,8 +303,8 @@ impl Sub for Ticks {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::synthesizer::{Synthesizer, Tone};
     use crate::units::Duration;
+    use crate::{Synthesizer, Tone};
     use rand::SeedableRng;
     use rand_distr::{Distribution, Normal};
 

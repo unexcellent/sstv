@@ -33,8 +33,7 @@ mod scottie_2;
 mod scottie_dx;
 mod wrasse_sc2_180;
 
-use crate::synthesizer::Tone;
-use crate::units::Frequency;
+use crate::units::{Frequency, Tone};
 use crate::{Hz, ms};
 
 pub use mode::Mode;

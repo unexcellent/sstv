@@ -1,7 +1,7 @@
 //! Identifying the mode from the calibration header among the tones.
 
 use crate::modes::{LEADER, Mode, SYNC_FREQUENCY, VisCode};
-use crate::synthesizer::Tone;
+use crate::units::Tone;
 use crate::{ms, tone};
 
 /// Generous in duration, so a leader clipped by a trimmed recording still

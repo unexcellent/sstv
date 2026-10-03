@@ -1,8 +1,7 @@
 //! Splits the frequency track into tones where the frequency changes.
 
 use super::clock::SampleClock;
-use crate::synthesizer::Tone;
-use crate::units::{Duration, Frequency};
+use crate::units::{Duration, Frequency, Tone};
 use crate::{Hz, ms};
 
 /// How far an estimate may stray from the current tone's frequency and still

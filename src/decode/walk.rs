@@ -8,7 +8,7 @@ use super::rows::assemble_rows;
 use crate::RgbPixel;
 use crate::modes::step::Step;
 use crate::modes::{Mode, frequency_value};
-use crate::synthesizer::Tone;
+use crate::units::Tone;
 
 /// The image the tones carry, incomplete if they run out first. Rows the
 /// tones did not carry are black.

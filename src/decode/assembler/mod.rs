@@ -17,8 +17,7 @@ use alloc::collections::VecDeque;
 
 use crate::modes::Mode;
 use crate::ms;
-use crate::synthesizer::Tone;
-use crate::units::{Duration, Frequency};
+use crate::units::{Duration, Frequency, Tone};
 use clock::SampleClock;
 use cutter::SequenceCutter;
 use estimates::Estimates;

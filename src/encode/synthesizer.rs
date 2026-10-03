@@ -1,33 +1,6 @@
 include!(concat!(env!("OUT_DIR"), "/sine_table.rs"));
 
-use crate::units::{Duration, Frequency};
-
-/// A single frequency emitted for a certain duration.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Tone {
-    /// The frequency
-    pub frequency: Frequency,
-    /// The duration
-    pub duration: Duration,
-}
-
-impl Tone {
-    /// Create a new Tone
-    #[must_use]
-    pub const fn new(frequency: Frequency, duration: Duration) -> Self {
-        Self {
-            frequency,
-            duration,
-        }
-    }
-
-    /// Whether the tone's frequency and duration both lie within
-    /// `tolerance` of `nominal`'s.
-    pub(crate) const fn is_near(self, nominal: Self, tolerance: Self) -> bool {
-        self.frequency.hz().abs_diff(nominal.frequency.hz()) <= tolerance.frequency.hz()
-            && self.duration.ns().abs_diff(nominal.duration.ns()) <= tolerance.duration.ns()
-    }
-}
+use crate::units::Tone;
 
 /// Use a `Synthesizer` to encode an iterator of `Tone`s into 16-bit PCM samples.
 ///

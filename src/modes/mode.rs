@@ -3,8 +3,7 @@
 
 use super::step::{ColorMode, Step};
 use super::{ALL, LEADER, SYNC_FREQUENCY, VisCode};
-use crate::synthesizer::Tone;
-use crate::units::Duration;
+use crate::units::{Duration, Tone};
 use crate::{Error, ms, tone};
 
 /// Tuning (VOX) tones customarily sent ahead of the calibration header to

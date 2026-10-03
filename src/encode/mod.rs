@@ -3,6 +3,7 @@
 mod convert;
 mod emit;
 mod rgb_lines;
+mod synthesizer;
 
 #[cfg(test)]
 pub use emit::testing;
@@ -13,6 +14,8 @@ use crate::{Error, Result};
 
 use emit::State;
 use rgb_lines::{RgbLines, Storage};
+
+pub use synthesizer::Synthesizer;
 
 /// `Encoder` is the main struct for converting an image into SSTV tones.
 ///

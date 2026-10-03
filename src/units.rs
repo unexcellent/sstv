@@ -199,6 +199,33 @@ macro_rules! ms {
     };
 }
 
+/// A single frequency emitted for a certain duration.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Tone {
+    /// The frequency
+    pub frequency: Frequency,
+    /// The duration
+    pub duration: Duration,
+}
+
+impl Tone {
+    /// Create a new Tone
+    #[must_use]
+    pub const fn new(frequency: Frequency, duration: Duration) -> Self {
+        Self {
+            frequency,
+            duration,
+        }
+    }
+
+    /// Whether the tone's frequency and duration both lie within
+    /// `tolerance` of `nominal`'s.
+    pub(crate) const fn is_near(self, nominal: Self, tolerance: Self) -> bool {
+        self.frequency.hz().abs_diff(nominal.frequency.hz()) <= tolerance.frequency.hz()
+            && self.duration.ns().abs_diff(nominal.duration.ns()) <= tolerance.duration.ns()
+    }
+}
+
 #[macro_export]
 /// Construct a [`Tone`](crate::Tone) from a frequency in Hertz and a duration
 /// in any supported unit (`ns`, `us` or `ms`).

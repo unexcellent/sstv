@@ -7,21 +7,17 @@ extern crate alloc;
 
 mod error;
 
-#[cfg(feature = "alloc")]
 mod decode;
-mod demodulator;
 mod encode;
 mod image;
 pub mod modes;
-mod synthesizer;
 mod units;
 
+pub use decode::Demodulator;
 #[cfg(feature = "alloc")]
 pub use decode::{DecodedImage, Decoder};
-pub use demodulator::Demodulator;
-pub use encode::Encoder;
+pub use encode::{Encoder, Synthesizer};
 pub use error::{Error, Result};
 pub use image::{RgbPixel, YuvPixel};
 pub use modes::{Mode, VisCode};
-pub use synthesizer::{Synthesizer, Tone};
-pub use units::{Duration, Frequency};
+pub use units::{Duration, Frequency, Tone};

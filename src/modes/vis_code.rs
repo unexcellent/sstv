@@ -1,8 +1,7 @@
 //! The VIS code identifying a mode within the calibration header.
 
 use super::SYNC_FREQUENCY;
-use crate::synthesizer::Tone;
-use crate::units::{Duration, Frequency};
+use crate::units::{Duration, Frequency, Tone};
 use crate::{Error, Hz, ms, tone};
 
 const ONE_FREQUENCY: Frequency = Hz!(1100);

@@ -2,8 +2,7 @@
 //! does: each mode is a repeating timing sequence of fixed tones (sync
 //! pulses, porches, separator pulses) and channel scans.
 
-use crate::synthesizer::Tone;
-use crate::units::Duration;
+use crate::units::{Duration, Tone};
 
 /// The image values carried by a scan step.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
