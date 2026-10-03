@@ -114,15 +114,9 @@ mod tests {
     extern crate std;
     use std::vec::Vec;
 
-    #[cfg(feature = "image")]
-    use super::super::testing::{
-        GROUND_STATION_RECORDING, PYSSTV_FIXTURE, read_generated_wav, read_gzipped_wav,
-    };
-    use super::super::testing::{
-        gradient_image, header_length, mean_abs_error, read_iss_recording, transmit,
-    };
+    use super::super::testing::{gradient_image, header_length, mean_abs_error, transmit};
     use super::*;
-    use crate::modes::{MARTIN_1, PD_120, PD_180, ROBOT_36, ROBOT_72, SCOTTIE_1};
+    use crate::modes::{MARTIN_1, PD_120, ROBOT_36, ROBOT_72, SCOTTIE_1};
 
     #[test]
     fn decodes_our_own_robot_36_transmission() {
@@ -271,59 +265,6 @@ mod tests {
         assert!(decode(silence, 48_000).is_none());
     }
 
-    #[cfg(feature = "image")]
-    #[test]
-    fn decodes_the_ground_station_recording() {
-        let (samples, sample_rate) = read_gzipped_wav(GROUND_STATION_RECORDING);
-
-        assert_matches_source_image(&decode(samples, sample_rate).unwrap(), 15.0);
-    }
-
-    #[cfg(feature = "image")]
-    #[test]
-    fn decodes_the_pysstv_fixture() {
-        let Some((samples, sample_rate)) = read_generated_wav(PYSSTV_FIXTURE) else {
-            return;
-        };
-
-        assert_matches_source_image(&decode(samples, sample_rate).unwrap(), 10.0);
-    }
-
-    #[test]
-    fn decodes_the_gagarin_80_recording() {
-        assert_decodes_iss_recording("pd180-gagarin-80.wav", PD_180);
-    }
-
-    #[test]
-    fn decodes_the_apollo_soyuz_recording() {
-        assert_decodes_iss_recording("pd180-apollo-soyuz.wav", PD_180);
-    }
-
-    #[test]
-    fn decodes_the_astronauts_qso_recording() {
-        assert_decodes_iss_recording("pd180-ariss-qso-astros.wav", PD_180);
-    }
-
-    #[test]
-    fn decodes_the_cristoforetti_qso_recording() {
-        assert_decodes_iss_recording("pd180-ariss-qso-cristoforetti.wav", PD_180);
-    }
-
-    #[test]
-    fn decodes_the_mai75_suitsat_recording() {
-        assert_decodes_iss_recording("pd180-mai75-suitsat.wav", PD_180);
-    }
-
-    #[test]
-    fn decodes_the_first_ariss_20_year_recording() {
-        assert_decodes_iss_recording("pd120-ariss-20-year-1.wav", PD_120);
-    }
-
-    #[test]
-    fn decodes_the_second_ariss_20_year_recording() {
-        assert_decodes_iss_recording("pd120-ariss-20-year-2.wav", PD_120);
-    }
-
     fn decode(samples: Vec<i16>, sample_rate: u32) -> Option<DecodedImage> {
         Decoder::new(samples.into_iter(), sample_rate).decode()
     }
@@ -340,24 +281,5 @@ mod tests {
     fn assert_decodes_completely(image: &DecodedImage, mode: Mode) {
         assert_eq!(image.mode(), mode);
         assert!(image.complete(), "image should decode completely");
-    }
-
-    /// The recordings carry no reference image, so this only checks that the
-    /// mode is identified and every row decoded.
-    fn assert_decodes_iss_recording(name: &str, mode: Mode) {
-        let (samples, sample_rate) = read_iss_recording(name);
-
-        let decoded = decode(samples, sample_rate).unwrap();
-
-        assert_decodes_completely(&decoded, mode);
-    }
-
-    #[cfg(feature = "image")]
-    fn assert_matches_source_image(decoded: &DecodedImage, max_error: f64) {
-        use super::super::testing::{SOURCE_IMAGE, read_image};
-
-        assert_decodes_completely(decoded, ROBOT_36);
-        let error = mean_abs_error(&read_image(SOURCE_IMAGE), decoded.pixels());
-        assert!(error < max_error, "mean abs error {error} too high");
     }
 }

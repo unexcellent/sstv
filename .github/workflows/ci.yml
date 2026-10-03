@@ -36,8 +36,8 @@ jobs:
       # The test hook runs default features only; the full suite runs below.
       - uses: pre-commit/action@v3.0.1
 
-      # The pre-commit test hook skips --all-features to keep local commits
-      # fast (the ISS-recording tests are slow); run the full suite here.
+      # The pre-commit test hook runs default features only, to keep local
+      # commits fast; run the feature-gated tests here too.
       - name: Test all features
         run: cargo test --all-features
 
