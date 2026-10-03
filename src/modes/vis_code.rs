@@ -10,9 +10,7 @@ const ZERO_FREQUENCY: Frequency = Hz!(1300);
 /// Every VIS bit (start, data, parity, stop) lasts 30ms.
 const BIT_DURATION: Duration = ms!(30);
 /// The seven code bits and the parity bit.
-const DATA_BITS: u64 = 8;
-/// How far a received bit may stray from its nominal frequency and duration.
-const TOLERANCE: Tone = tone!(50 Hz, 10 ms);
+const DATA_BITS: usize = 8;
 
 /// A 7-bit VIS (Vertical Interval Signaling) code, transmitted in the
 /// calibration header to identify the mode to a receiving system.
@@ -32,6 +30,12 @@ const TOLERANCE: Tone = tone!(50 Hz, 10 ms);
 pub struct VisCode(u8);
 
 impl VisCode {
+    /// The start and stop bits' tone.
+    pub(crate) const FRAMING_BIT: Tone = Tone::new(SYNC_FREQUENCY, BIT_DURATION);
+    /// How far a received bit may stray from its nominal frequency and
+    /// duration.
+    pub(crate) const BIT_TOLERANCE: Tone = tone!(50 Hz, 10 ms);
+
     /// Whether the value fits in the 7 bits of a VIS code.
     ///
     /// ```rust
@@ -101,7 +105,7 @@ impl VisCode {
             Tone::new(frequency, BIT_DURATION)
         };
         match index {
-            0 | 9 => Some(Tone::new(SYNC_FREQUENCY, BIT_DURATION)), // start and stop bits
+            0 | 9 => Some(Self::FRAMING_BIT),
             1..=7 => Some(bit((self.0 >> (index - 1)) & 1 == 1)),
             8 => Some(bit(self.0.count_ones() % 2 == 1)),
             _ => None,
@@ -118,45 +122,47 @@ impl VisCode {
     /// `None` unless the tones carry exactly eight bits (the seven code bits,
     /// least significant first, then the parity bit) and the parity is even.
     pub(crate) fn from_received_tones(data_bits: &[Tone]) -> Option<Self> {
-        let mut code = 0u8;
-        let mut ones = 0u32;
-        let mut position = 0u64;
+        let mut bits = [false; DATA_BITS];
+        let mut received = 0;
         for tone in data_bits {
-            let (is_one, count) = read_bit_run(*tone)?;
-            for _ in 0..count {
-                if position == DATA_BITS {
-                    return None;
-                }
-                if is_one {
-                    ones += 1;
-                    if position < DATA_BITS - 1 {
-                        code |= 1 << position;
-                    }
-                }
-                position += 1;
-            }
+            let (value, count) = read_bit_run(*tone)?;
+            bits.get_mut(received..received + count)?.fill(value);
+            received += count;
         }
 
-        let complete = position == DATA_BITS && ones.is_multiple_of(2);
-        complete.then_some(Self(code))
+        let ones = bits.iter().filter(|&&bit| bit).count();
+        if received != DATA_BITS || !ones.is_multiple_of(2) {
+            return None;
+        }
+        let (code_bits, _parity) = bits.split_at(DATA_BITS - 1);
+        let code = code_bits
+            .iter()
+            .rev()
+            .fold(0, |code, &bit| (code << 1) | u8::from(bit));
+        Some(Self(code))
     }
 }
 
 /// The value and number of the equal data bits a tone carries, if it is one
 /// or more data bits.
-fn read_bit_run(tone: Tone) -> Option<(bool, u64)> {
+fn read_bit_run(tone: Tone) -> Option<(bool, usize)> {
     let bit = BIT_DURATION.ns();
     let count = (tone.duration.ns() + bit / 2) / bit;
-    let duration = Duration::from_ns(count.checked_mul(bit)?);
-    if count == 0 {
-        None
-    } else if tone.is_near(Tone::new(ONE_FREQUENCY, duration), TOLERANCE) {
-        Some((true, count))
-    } else if tone.is_near(Tone::new(ZERO_FREQUENCY, duration), TOLERANCE) {
-        Some((false, count))
+    let run = Tone::new(ONE_FREQUENCY, Duration::from_ns(count.checked_mul(bit)?));
+    let value = if tone.is_near(run, VisCode::BIT_TOLERANCE) {
+        true
+    } else if tone.is_near(
+        Tone {
+            frequency: ZERO_FREQUENCY,
+            ..run
+        },
+        VisCode::BIT_TOLERANCE,
+    ) {
+        false
     } else {
-        None
-    }
+        return None;
+    };
+    (count > 0).then_some((value, usize::try_from(count).ok()?))
 }
 
 /// The code's value.

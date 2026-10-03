@@ -12,7 +12,7 @@ pub use decoded_image::DecodedImage;
 
 use crate::Demodulator;
 use crate::modes::{Mode, ROBOT_36};
-use assembler::{Assembler, Start};
+use assembler::{ImageSearch, ImageTones};
 use walk::decode_image;
 
 /// Decodes an SSTV transmission from an audio sample stream.
@@ -50,7 +50,7 @@ impl<I: Iterator<Item = i16>> Decoder<I> {
     /// `sample_rate` must be greater than zero. Construction never fails:
     /// finding the image is deferred to [`decode`](Self::decode).
     pub fn new(samples: I, sample_rate: u32) -> Self {
-        Self::from_demodulator(Demodulator::new(samples, sample_rate.max(1)))
+        Self::from_demodulator(Demodulator::new(samples, sample_rate))
     }
 
     /// Decode the frequencies of an existing demodulator.
@@ -107,19 +107,14 @@ impl<I: Iterator<Item = i16>> Decoder<I> {
 
     /// Decode the image, or `None` if the stream carries none.
     pub fn decode(self) -> Option<DecodedImage> {
-        let start = match (self.without_header, self.mode) {
-            (true, mode) => Start::FirstSample(mode.unwrap_or(ROBOT_36)),
-            (false, Some(mode)) => Start::HeaderOrSyncs(mode),
-            (false, None) => Start::Header,
-        };
         let sample_rate = self.demodulator.sample_rate();
-        let mut tones = Assembler::new(self.demodulator, sample_rate, start);
-
-        // The mode is known once the image's first tone has been assembled.
-        let first = tones.next()?;
-        let mode = tones.detected_mode()?;
-        let mut tones = core::iter::once(first).chain(tones);
-        Some(decode_image(mode, &mut tones))
+        let tones = if self.without_header {
+            let mode = self.mode.unwrap_or(ROBOT_36);
+            ImageTones::at_first_sample(self.demodulator, sample_rate, mode)
+        } else {
+            ImageSearch::new(self.demodulator, sample_rate, self.mode).find_image()?
+        };
+        Some(decode_image(tones.mode(), tones))
     }
 }
 

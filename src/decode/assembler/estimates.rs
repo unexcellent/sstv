@@ -1,4 +1,4 @@
-//! The frequency estimates kept for sampling an image by its timing.
+//! The frequency estimates kept for cutting an image by its timing.
 
 use alloc::collections::VecDeque;
 
@@ -30,9 +30,16 @@ impl Estimates {
 
     /// Drop the estimates before sample `sample`.
     pub fn forget_before(&mut self, sample: u64) {
-        while self.start < sample && self.buffer.pop_front().is_some() {
-            self.start += 1;
-        }
+        let count = sample
+            .saturating_sub(self.start)
+            .min(self.buffer.len() as u64);
+        self.buffer.drain(..count as usize);
+        self.start += count;
+    }
+
+    /// Keep only the newest `samples` estimates.
+    pub fn keep_last(&mut self, samples: u64) {
+        self.forget_before(self.end().saturating_sub(samples));
     }
 
     /// The mean of the estimates from (fractional) sample `start` over
@@ -42,19 +49,20 @@ impl Estimates {
     pub fn mean(&self, start: f64, length: f64) -> Frequency {
         let first = (start.round().max(0.0) as u64).max(self.start);
         let last = ((start + length).round() as u64).max(first + 1);
+        let available = first.min(self.end())..last.min(self.end());
+        let missing = (last - first) - (available.end - available.start);
 
-        let (mut sum, mut count) = (0u64, 0u64);
-        for sample in first..last {
-            let estimate = usize::try_from(sample - self.start)
-                .ok()
-                .and_then(|index| self.buffer.get(index))
-                .or_else(|| self.buffer.back());
-            if let Some(estimate) = estimate {
-                sum += u64::from(estimate.hz());
-                count += 1;
-            }
-        }
-        let mean = sum.checked_div(count).unwrap_or(0);
+        let index = |sample: u64| (sample - self.start) as usize;
+        let sum: u64 = self
+            .buffer
+            .range(index(available.start)..index(available.end))
+            .map(|estimate| u64::from(estimate.hz()))
+            .sum();
+        let newest = self
+            .buffer
+            .back()
+            .map_or(0, |estimate| u64::from(estimate.hz()));
+        let mean = (sum + newest * missing) / (last - first);
         Frequency::from_hz(u32::try_from(mean).unwrap_or(u32::MAX))
     }
 }
