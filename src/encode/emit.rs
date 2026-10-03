@@ -4,7 +4,7 @@ use super::Encoder;
 use crate::image::RgbPixel;
 use crate::modes::step::Step;
 use crate::modes::{Mode, value_frequency};
-use crate::synthesizer::Tone;
+use crate::units::Tone;
 
 impl<I> Iterator for Encoder<'_, I>
 where

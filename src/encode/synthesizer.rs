@@ -1,26 +1,6 @@
 include!(concat!(env!("OUT_DIR"), "/sine_table.rs"));
 
-use crate::units::{Duration, Frequency};
-
-/// A single frequency emitted for a certain duration.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Tone {
-    /// The frequency
-    pub frequency: Frequency,
-    /// The duration
-    pub duration: Duration,
-}
-
-impl Tone {
-    /// Create a new Tone
-    #[must_use]
-    pub const fn new(frequency: Frequency, duration: Duration) -> Self {
-        Self {
-            frequency,
-            duration,
-        }
-    }
-}
+use crate::units::Tone;
 
 /// Use a `Synthesizer` to encode an iterator of `Tone`s into 16-bit PCM samples.
 ///

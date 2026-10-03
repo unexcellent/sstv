@@ -2,9 +2,8 @@
 //! data.
 
 use super::step::{ColorMode, Step};
-use super::{ALL, LEADER_FREQUENCY, SYNC_FREQUENCY, VisCode};
-use crate::synthesizer::Tone;
-use crate::units::Duration;
+use super::{ALL, LEADER, SYNC_FREQUENCY, VisCode};
+use crate::units::{Duration, Tone};
 use crate::{Error, ms, tone};
 
 /// Tuning (VOX) tones customarily sent ahead of the calibration header to
@@ -159,7 +158,7 @@ impl Mode {
     pub(crate) fn header_tone(self, index: usize) -> Option<Tone> {
         match index {
             0..=7 => Some(VOX_TONES[index]),
-            8 | 10 => Some(Tone::new(LEADER_FREQUENCY, ms!(300))),
+            8 | 10 => Some(LEADER),
             9 => Some(Tone::new(SYNC_FREQUENCY, ms!(10))), // break
             11..=20 => self.vis_code.tone(index - 11),
             21 if self.has_starting_sync_pulse() => {

@@ -1,14 +1,15 @@
 //! The VIS code identifying a mode within the calibration header.
 
 use super::SYNC_FREQUENCY;
-use crate::synthesizer::Tone;
-use crate::units::{Duration, Frequency};
-use crate::{Error, Hz, ms};
+use crate::units::{Duration, Frequency, Tone};
+use crate::{Error, Hz, ms, tone};
 
 const ONE_FREQUENCY: Frequency = Hz!(1100);
 const ZERO_FREQUENCY: Frequency = Hz!(1300);
 /// Every VIS bit (start, data, parity, stop) lasts 30ms.
 const BIT_DURATION: Duration = ms!(30);
+/// The seven code bits and the parity bit.
+const DATA_BITS: usize = 8;
 
 /// A 7-bit VIS (Vertical Interval Signaling) code, transmitted in the
 /// calibration header to identify the mode to a receiving system.
@@ -28,6 +29,12 @@ const BIT_DURATION: Duration = ms!(30);
 pub struct VisCode(u8);
 
 impl VisCode {
+    /// The start and stop bits' tone.
+    pub(crate) const FRAMING_BIT: Tone = Tone::new(SYNC_FREQUENCY, BIT_DURATION);
+    /// How far a received bit may stray from its nominal frequency and
+    /// duration.
+    pub(crate) const BIT_TOLERANCE: Tone = tone!(50 Hz, 10 ms);
+
     /// Whether the value fits in the 7 bits of a VIS code.
     ///
     /// ```rust
@@ -97,12 +104,64 @@ impl VisCode {
             Tone::new(frequency, BIT_DURATION)
         };
         match index {
-            0 | 9 => Some(Tone::new(SYNC_FREQUENCY, BIT_DURATION)), // start and stop bits
+            0 | 9 => Some(Self::FRAMING_BIT),
             1..=7 => Some(bit((self.0 >> (index - 1)) & 1 == 1)),
             8 => Some(bit(self.0.count_ones() % 2 == 1)),
             _ => None,
         }
     }
+
+    /// Decode the data-bit tones received between a code's start and stop
+    /// bits.
+    ///
+    /// Neighbouring bits of equal value arrive as one tone lasting several
+    /// bit durations, so the tones need not match the data bits of
+    /// [`tones`](Self::tones) one to one.
+    ///
+    /// `None` unless the tones carry exactly eight bits (the seven code bits,
+    /// least significant first, then the parity bit) and the parity is even.
+    pub(crate) fn from_received_tones(data_bits: &[Tone]) -> Option<Self> {
+        let mut bits = [false; DATA_BITS];
+        let mut received = 0;
+        for tone in data_bits {
+            let (value, count) = read_bit_run(*tone)?;
+            bits.get_mut(received..received + count)?.fill(value);
+            received += count;
+        }
+
+        let ones = bits.iter().filter(|&&bit| bit).count();
+        if received != DATA_BITS || !ones.is_multiple_of(2) {
+            return None;
+        }
+        let (code_bits, _parity) = bits.split_at(DATA_BITS - 1);
+        let code = code_bits
+            .iter()
+            .rev()
+            .fold(0, |code, &bit| (code << 1) | u8::from(bit));
+        Some(Self(code))
+    }
+}
+
+/// The value and number of the equal data bits a tone carries, if it is one
+/// or more data bits.
+fn read_bit_run(tone: Tone) -> Option<(bool, usize)> {
+    let bit = BIT_DURATION.ns();
+    let count = (tone.duration.ns() + bit / 2) / bit;
+    let run = Tone::new(ONE_FREQUENCY, Duration::from_ns(count.checked_mul(bit)?));
+    let value = if tone.is_near(run, VisCode::BIT_TOLERANCE) {
+        true
+    } else if tone.is_near(
+        Tone {
+            frequency: ZERO_FREQUENCY,
+            ..run
+        },
+        VisCode::BIT_TOLERANCE,
+    ) {
+        false
+    } else {
+        return None;
+    };
+    (count > 0).then_some((value, usize::try_from(count).ok()?))
 }
 
 /// The code's value.
@@ -148,6 +207,7 @@ mod tests {
     extern crate std;
     use std::vec::Vec;
 
+    use super::*;
     use crate::tone;
 
     /// Robot 36's code 8 (`0b000_1000`): a single set bit, so the even parity
@@ -190,5 +250,61 @@ mod tests {
                 tone!(1200 Hz, 30 ms), // stop bit
             ]
         );
+    }
+
+    #[test]
+    fn transmitted_data_bits_are_read_back() {
+        let data_bits: Vec<Tone> = vis_code!(8).tones().skip(1).take(8).collect();
+
+        assert_eq!(VisCode::from_received_tones(&data_bits), Some(vis_code!(8)));
+    }
+
+    /// PD 180's code 96 (`0b110_0000`): five zeros, then two ones, then a zero
+    /// parity bit.
+    #[test]
+    fn merged_bits_are_counted_by_their_duration() {
+        let data_bits = [
+            tone!(1300 Hz, 150 ms), // five zeros
+            tone!(1100 Hz, 60 ms),  // two ones
+            tone!(1300 Hz, 30 ms),  // parity bit
+        ];
+
+        assert_eq!(
+            VisCode::from_received_tones(&data_bits),
+            Some(vis_code!(96))
+        );
+    }
+
+    /// Robot 36's code 8 with its parity bit flipped to a zero.
+    #[test]
+    fn odd_parity_is_rejected() {
+        let data_bits = [
+            tone!(1300 Hz, 90 ms),  // three zeros
+            tone!(1100 Hz, 30 ms),  // a one
+            tone!(1300 Hz, 120 ms), // three zeros and the flipped parity bit
+        ];
+
+        assert_eq!(VisCode::from_received_tones(&data_bits), None);
+    }
+
+    #[test]
+    fn missing_bits_are_rejected() {
+        let five_bits = [tone!(1300 Hz, 150 ms)];
+
+        assert_eq!(VisCode::from_received_tones(&five_bits), None);
+    }
+
+    #[test]
+    fn surplus_bits_are_rejected() {
+        let nine_bits = [tone!(1300 Hz, 270 ms)];
+
+        assert_eq!(VisCode::from_received_tones(&nine_bits), None);
+    }
+
+    #[test]
+    fn tones_that_are_neither_one_nor_zero_are_rejected() {
+        let data_bits = [tone!(1300 Hz, 120 ms), tone!(1500 Hz, 120 ms)];
+
+        assert_eq!(VisCode::from_received_tones(&data_bits), None);
     }
 }

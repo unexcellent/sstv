@@ -15,9 +15,9 @@ jobs:
           # The full history is needed to validate every pushed commit message.
           fetch-depth: 0
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
+      # Installs the toolchain pinned in rust-toolchain.toml, with its
+      # components and targets.
+      - run: rustup toolchain install
 
       - uses: Swatinem/rust-cache@v2
 
@@ -25,19 +25,19 @@ jobs:
         with:
           python-version: "3.12"
 
-      # The test suite fetches the ISS recordings on first run; cache them so
-      # CI downloads the archive only when the recording set changes.
+      # The test suite fetches its media (~140 MB, mostly the ISS recordings)
+      # on first run; cache them so CI downloads only when the set changes.
       - uses: actions/cache@v4
         with:
-          path: tests/assets/iss
-          key: iss-recordings-${{ hashFiles('tests/scripts/fetch_iss_recordings.py') }}
+          path: tests/assets
+          key: test-assets-${{ hashFiles('tests/scripts/fetch_assets.py') }}
 
       # Runs all pre-commit-stage hooks (file checks, fmt, clippy, test).
       # The test hook runs default features only; the full suite runs below.
       - uses: pre-commit/action@v3.0.1
 
-      # The pre-commit test hook skips --all-features to keep local commits
-      # fast (the ISS-recording tests are slow); run the full suite here.
+      # The pre-commit test hook runs default features only, to keep local
+      # commits fast; run the feature-gated tests here too.
       - name: Test all features
         run: cargo test --all-features
 
@@ -67,9 +67,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: thumbv7em-none-eabihf
+      - run: rustup toolchain install
 
       - uses: Swatinem/rust-cache@v2
 

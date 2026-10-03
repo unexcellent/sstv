@@ -1,47 +1,35 @@
-// Test helpers outside #[test] functions are not covered by the clippy.toml
-// test allowances.
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
 //! Round-trip test for every mode: encode a test image, decode the samples
 //! back, and compare against the original.
 
-mod common;
-use common::{mean_abs_error, test_image};
-use sstv::{Decoder, Encoder, Event, Mode, RgbPixel, Synthesizer, modes};
+use crate::common::{mean_abs_error, save_decoded, test_image};
+use sstv::{Decoder, Encoder, Mode, RgbPixel, Synthesizer, modes};
 
 const SAMPLE_RATE: u32 = 24_000;
 
 /// Acceptable mean absolute per-channel error between original and decode.
 const MAX_ERROR: f64 = 12.0;
 
-/// Decode `samples` event by event, expecting an image in the given mode with
-/// its rows complete, in order, and close to `image`. `expected_mode` pins the
-/// decoder's mode; `None` detects it from the header.
-fn assert_decodes(expected_mode: Option<Mode>, samples: &[i16], mode: Mode, image: &[RgbPixel]) {
-    let (width, height) = mode.resolution();
-    let (width, height) = (width as usize, height as usize);
-
-    let mut events = Decoder::from_samples(samples.iter().copied(), SAMPLE_RATE);
+/// Decode `samples`, expecting a complete image in the given mode close to
+/// `image`. `expected_mode` pins the decoder's mode; `None` detects it from
+/// the header. The decoded image is saved as `name`.
+fn assert_decodes(
+    name: &str,
+    expected_mode: Option<Mode>,
+    samples: &[i16],
+    mode: Mode,
+    image: &[RgbPixel],
+) {
+    let mut decoder = Decoder::new(samples.iter().copied(), SAMPLE_RATE);
     if let Some(expected) = expected_mode {
-        events = events.expect_mode(expected);
+        decoder = decoder.with_mode(expected);
     }
 
-    let mut decoded: Vec<RgbPixel> = Vec::new();
-    let mut complete = None;
-    for event in events.events() {
-        match event {
-            Event::ImageStart(started) => assert_eq!(started, mode),
-            Event::Row(row) => {
-                assert_eq!(row.index() * width, decoded.len(), "row out of order");
-                decoded.extend_from_slice(row.pixels());
-            }
-            Event::ImageEnd { complete: flag } => complete = Some(flag),
-        }
-    }
+    let image_decoded = decoder.decode().expect("an image");
+    save_decoded(name, &image_decoded);
 
-    assert_eq!(complete, Some(true), "image should decode completely");
-    assert_eq!(decoded.len(), width * height, "should decode every row");
-    let error = mean_abs_error(image, &decoded);
+    assert_eq!(image_decoded.mode(), mode);
+    assert!(image_decoded.complete(), "image should decode completely");
+    let error = mean_abs_error(image, image_decoded.pixels());
     assert!(error < MAX_ERROR, "mean abs error {error} too high");
 }
 
@@ -53,8 +41,14 @@ fn round_trip(mode: Mode) {
     let encoder = Encoder::new(mode, image.clone().into_iter()).expect("construct encoder");
     let samples: Vec<i16> = Synthesizer::new(encoder, SAMPLE_RATE).collect();
 
-    assert_decodes(Some(mode), &samples, mode, &image);
-    assert_decodes(None, &samples, mode, &image);
+    assert_decodes(
+        &format!("{mode:?}-with-mode"),
+        Some(mode),
+        &samples,
+        mode,
+        &image,
+    );
+    assert_decodes(&format!("{mode:?}-detected"), None, &samples, mode, &image);
 }
 
 #[test]

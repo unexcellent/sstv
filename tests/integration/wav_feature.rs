@@ -1,11 +1,6 @@
-// Test helpers outside #[test] functions are not covered by the clippy.toml
-// test allowances.
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
 //! Tests for the `wav` feature: encoding to and decoding from in-memory WAVs.
 
-mod common;
-use common::{mean_abs_error, test_image};
+use crate::common::{mean_abs_error, save_decoded, test_image};
 use sstv::{Decoder, Encoder, Synthesizer, modes};
 
 const SAMPLE_RATE: u32 = 24_000;
@@ -18,9 +13,9 @@ fn round_trips_through_a_wav() {
 
     let decoded = Decoder::from_wav(&wav)
         .expect("parse wav")
-        .images()
-        .next()
+        .decode()
         .expect("an image");
+    save_decoded("round-trip", &decoded);
 
     assert_eq!(decoded.mode(), modes::ROBOT_36);
     assert!(decoded.complete(), "image should decode completely");
@@ -52,10 +47,10 @@ fn decodes_stereo_float_wavs() {
 
     let decoded = Decoder::from_wav(cursor.get_ref())
         .expect("parse wav")
-        .expect_mode(modes::ROBOT_36)
-        .images()
-        .next()
+        .with_mode(modes::ROBOT_36)
+        .decode()
         .expect("an image");
+    save_decoded("stereo-float", &decoded);
 
     assert!(decoded.complete(), "image should decode completely");
     let error = mean_abs_error(&image, decoded.pixels());
@@ -80,9 +75,9 @@ fn decodes_a_truncated_wav() {
 
     let decoded = Decoder::from_wav(truncated)
         .expect("parse truncated wav")
-        .images()
-        .next()
+        .decode()
         .expect("an image");
+    save_decoded("truncated", &decoded);
 
     assert_eq!(decoded.mode(), modes::ROBOT_36);
     assert!(!decoded.complete(), "a truncated image is not complete");

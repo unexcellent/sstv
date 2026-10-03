@@ -1,0 +1,6 @@
+# The toolchain for developing and CI, pinned so new lints only arrive with a
+# deliberate bump. Users only need the MSRV in Cargo.toml (`rust-version`).
+[toolchain]
+channel = "1.99"
+components = ["clippy", "rustfmt"]
+targets = ["thumbv7em-none-eabihf"]

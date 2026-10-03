@@ -1,4 +1,4 @@
-#![doc = "Slow-Scan Television Encoding With Minimal Memory Usage"]
+#![doc = "Slow-Scan Television Encoding and Decoding With Minimal Memory Usage"]
 #![cfg_attr(not(any(feature = "std", test)), no_std)]
 #![warn(missing_docs)]
 
@@ -7,21 +7,17 @@ extern crate alloc;
 
 mod error;
 
-#[cfg(feature = "alloc")]
-mod decoder;
-mod demodulator;
+mod decode;
 mod encode;
 mod image;
 pub mod modes;
-mod synthesizer;
 mod units;
 
+pub use decode::Demodulator;
 #[cfg(feature = "alloc")]
-pub use decoder::{DecodedImage, Decoder, Event, Events, Images, RgbRow};
-pub use demodulator::Demodulator;
-pub use encode::Encoder;
+pub use decode::{DecodedImage, Decoder};
+pub use encode::{Encoder, Synthesizer};
 pub use error::{Error, Result};
 pub use image::{RgbPixel, YuvPixel};
 pub use modes::{Mode, VisCode};
-pub use synthesizer::{Synthesizer, Tone};
-pub use units::{Duration, Frequency};
+pub use units::{Duration, Frequency, Tone};

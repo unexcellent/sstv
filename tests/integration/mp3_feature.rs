@@ -1,9 +1,6 @@
-// Test helpers outside #[test] functions are not covered by the clippy.toml
-// test allowances.
-#![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
-
 //! Tests for the `mp3` feature: encoding to and decoding from in-memory MP3s.
 
+use crate::common::save_decoded;
 use sstv::{Decoder, Encoder, RgbPixel, modes};
 
 #[test]
@@ -39,9 +36,9 @@ fn round_trips_through_an_mp3() {
 
     let decoded = Decoder::from_mp3(&mp3)
         .expect("parse mp3")
-        .images()
-        .next()
+        .decode()
         .expect("an image");
+    save_decoded("round-trip", &decoded);
 
     assert_eq!(decoded.mode(), modes::ROBOT_36);
     assert!(decoded.complete(), "image should decode completely");

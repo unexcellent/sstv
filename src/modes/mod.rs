@@ -33,8 +33,8 @@ mod scottie_2;
 mod scottie_dx;
 mod wrasse_sc2_180;
 
-use crate::Hz;
-use crate::units::Frequency;
+use crate::units::{Frequency, Tone};
+use crate::{Hz, ms};
 
 pub use mode::Mode;
 pub use vis_code::VisCode;
@@ -97,11 +97,23 @@ pub(crate) const BLACK_FREQUENCY: Frequency = Hz!(1500);
 pub(crate) const WHITE_FREQUENCY: Frequency = Hz!(2300);
 /// The leader tone of the calibration header.
 pub(crate) const LEADER_FREQUENCY: Frequency = Hz!(1900);
+/// Each of the calibration header's two leader tones.
+pub(crate) const LEADER: Tone = Tone::new(LEADER_FREQUENCY, ms!(300));
 
 /// The frequency representing a pixel value, mapped linearly onto the
 /// luminance range.
 pub(crate) fn value_frequency(value: u8) -> Frequency {
     BLACK_FREQUENCY + (WHITE_FREQUENCY - BLACK_FREQUENCY) * u32::from(value) / 255
+}
+
+/// The pixel value a frequency represents: the inverse of
+/// [`value_frequency`], rounded to the nearest value and clamped to the
+/// luminance range.
+pub(crate) fn frequency_value(frequency: Frequency) -> u8 {
+    let black = i64::from(BLACK_FREQUENCY.hz());
+    let range = i64::from(WHITE_FREQUENCY.hz()) - black;
+    let value = ((i64::from(frequency.hz()) - black) * 255 + range / 2).div_euclid(range);
+    value.clamp(0, 255) as u8
 }
 
 #[cfg(test)]
@@ -119,5 +131,18 @@ mod tests {
         for value in 0..255 {
             assert!(value_frequency(value) <= value_frequency(value + 1));
         }
+    }
+
+    #[test]
+    fn frequency_value_inverts_value_frequency() {
+        for value in [0, 1, 127, 128, 254, 255] {
+            assert_eq!(frequency_value(value_frequency(value)), value);
+        }
+    }
+
+    #[test]
+    fn frequencies_outside_the_luminance_range_clamp() {
+        assert_eq!(frequency_value(Hz!(1200)), 0);
+        assert_eq!(frequency_value(Hz!(2500)), 255);
     }
 }
