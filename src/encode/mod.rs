@@ -1,4 +1,5 @@
-//! Encoding an image into SSTV tones.
+//! Encoding an image into SSTV tones, and synthesizing the tones into audio
+//! samples.
 
 mod convert;
 mod emit;

@@ -55,10 +55,10 @@ impl<I: Iterator<Item = i16>> Decoder<I> {
 
     /// Decode in the given mode instead of detecting it from the header.
     ///
-    /// The image starts at a header announcing this mode or, if there is
-    /// none, at the first three of the mode's line sync pulses spaced one
-    /// line apart, so a signal whose header is missing or unreadable still
-    /// decodes.
+    /// The image starts at a header announcing this mode or, if none comes
+    /// first, at three of the mode's line sync pulses spaced exactly one line
+    /// apart, so a signal whose header is missing or unreadable still
+    /// decodes. Headers announcing another mode are ignored.
     ///
     /// ```no_run
     /// use sstv::{modes::ROBOT_36, Decoder};
@@ -96,7 +96,13 @@ impl<I: Iterator<Item = i16>> Decoder<I> {
         self
     }
 
-    /// Decode the image, or `None` if the stream carries none.
+    /// Decode the first image in the stream, or `None` if the samples run
+    /// out before one is found. Reading stops shortly after the image's end.
+    ///
+    /// The image is incomplete if the samples end before it does. With
+    /// [`without_header`](Self::without_header), decoding starts at the first
+    /// sample, so there is always an image, however little of it the samples
+    /// carry.
     pub fn decode(self) -> Option<DecodedImage> {
         let sample_rate = self.demodulator.sample_rate();
         let tones = if self.without_header {

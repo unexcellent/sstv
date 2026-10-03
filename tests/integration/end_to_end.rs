@@ -1,6 +1,6 @@
 //! End-to-end tests: encode an image to tones with the [`Encoder`], optionally
 //! corrupt the audio with deterministic noise, and decode it back with
-//! [`Decoder`], reassembling the event stream into images.
+//! [`Decoder`]s, one per image.
 
 use crate::common::{mean_abs_error, save_decoded, test_image};
 use rand::SeedableRng;

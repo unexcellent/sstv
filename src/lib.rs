@@ -1,4 +1,4 @@
-#![doc = "Slow-Scan Television Encoding With Minimal Memory Usage"]
+#![doc = "Slow-Scan Television Encoding and Decoding With Minimal Memory Usage"]
 #![cfg_attr(not(any(feature = "std", test)), no_std)]
 #![warn(missing_docs)]
 

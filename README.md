@@ -74,7 +74,7 @@ for sample in Synthesizer::new(encoder, 8_000) {
 }
 ```
 
-Decoding buffers the image and about one line group of the signal on the heap, so it requires an allocator: enable the `alloc` feature for it.
+Decoding buffers the image and a few line groups of the signal on the heap, so it requires an allocator: enable the `alloc` feature for it. Of the decoding parts, only the `Demodulator`, which turns samples into frequencies, works without one.
 
 # Supported Modes
 
