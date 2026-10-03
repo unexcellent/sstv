@@ -41,12 +41,27 @@ if let Some(image) = Decoder::from_wav(&wav)?.rgb_image() {
 }
 ```
 
-A decoder decodes the first image and reads only a little past its end. For live decoding, or a recording that carries several transmissions, construct decoders from any sample iterator, for example one fed by your sound card, and hand each the samples the previous one left over:
+To render a transmission while it is still coming in, construct the decoder from any sample iterator, for example one fed by your sound card, and take its rows instead. Each row is handed out about one line after it was received, and the mode, with it the resolution, is known before the first one:
 
 ```rust
 use sstv::Decoder;
 
-let mut samples = microphone_samples(); // any Iterator<Item = i16>
+let samples = microphone_samples(); // any Iterator<Item = i16>
+if let Some(rows) = Decoder::new(samples, 48_000).rows() {
+    let (width, height) = rows.mode().resolution();
+    // prepare a width x height canvas
+    for row in rows {
+        // draw row.pixels() as line row.index()
+    }
+}
+```
+
+A decoder decodes the first image and reads only a little past its end. For a recording or a live signal that carries several transmissions, hand each new decoder the samples the previous one left over:
+
+```rust
+use sstv::Decoder;
+
+let mut samples = microphone_samples();
 while let Some(image) = Decoder::new(samples.by_ref(), 48_000).decode() {
     // show or save image.pixels()
 }

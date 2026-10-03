@@ -1,9 +1,9 @@
 //! The decoder: from samples to the image.
 
-use super::DecodedImage;
 use super::Demodulator;
 use super::assembler::{ImageSearch, ImageTones};
-use super::walk::decode_image;
+use super::walk::{RowWalk, decode_image};
+use super::{DecodedImage, DecodedRow};
 use crate::modes::{Mode, ROBOT_36};
 
 /// Decodes an SSTV transmission from an audio sample stream.
@@ -16,7 +16,9 @@ use crate::modes::{Mode, ROBOT_36};
 ///
 /// The decoder decodes the first image in the stream and reads only a little
 /// past its end, so the remaining samples can be handed to another decoder
-/// for the next image.
+/// for the next image. [`decode`](Self::decode) returns the whole image;
+/// [`rows`](Self::rows) hands out each row as soon as it is decoded, for
+/// rendering a transmission while it is still coming in.
 ///
 /// ```no_run
 /// use sstv::Decoder;
@@ -104,14 +106,82 @@ impl<I: Iterator<Item = i16>> Decoder<I> {
     /// sample, so there is always an image, however little of it the samples
     /// carry.
     pub fn decode(self) -> Option<DecodedImage> {
-        let sample_rate = self.demodulator.sample_rate();
-        let tones = if self.without_header {
-            let mode = self.mode.unwrap_or(ROBOT_36);
-            ImageTones::at_first_sample(self.demodulator, sample_rate, mode)
-        } else {
-            ImageSearch::new(self.demodulator, sample_rate, self.mode).find_image()?
-        };
+        let tones = self.find_image()?;
         Some(decode_image(tones.mode(), tones))
+    }
+
+    /// Decode the first image in the stream row by row, handing out each row
+    /// as soon as it is decoded, or `None` if the samples run out before an
+    /// image is found.
+    ///
+    /// The returned [`Rows`] know the image's [`mode`](Rows::mode), and with
+    /// it the resolution, before the first row arrives. A row is decoded
+    /// once the timing sequence that carries it has been received, about one
+    /// line after the row itself. Fed from a live signal, the image can so
+    /// be shown while it is still being transmitted.
+    ///
+    /// If the samples end before the image does, the rows stop early.
+    ///
+    /// ```no_run
+    /// use sstv::Decoder;
+    ///
+    /// # let samples = std::vec::Vec::<i16>::new().into_iter();
+    /// if let Some(rows) = Decoder::new(samples, 48000).rows() {
+    ///     let (width, height) = rows.mode().resolution();
+    ///     for row in rows {
+    ///         // draw row.pixels() as line row.index() of a width x height canvas
+    ///         let _ = (width, height, row.index(), row.pixels());
+    ///     }
+    /// }
+    /// ```
+    pub fn rows(self) -> Option<Rows<I>> {
+        let tones = self.find_image()?;
+        Some(Rows {
+            walk: RowWalk::new(tones.mode(), tones),
+            next_index: 0,
+        })
+    }
+
+    /// Read until the image starts, and hand over its tones.
+    fn find_image(self) -> Option<ImageTones<Demodulator<I>>> {
+        let sample_rate = self.demodulator.sample_rate();
+        if self.without_header {
+            let mode = self.mode.unwrap_or(ROBOT_36);
+            return Some(ImageTones::at_first_sample(
+                self.demodulator,
+                sample_rate,
+                mode,
+            ));
+        }
+        ImageSearch::new(self.demodulator, sample_rate, self.mode).find_image()
+    }
+}
+
+/// The rows of an image, handed out by [`Decoder::rows`] top to bottom as
+/// soon as each is decoded. Ends after the image's last row, or early if
+/// the samples end before the image does.
+pub struct Rows<I: Iterator<Item = i16>> {
+    walk: RowWalk<ImageTones<Demodulator<I>>>,
+    next_index: usize,
+}
+
+impl<I: Iterator<Item = i16>> Rows<I> {
+    /// The SSTV mode the image is transmitted in, which gives its
+    /// [`resolution`](Mode::resolution).
+    #[must_use]
+    pub const fn mode(&self) -> Mode {
+        self.walk.mode()
+    }
+}
+
+impl<I: Iterator<Item = i16>> Iterator for Rows<I> {
+    type Item = DecodedRow;
+
+    fn next(&mut self) -> Option<DecodedRow> {
+        let pixels = self.walk.next()?;
+        let row = DecodedRow::new(self.next_index, pixels);
+        self.next_index += 1;
+        Some(row)
     }
 }
 
@@ -120,8 +190,11 @@ mod tests {
     extern crate std;
     use std::vec::Vec;
 
+    use core::cell::Cell;
+
     use super::super::testing::{gradient_image, header_length, mean_abs_error, transmit};
     use super::*;
+    use crate::RgbPixel;
     use crate::modes::{MARTIN_1, PD_120, ROBOT_36, ROBOT_72, SCOTTIE_1};
 
     #[test]
@@ -262,6 +335,58 @@ mod tests {
         let decoded = decode(first_half, 48_000).unwrap();
 
         assert!(!decoded.complete());
+    }
+
+    #[test]
+    fn rows_carry_the_image_decode_returns() {
+        let samples = transmit(PD_120, &gradient_image(PD_120), 48_000);
+        let image = decode(samples.clone(), 48_000).unwrap();
+
+        let rows = Decoder::new(samples.into_iter(), 48_000).rows().unwrap();
+        let mode = rows.mode();
+        let rows: Vec<DecodedRow> = rows.collect();
+
+        assert_eq!(mode, PD_120);
+        let indices: Vec<usize> = rows.iter().map(DecodedRow::index).collect();
+        assert_eq!(indices, (0..image.height()).collect::<Vec<_>>());
+        let pixels: Vec<RgbPixel> = rows.iter().flat_map(|row| row.pixels().to_vec()).collect();
+        assert_eq!(pixels, image.pixels());
+    }
+
+    /// Fed from a live signal, rows must be available long before the
+    /// transmission ends: about one line after they were received.
+    #[test]
+    fn first_row_arrives_while_the_transmission_is_still_coming_in() {
+        let samples = transmit(ROBOT_36, &gradient_image(ROBOT_36), 48_000);
+        let samples_read = Cell::new(0);
+        let live = samples
+            .iter()
+            .copied()
+            .inspect(|_| samples_read.set(samples_read.get() + 1));
+
+        let mut rows = Decoder::new(live, 48_000).rows().unwrap();
+        rows.next().unwrap();
+
+        let header_and_first_lines = header_length(ROBOT_36, 48_000) + 48_000 / 2;
+        assert!(
+            samples_read.get() < header_and_first_lines,
+            "read {} of {} samples for the first row",
+            samples_read.get(),
+            samples.len()
+        );
+    }
+
+    #[test]
+    fn rows_stop_early_when_the_transmission_is_cut_short() {
+        let samples = transmit(ROBOT_36, &gradient_image(ROBOT_36), 48_000);
+        let first_half = samples[..samples.len() / 2].to_vec();
+
+        let row_count = Decoder::new(first_half.into_iter(), 48_000)
+            .rows()
+            .unwrap()
+            .count();
+
+        assert!(row_count > 0 && row_count < 240, "{row_count} rows");
     }
 
     #[test]

@@ -15,7 +15,7 @@ mod units;
 
 pub use decode::Demodulator;
 #[cfg(feature = "alloc")]
-pub use decode::{DecodedImage, Decoder};
+pub use decode::{DecodedImage, DecodedRow, Decoder, Rows};
 pub use encode::{Encoder, Synthesizer};
 pub use error::{Error, Result};
 pub use image::{RgbPixel, YuvPixel};

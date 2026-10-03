@@ -11,6 +11,8 @@ mod convert;
 #[cfg(feature = "alloc")]
 mod decoded_image;
 #[cfg(feature = "alloc")]
+mod decoded_row;
+#[cfg(feature = "alloc")]
 mod decoder;
 mod demodulator;
 #[cfg(feature = "alloc")]
@@ -24,5 +26,7 @@ mod walk;
 #[cfg(feature = "alloc")]
 pub use decoded_image::DecodedImage;
 #[cfg(feature = "alloc")]
-pub use decoder::Decoder;
+pub use decoded_row::DecodedRow;
+#[cfg(feature = "alloc")]
+pub use decoder::{Decoder, Rows};
 pub use demodulator::Demodulator;
