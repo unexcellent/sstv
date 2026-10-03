@@ -5,7 +5,7 @@
 //! Tests for the `wav` feature: encoding to and decoding from in-memory WAVs.
 
 mod common;
-use common::{mean_abs_error, test_image};
+use common::{mean_abs_error, save_decoded, test_image};
 use sstv::{Decoder, Encoder, Synthesizer, modes};
 
 const SAMPLE_RATE: u32 = 24_000;
@@ -20,6 +20,7 @@ fn round_trips_through_a_wav() {
         .expect("parse wav")
         .decode()
         .expect("an image");
+    save_decoded("round-trip", &decoded);
 
     assert_eq!(decoded.mode(), modes::ROBOT_36);
     assert!(decoded.complete(), "image should decode completely");
@@ -54,6 +55,7 @@ fn decodes_stereo_float_wavs() {
         .with_mode(modes::ROBOT_36)
         .decode()
         .expect("an image");
+    save_decoded("stereo-float", &decoded);
 
     assert!(decoded.complete(), "image should decode completely");
     let error = mean_abs_error(&image, decoded.pixels());
@@ -80,6 +82,7 @@ fn decodes_a_truncated_wav() {
         .expect("parse truncated wav")
         .decode()
         .expect("an image");
+    save_decoded("truncated", &decoded);
 
     assert_eq!(decoded.mode(), modes::ROBOT_36);
     assert!(!decoded.complete(), "a truncated image is not complete");

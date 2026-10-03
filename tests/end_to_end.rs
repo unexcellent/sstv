@@ -9,7 +9,7 @@
 use rand::SeedableRng;
 use rand_distr::{Distribution, Normal};
 mod common;
-use common::{mean_abs_error, test_image};
+use common::{mean_abs_error, save_decoded, test_image};
 use sstv::{DecodedImage, Decoder, Encoder, RgbPixel, Synthesizer, modes};
 
 /// Robot36 resolution.
@@ -65,15 +65,19 @@ fn add_noise(samples: &[i16], seed: u64) -> Vec<i16> {
 }
 
 /// Decode every image, handing the samples each decoder leaves over to the
-/// next one.
-fn decode_images(samples: Vec<i16>) -> Vec<DecodedImage> {
+/// next one. The images are saved as `name` followed by their position.
+fn decode_images(name: &str, samples: Vec<i16>) -> Vec<DecodedImage> {
     let mut samples = samples.into_iter();
-    core::iter::from_fn(|| {
+    let images: Vec<DecodedImage> = core::iter::from_fn(|| {
         Decoder::new(samples.by_ref(), SAMPLE_RATE)
             .with_mode(modes::ROBOT_36)
             .decode()
     })
-    .collect()
+    .collect();
+    for (index, image) in images.iter().enumerate() {
+        save_decoded(&format!("{name}-{index}"), image);
+    }
+    images
 }
 
 /// Assert a decoded image is complete and close enough to the original.
@@ -90,7 +94,7 @@ fn image_tones_only() {
     let image = test_image(modes::ROBOT_36);
     let samples = encode(&image);
 
-    let decoded = decode_images(samples);
+    let decoded = decode_images("image_tones_only", samples);
 
     assert_eq!(decoded.len(), 1, "expected exactly one image");
     assert_matches(&decoded[0], &image, CLEAN_ERROR);
@@ -102,7 +106,7 @@ fn image_tones_with_noise() {
     let image = test_image(modes::ROBOT_36);
     let samples = add_noise(&encode(&image), 0x1);
 
-    let decoded = decode_images(samples);
+    let decoded = decode_images("image_tones_with_noise", samples);
 
     assert_eq!(decoded.len(), 1, "expected exactly one image");
     assert_matches(&decoded[0], &image, NOISY_ERROR);
@@ -115,7 +119,7 @@ fn image_tones_with_noise_then_pure_noise() {
     let mut samples = add_noise(&encode(&image), 0x1);
     samples.extend(noise(NOISE_PADDING, 0x2));
 
-    let decoded = decode_images(samples);
+    let decoded = decode_images("image_tones_with_noise_then_pure_noise", samples);
 
     assert_eq!(decoded.len(), 1, "trailing noise should not add an image");
     assert_matches(&decoded[0], &image, NOISY_ERROR);
@@ -128,7 +132,7 @@ fn image_tones_with_noise_prefixed_by_pure_noise() {
     let mut samples = noise(NOISE_PADDING, 0x2);
     samples.extend(add_noise(&encode(&image), 0x1));
 
-    let decoded = decode_images(samples);
+    let decoded = decode_images("image_tones_with_noise_prefixed_by_pure_noise", samples);
 
     assert_eq!(decoded.len(), 1, "leading noise should be skipped");
     assert_matches(&decoded[0], &image, NOISY_ERROR);
@@ -142,7 +146,7 @@ fn two_images_with_noise_and_noise_gap() {
     samples.extend(noise(NOISE_PADDING, 0x2));
     samples.extend(add_noise(&encode(&image), 0x3));
 
-    let decoded = decode_images(samples);
+    let decoded = decode_images("two_images_with_noise_and_noise_gap", samples);
 
     assert_eq!(decoded.len(), 2, "expected two images across the noise gap");
     for decoded_image in &decoded {

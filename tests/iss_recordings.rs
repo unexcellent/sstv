@@ -6,105 +6,74 @@
 //! Comms) and encoded on orbit with MMSSTV — the de-facto standard encoder.
 //!
 //! The recordings stay outside the git history; the first test run fetches
-//! them (~130 MB) via `tests/scripts/fetch_iss_recordings.py`.
+//! them (~130 MB) via `tests/scripts/fetch_assets.py`, together with the
+//! decodes KG4AKV published of them.
 
 mod common;
-use common::mean_abs_error;
+use common::{asset, mean_abs_error, read_audio, read_image, save_decoded};
 use sstv::{DecodedImage, Decoder, Demodulator, Encoder, Mode, Synthesizer, modes};
 
 const PD_120_PERIOD: f64 = 0.508_48;
 const PD_180_PERIOD: f64 = 0.754_24;
 
 struct Recording {
-    path: &'static str,
+    /// The recording's file name in `tests/assets/iss/`, without extension.
+    name: &'static str,
     mode: Mode,
     /// The mode's line period in seconds.
     period: f64,
+    /// KG4AKV's decode of the recording in `tests/assets/iss/`.
+    reference: &'static str,
 }
 
 const RECORDINGS: &[Recording] = &[
     Recording {
-        path: "tests/assets/iss/pd180-gagarin-80.wav",
+        name: "pd180-gagarin-80",
         mode: modes::PD_180,
         period: PD_180_PERIOD,
+        reference: "pd180-gagarin-80.kg4akv.jpg",
     },
     Recording {
-        path: "tests/assets/iss/pd180-apollo-soyuz.wav",
+        name: "pd180-apollo-soyuz",
         mode: modes::PD_180,
         period: PD_180_PERIOD,
+        reference: "pd180-apollo-soyuz.kg4akv.jpg",
     },
     Recording {
-        path: "tests/assets/iss/pd180-ariss-qso-astros.wav",
+        name: "pd180-ariss-qso-astros",
         mode: modes::PD_180,
         period: PD_180_PERIOD,
+        reference: "pd180-ariss-qso-astros.kg4akv.png",
     },
     Recording {
-        path: "tests/assets/iss/pd180-ariss-qso-cristoforetti.wav",
+        name: "pd180-ariss-qso-cristoforetti",
         mode: modes::PD_180,
         period: PD_180_PERIOD,
+        reference: "pd180-ariss-qso-cristoforetti.kg4akv.png",
     },
     Recording {
-        path: "tests/assets/iss/pd180-mai75-suitsat.wav",
+        name: "pd180-mai75-suitsat",
         mode: modes::PD_180,
         period: PD_180_PERIOD,
+        reference: "pd180-mai75-suitsat.kg4akv.png",
     },
     Recording {
-        path: "tests/assets/iss/pd120-ariss-20-year-1.wav",
+        name: "pd120-ariss-20-year-1",
         mode: modes::PD_120,
         period: PD_120_PERIOD,
+        reference: "pd120-ariss-20-year-1.kg4akv.png",
     },
     Recording {
-        path: "tests/assets/iss/pd120-ariss-20-year-2.wav",
+        name: "pd120-ariss-20-year-2",
         mode: modes::PD_120,
         period: PD_120_PERIOD,
+        reference: "pd120-ariss-20-year-2.kg4akv.png",
     },
 ];
 
-/// Fetch the recordings on the first use of a test run; both tests may ask
-/// concurrently, so the download runs at most once.
-fn ensure_recordings() {
-    static FETCH: std::sync::Once = std::sync::Once::new();
-    FETCH.call_once(|| {
-        if RECORDINGS
-            .iter()
-            .all(|entry| std::path::Path::new(entry.path).exists())
-        {
-            return;
-        }
-        eprintln!("fetching the ISS recordings (~130 MB)");
-        let status = std::process::Command::new("python3")
-            .arg("tests/scripts/fetch_iss_recordings.py")
-            .status()
-            .expect("run tests/scripts/fetch_iss_recordings.py");
-        assert!(status.success(), "fetching the ISS recordings failed");
-    });
-}
-
-fn recording(path: &str) -> Vec<u8> {
-    ensure_recordings();
-    std::fs::read(path).unwrap_or_else(|_| panic!("{path} not found after fetching"))
-}
-
-/// Read a WAV's samples (first channel, scaled to 16 bit) and sample rate.
-fn samples(wav: &[u8]) -> (Vec<i16>, u32) {
-    let reader = hound::WavReader::new(std::io::Cursor::new(wav)).expect("parse wav");
-    let spec = reader.spec();
-    let channels = spec.channels as usize;
-    let samples = match spec.sample_format {
-        hound::SampleFormat::Int => reader
-            .into_samples::<i32>()
-            .map(|sample| sample.expect("read sample"))
-            .step_by(channels)
-            .map(|sample| (sample >> (spec.bits_per_sample.saturating_sub(16))) as i16)
-            .collect(),
-        hound::SampleFormat::Float => reader
-            .into_samples::<f32>()
-            .map(|sample| sample.expect("read sample"))
-            .step_by(channels)
-            .map(|sample| (sample * f32::from(i16::MAX)) as i16)
-            .collect(),
-    };
-    (samples, spec.sample_rate)
+/// The bytes of the recording's WAV file.
+fn recording(name: &str) -> Vec<u8> {
+    std::fs::read(asset(&format!("iss/{name}.wav"))).expect("read the recording")
 }
 
 /// `expected_mode` pins the decoder's mode; `None` detects it from the header.
@@ -154,14 +123,25 @@ fn line_timing(samples: &[i16], sample_rate: u32, expected_period: f64) -> (f64,
 }
 
 /// The recordings decode completely, with the mode detected from the
-/// transmitted VIS code.
+/// transmitted VIS code, and close to KG4AKV's own decodes. Those were made
+/// with other software (MMSSTV, a phone app), possibly from other passes, so
+/// they differ in noise and colour; a misaligned or colour-swapped decode
+/// would be far off (40+).
 #[test]
 fn decodes_the_recordings() {
     for entry in RECORDINGS {
-        let wav = recording(entry.path);
-        let image = decode(None, &wav);
-        assert_eq!(image.mode(), entry.mode, "{}", entry.path);
-        assert!(image.complete(), "{} should decode completely", entry.path);
+        let image = decode(None, &recording(entry.name));
+        save_decoded(entry.name, &image);
+
+        assert_eq!(image.mode(), entry.mode, "{}", entry.name);
+        assert!(image.complete(), "{} should decode completely", entry.name);
+        let reference = read_image(&asset(&format!("iss/{}", entry.reference)));
+        let error = mean_abs_error(&reference, image.pixels());
+        assert!(
+            error < 25.0,
+            "{}: mean abs error {error} too high",
+            entry.name
+        );
     }
 }
 
@@ -171,9 +151,9 @@ fn decodes_the_recordings() {
 #[test]
 fn reencoding_matches_the_recorded_tones_and_images() {
     for entry in RECORDINGS {
-        let (path, mode, period) = (entry.path, entry.mode, entry.period);
+        let (path, mode, period) = (entry.name, entry.mode, entry.period);
         let wav = recording(path);
-        let (recorded_samples, sample_rate) = samples(&wav);
+        let (recorded_samples, sample_rate) = read_audio(&asset(&format!("iss/{path}.wav")));
         let recorded_image = decode(Some(mode), &wav);
 
         let encoder = Encoder::new(mode, recorded_image.pixels().to_vec().into_iter())

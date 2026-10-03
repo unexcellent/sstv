@@ -5,6 +5,8 @@
 //! Tests for the `image` feature: converting decoded images into `image`
 //! crate buffers.
 
+mod common;
+use common::{save_decoded, save_decoded_buffer};
 use sstv::{Decoder, Encoder, Mode, RgbPixel, Synthesizer, modes};
 
 const SAMPLE_RATE: u32 = 24_000;
@@ -36,6 +38,7 @@ fn encodes_image_buffers_resizing_them_to_the_mode_resolution() {
         .with_mode(modes::ROBOT_36)
         .decode()
         .expect("an image");
+    save_decoded("resized", &decoded);
     assert!(decoded.complete(), "image should decode completely");
     let (width, height) = modes::ROBOT_36.resolution();
     assert_eq!(decoded.width() as u32, width);
@@ -50,6 +53,7 @@ fn decoded_images_convert_to_image_buffers() {
         .with_mode(modes::ROBOT_36)
         .decode()
         .expect("an image");
+    save_decoded("converted", &decoded);
     let buffer = image::RgbImage::from(&decoded);
 
     assert_eq!(buffer.width() as usize, decoded.width());
@@ -69,6 +73,7 @@ fn decodes_to_image_buffers_and_saves_them() {
         .with_mode(modes::ROBOT_36)
         .rgb_image()
         .expect("an image");
+    save_decoded_buffer("rgb-image", &decoded);
     let (width, height) = modes::ROBOT_36.resolution();
     assert_eq!(decoded.width(), width);
     assert_eq!(decoded.height(), height);

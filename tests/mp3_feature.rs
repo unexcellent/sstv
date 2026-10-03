@@ -4,6 +4,8 @@
 
 //! Tests for the `mp3` feature: encoding to and decoding from in-memory MP3s.
 
+mod common;
+use common::save_decoded;
 use sstv::{Decoder, Encoder, RgbPixel, modes};
 
 #[test]
@@ -41,6 +43,7 @@ fn round_trips_through_an_mp3() {
         .expect("parse mp3")
         .decode()
         .expect("an image");
+    save_decoded("round-trip", &decoded);
 
     assert_eq!(decoded.mode(), modes::ROBOT_36);
     assert!(decoded.complete(), "image should decode completely");

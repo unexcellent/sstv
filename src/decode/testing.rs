@@ -16,7 +16,7 @@ pub const PYSSTV_FIXTURE: &str = "tests/assets/patch-robot36-pysstv.wav";
 pub const GROUND_STATION_RECORDING: &str = "tests/assets/real_recording.wav.gz";
 /// The image the ground-station recording and the `PySSTV` fixture carry.
 #[cfg(feature = "image")]
-pub const SOURCE_IMAGE: &str = "examples/patch.png";
+pub const SOURCE_IMAGE: &str = "tests/assets/patch.png";
 
 /// An image at the mode's resolution, brightening to the right in red,
 /// downwards in green and diagonally in blue.
@@ -65,7 +65,10 @@ pub fn mean_abs_error(expected: &[RgbPixel], actual: &[RgbPixel]) -> f64 {
 /// The pixels of an image file.
 #[cfg(feature = "image")]
 pub fn read_image(path: &str) -> Vec<RgbPixel> {
-    image::open(asset_path(path))
+    image::ImageReader::new(std::io::BufReader::new(open_asset(path)))
+        .with_guessed_format()
+        .unwrap()
+        .decode()
         .unwrap()
         .to_rgb8()
         .pixels()
@@ -73,23 +76,9 @@ pub fn read_image(path: &str) -> Vec<RgbPixel> {
         .collect()
 }
 
-/// Read one of the ISS recordings, fetching the set on first use as
-/// `tests/iss_recordings.rs` does.
+/// Read one of the ISS recordings.
 pub fn read_iss_recording(name: &str) -> (Vec<i16>, u32) {
-    static FETCH: std::sync::Once = std::sync::Once::new();
-    let path = std::format!("tests/assets/iss/{name}");
-    FETCH.call_once(|| {
-        if asset_path(&path).exists() {
-            return;
-        }
-        let status = std::process::Command::new("python3")
-            .arg(asset_path("tests/scripts/fetch_iss_recordings.py"))
-            .current_dir(env!("CARGO_MANIFEST_DIR"))
-            .status()
-            .expect("run tests/scripts/fetch_iss_recordings.py");
-        assert!(status.success(), "fetching the ISS recordings failed");
-    });
-    read_wav(&path)
+    read_wav(&std::format!("tests/assets/iss/{name}"))
 }
 
 #[cfg(feature = "image")]
@@ -119,7 +108,19 @@ pub fn read_wav(path: &str) -> (Vec<i16>, u32) {
     wav_samples(&wav)
 }
 
+/// Open a file in `tests/assets/`, fetching the assets with
+/// `tests/scripts/fetch_assets.py` on first use, as the integration tests do.
 fn open_asset(path: &str) -> std::fs::File {
+    static FETCH: std::sync::Once = std::sync::Once::new();
+    if !asset_path(path).exists() {
+        FETCH.call_once(|| {
+            let status = std::process::Command::new("python3")
+                .arg(asset_path("tests/scripts/fetch_assets.py"))
+                .status()
+                .expect("run tests/scripts/fetch_assets.py");
+            assert!(status.success(), "fetching the test assets failed");
+        });
+    }
     std::fs::File::open(asset_path(path)).unwrap_or_else(|_| panic!("{path} not found"))
 }
 

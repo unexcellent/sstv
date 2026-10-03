@@ -10,6 +10,8 @@
 //! cargo run --features image,wav,mp3 --example decode -- tests/assets/real_recording.wav.gz local/decoded.png [mode]
 //! ```
 //!
+//! The recording in the example is fetched by `tests/scripts/fetch_assets.py`.
+//!
 //! Rows that could not be decoded are left black, so a misaligned or truncated
 //! decode is still visible rather than fatal.
 

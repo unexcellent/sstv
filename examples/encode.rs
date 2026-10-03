@@ -1,8 +1,11 @@
 // Examples fail fast on bad input by design.
 #![allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-//! Encode examples/patch.png into an SSTV WAV using this crate's encoder.
+//! Encode the test image into an SSTV WAV using this crate's encoder.
 //! Loading the image is done with the `image` crate.
+//!
+//! The image is not committed; fetch it into `tests/assets/patch.png` first
+//! with `python3 tests/scripts/fetch_assets.py`.
 //!
 //! ```text
 //! cargo run --features image,wav --example encode -- local/encoded.wav [mode] [sample_rate]
@@ -30,7 +33,8 @@ fn main() {
         s.parse().expect("sample rate must be an integer")
     });
 
-    let image = image::open("examples/patch.png").expect("open examples/patch.png");
+    let image = image::open("tests/assets/patch.png")
+        .expect("open tests/assets/patch.png, fetched by tests/scripts/fetch_assets.py");
     let encoder = Encoder::from_image(mode, &image).expect("encode");
 
     std::fs::write(&output, encoder.to_wav(sample_rate)).expect("write wav");

@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Produce the reference image the encoder test checks against.
 
-Encodes examples/patch.png with THIS crate's encoder (via the `encode` example),
+Encodes tests/assets/patch.png with THIS crate's encoder (via the `encode` example),
 then decodes the result with the independent colaclanth `sstv` decoder. If our
 encoder produces valid Robot36, the decoded image should resemble the source.
 
-Outputs are written into tests/assets/ (gitignored *.wav / *.png).
+Outputs are written into the gitignored tests/assets/; the input image is
+fetched there by tests/scripts/fetch_assets.py.
 
 Regenerate with:  python3 tests/scripts/decode_reference.py
 Requires:         pip install --no-deps -r tests/scripts/requirements.txt

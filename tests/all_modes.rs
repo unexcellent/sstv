@@ -6,7 +6,7 @@
 //! back, and compare against the original.
 
 mod common;
-use common::{mean_abs_error, test_image};
+use common::{mean_abs_error, save_decoded, test_image};
 use sstv::{Decoder, Encoder, Mode, RgbPixel, Synthesizer, modes};
 
 const SAMPLE_RATE: u32 = 24_000;
@@ -16,14 +16,21 @@ const MAX_ERROR: f64 = 12.0;
 
 /// Decode `samples`, expecting a complete image in the given mode close to
 /// `image`. `expected_mode` pins the decoder's mode; `None` detects it from
-/// the header.
-fn assert_decodes(expected_mode: Option<Mode>, samples: &[i16], mode: Mode, image: &[RgbPixel]) {
+/// the header. The decoded image is saved as `name`.
+fn assert_decodes(
+    name: &str,
+    expected_mode: Option<Mode>,
+    samples: &[i16],
+    mode: Mode,
+    image: &[RgbPixel],
+) {
     let mut decoder = Decoder::new(samples.iter().copied(), SAMPLE_RATE);
     if let Some(expected) = expected_mode {
         decoder = decoder.with_mode(expected);
     }
 
     let image_decoded = decoder.decode().expect("an image");
+    save_decoded(name, &image_decoded);
 
     assert_eq!(image_decoded.mode(), mode);
     assert!(image_decoded.complete(), "image should decode completely");
@@ -39,8 +46,14 @@ fn round_trip(mode: Mode) {
     let encoder = Encoder::new(mode, image.clone().into_iter()).expect("construct encoder");
     let samples: Vec<i16> = Synthesizer::new(encoder, SAMPLE_RATE).collect();
 
-    assert_decodes(Some(mode), &samples, mode, &image);
-    assert_decodes(None, &samples, mode, &image);
+    assert_decodes(
+        &format!("{mode:?}-with-mode"),
+        Some(mode),
+        &samples,
+        mode,
+        &image,
+    );
+    assert_decodes(&format!("{mode:?}-detected"), None, &samples, mode, &image);
 }
 
 #[test]

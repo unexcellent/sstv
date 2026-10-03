@@ -25,12 +25,12 @@ jobs:
         with:
           python-version: "3.12"
 
-      # The test suite fetches the ISS recordings on first run; cache them so
-      # CI downloads the archive only when the recording set changes.
+      # The test suite fetches its media (~140 MB, mostly the ISS recordings)
+      # on first run; cache them so CI downloads only when the set changes.
       - uses: actions/cache@v4
         with:
-          path: tests/assets/iss
-          key: iss-recordings-${{ hashFiles('tests/scripts/fetch_iss_recordings.py') }}
+          path: tests/assets
+          key: test-assets-${{ hashFiles('tests/scripts/fetch_assets.py') }}
 
       # Runs all pre-commit-stage hooks (file checks, fmt, clippy, test).
       # The test hook runs default features only; the full suite runs below.
