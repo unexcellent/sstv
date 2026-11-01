@@ -178,7 +178,10 @@ impl<I: Iterator<Item = Frequency>> ImageTones<I> {
                 self.cut_remaining();
                 return;
             }
-            Reading::Tone(completed) => self.cutter.sync_found(completed),
+            Reading::Tone(completed) => {
+                self.cutter.sync_found(completed);
+                self.cutter.relock(completed, &self.track.estimates);
+            }
             Reading::Frequency => {}
         }
         if let Some(next_start) = self.cutter.next_start_if_ready(self.track.estimates.end()) {
@@ -199,7 +202,17 @@ impl<I: Iterator<Item = Frequency>> ImageTones<I> {
     fn cut(&mut self, next_start: f64) {
         self.cutter
             .cut(next_start, &self.track.estimates, &mut self.queue);
-        self.track.estimates.forget_before(next_start as u64);
+        // With the timing lost, the previous sequence is kept too: the
+        // re-lock scores the sync pulses it has seen against its control
+        // tones.
+        let keep_from = if self.cutter.is_lost() {
+            next_start - self.cutter.sequence_length()
+        } else {
+            next_start
+        };
+        self.track
+            .estimates
+            .forget_before(keep_from.max(0.0) as u64);
         self.done = self.cutter.is_finished();
     }
 }

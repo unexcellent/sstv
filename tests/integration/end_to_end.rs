@@ -16,6 +16,9 @@ const SAMPLE_RATE: u32 = 48_000;
 const SNR_DB: f64 = 30.0;
 /// Length of the "pure noise" padding regions.
 const NOISE_PADDING: usize = 3 * SAMPLE_RATE as usize;
+/// One audio frame lost or stalled on the way: a sound-card buffer or a
+/// network packet.
+const FRAME: usize = SAMPLE_RATE as usize / 50;
 
 /// Acceptable mean absolute per-channel error for a clean decode.
 const CLEAN_ERROR: f64 = 12.0;
@@ -147,6 +150,37 @@ fn two_images_with_noise_and_noise_gap() {
     for decoded_image in &decoded {
         assert_matches(decoded_image, &image, NOISY_ERROR);
     }
+}
+
+/// A frame of silence inserted halfway through moves every later sync pulse
+/// by its length: the decoder must follow the new timing, not cut the rest
+/// of the image at the old one.
+#[test]
+fn image_tones_with_a_frame_inserted() {
+    let image = test_image(modes::ROBOT_36);
+    let mut samples = encode(&image);
+    let middle = samples.len() / 2;
+    samples.splice(middle..middle, vec![0; FRAME]);
+
+    let decoded = decode_images("image_tones_with_a_frame_inserted", samples);
+
+    assert_eq!(decoded.len(), 1, "expected exactly one image");
+    assert_matches(&decoded[0], &image, CLEAN_ERROR);
+}
+
+/// A frame dropped halfway through moves every later sync pulse the other
+/// way.
+#[test]
+fn image_tones_with_a_frame_dropped() {
+    let image = test_image(modes::ROBOT_36);
+    let mut samples = encode(&image);
+    let middle = samples.len() / 2;
+    samples.drain(middle..middle + FRAME);
+
+    let decoded = decode_images("image_tones_with_a_frame_dropped", samples);
+
+    assert_eq!(decoded.len(), 1, "expected exactly one image");
+    assert_matches(&decoded[0], &image, CLEAN_ERROR);
 }
 
 #[test]
